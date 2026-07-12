@@ -27,6 +27,11 @@ $AGENT_MEMORY_VAULT/
 Read `agent/index.md` only (hard cap 200 lines / 25KB). Load individual
 facts on demand when their hook matches the task.
 
+`index.md` is a **pure listing** (OKF §6): a heading and link entries,
+nothing else. Its only frontmatter is `okf_version: "0.1"` at the
+bundle root. Conventions prose lives here in this skill, never in the
+index.
+
 ## Writing a fact
 
 When the user states something durable (preference, decision,
