@@ -194,7 +194,7 @@ Copy into your plan and check off as you complete each section:
 
 ## Integration
 
-Use `primer` before planning unfamiliar work. When Superpowers is installed,
-use its `test-driven-development` skill for implementation that changes
-behavior. Execute the commands from the verification matrix before reporting
-completion.
+Use `primer` before planning unfamiliar work. For implementation that
+changes behavior, follow red-green-refactor: write the failing test from
+the TDD matrix first. Execute the commands from the verification matrix
+before reporting completion.

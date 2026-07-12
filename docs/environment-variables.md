@@ -16,7 +16,7 @@ Secrets never appear in tracked files. MCP configs reference environment variabl
 
 | Variable | Used By | Purpose |
 |----------|---------|---------|
-| `CONTEXT7_API_KEY` | Context7 MCP, context7 skills | Library documentation API |
+| `CONTEXT7_API_KEY` | Context7 MCP server | Library documentation API |
 | `AZURE_DEVOPS_PAT` | az-devops skill | Azure DevOps personal access token |
 
 ---
