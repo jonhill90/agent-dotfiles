@@ -59,10 +59,20 @@ verify → complete.
 - Durable memory lives in the Obsidian vault at `$AGENT_MEMORY_VAULT`.
 - At session start, read `agent/index.md` only (the index is capped;
   facts load on demand).
+- Before answering anything about the user's preferences, prior
+  decisions, or history, actually read `agent/index.md` first. Never
+  claim the vault is empty or that something is "not on record"
+  without having read the index in this session.
 - When the user states a durable preference or decision, persist it:
   one fact per note under `agent/facts/`, frontmatter
   (`type: user|feedback|project|reference`, `created:` absolute date,
   `source:`), then add one index line. Update or delete stale facts
   rather than duplicating them.
+- A "remember this" request is NOT complete until the file exists
+  under `$AGENT_MEMORY_VAULT/agent/facts/` and the index has its line.
+  Harness-native memory (e.g. Claude Code auto-memory) is
+  project-local and does not count — write the vault file first, the
+  native copy second if at all. Verify the vault write before
+  confirming to the user.
 - Session-scoped notes stay in the harness's native memory, not the
   vault.

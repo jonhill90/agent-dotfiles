@@ -227,6 +227,7 @@ obsidian read path="{result-path}"
 |---------|----------|
 | `obsidian: command not found` | Recreate the symlink (see Prerequisites) or enable the CLI in app settings |
 | CLI hangs / no response | Check the app launched and finished indexing; retry |
+| `Command "read" not found` on `vault=` target | The target vault hasn't finished loading in the app — retry after a few seconds |
 | Wrong vault targeted | Pass `vault="{name}"` first; verify with `obsidian vault info=name` |
 | Note not found | `obsidian files folder="{folder}"` to check the real path |
 | Duplicate content after update | You appended instead of `overwrite` (or vice versa) |
