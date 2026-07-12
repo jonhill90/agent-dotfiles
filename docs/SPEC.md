@@ -221,6 +221,10 @@ instruction block as the contract.** Content is never synced by this repo.
 - **Vault location:** resolved per machine via `AGENT_MEMORY_VAULT` env
   var (set in shell profile by the installer prompt); no hardcoded path.
   Cross-machine sync is the vault's own job (Obsidian Sync/iCloud).
+  **The memory vault must be personal:** `sync doctor` fails if the
+  path resolves under a corporate mount (`OneDrive-<Org>` pattern) —
+  the employer boundary applies to memory data, and the current default
+  vault on this Mac is employer-hosted (V6 machine-state finding).
 - **Schema inside the vault** (Karpathy-style index + files):
   - `agent/index.md` — the only file loaded at session start; hard cap
     200 lines / 25KB (matches CC's native memory budget). One line per
@@ -228,11 +232,12 @@ instruction block as the contract.** Content is never synced by this repo.
   - `agent/facts/<slug>.md` — one fact per note; frontmatter `type:
     user|feedback|project|reference`, `created:` (absolute date),
     `source:`; wiki-links between related notes.
-- **Tooling:** an Obsidian CLI, pinned — **which one is V6 research**
-  (official Obsidian CLI vs the third-party obsidian-cli the current
-  skill wraps; the official one wins if it covers create/search/
-  scriptable read). Installed by `install.sh`; the `obsidian` skill
-  (rewired to the V6 winner) is the access path; a new
+- **Tooling:** the third-party obsidian-cli (Yakitrak), pinned — V6
+  resolved 2026-07-12: direct file operations, GUI-free, deterministic
+  vault resolution; the official CLI requires the running desktop app
+  and is a human-side enhancement only
+  ([research](research/obsidian-cli-v6.md)). Installed by `install.sh`;
+  the existing `obsidian` skill is the access path; a new
   small `memory-conventions` skill (authored, ~300 tokens) owns the
   read/write contract. Works identically on all four harnesses because it
   is CLI + files.
@@ -439,7 +444,7 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | V3 | `targets:` in `~/.apm/apm.yml` scopes global compile | No — cleanup fallback specified (§7) |
 | V4 | Pi local-extension install mechanics | No — deferred; only needed if an eval-justified hook is adopted (§4) |
 | V5 | (Phase 2) Copilot CLI MCP path, `~/.copilot/AGENTS.md`, `~/.agents/skills` symlink handling; Codex hook mechanism | No — Phase 2 |
-| V6 | Official Obsidian CLI: capabilities vs memory-backend needs (create, search, read — headless/scriptable); replaces third-party obsidian-cli only if it covers them | Yes for M4 — resolve before memory tooling ships |
+| V6 | Official Obsidian CLI vs third-party obsidian-cli | **Resolved 2026-07-12** ([research](research/obsidian-cli-v6.md)): keep third-party (Yakitrak, pinned) — official CLI is a remote control for the running app and fails acceptance check 5 (GUI-free) by design; its headless client (`ob`) is Sync/Publish only. Official CLI = optional human-side enhancement. Revisit if it gains GUI-free note CRUD. **New requirement:** `sync doctor` fails if `AGENT_MEMORY_VAULT` resolves under a corporate mount (`OneDrive-<Org>`); M4 must select a personal vault |
 | V7 | Community tmux-skill candidates vs `using-tmux` acceptance checks | No — swap decision, not a blocker; `using-tmux` stays until displaced |
 
 ## 12. Milestones (Phase 1)
