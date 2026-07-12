@@ -1,34 +1,43 @@
-# Skills
+# agent-dotfiles
 
-Personal skills and workflow components for AI coding agents.
+Dotfiles for AI coding agents: one versioned repo that makes any machine,
+running any supported harness, behave like the same agent.
 
-This repository is a portable, multi-harness workflow layer: skills form the
-common core, while agents, hooks, instructions, MCP configuration, and package
-profiles can extend that core without being required for every installation.
+Portable Agent Skills form the common core and remain individually
+installable. Canonical instructions, hooks, agents, settings, and MCP
+declarations are the other managed layers, deployed at user scope via APM
+plus a thin sync wrapper. Product requirements: [docs/PRD.md](docs/PRD.md);
+technical design: [docs/SPEC.md](docs/SPEC.md).
 
 ## Install Skills
 
 Browse the collection and select individual skills:
 
 ```bash
-npx skills add jonhill90/skills
+npx skills add jonhill90/agent-dotfiles
 ```
 
 Install a specific skill:
 
 ```bash
-npx skills add jonhill90/skills --skill primer
+npx skills add jonhill90/agent-dotfiles --skill primer
 ```
 
-The repository currently targets Codex, Claude Code, and GitHub Copilot. Other
-Agent Skills-compatible harnesses may work through the same installer.
+First-class harnesses (end state): Claude Code, Codex, GitHub Copilot, Pi.
+Other Agent Skills-compatible harnesses may work through the same installer.
 
 ## Repository Model
 
 ```text
+apm.yml          APM package manifest (user-scope deployment)
+.apm/            APM source tree — symlinks into the canonical directories
 skills/          Portable Agent Skills source
+instructions/    Canonical global agent instructions + per-harness overlays
 agents/          Reusable agent definitions
-docs/            Platform-agnostic reference material
+hooks/           Canonical hook scripts, harness-agnostic
+settings/        Wrapper-owned config fragments (claude, pi, mcp)
+evals/           Behavioral-parity scenarios and committed results
+docs/            PRD, spec, provenance manifest, research
 .agents/         Codex and cross-harness compatibility projection
 .claude/         Claude-specific configuration and development hooks
 .codex/          Codex-specific configuration and policy
@@ -36,8 +45,10 @@ docs/            Platform-agnostic reference material
 tools/           Standalone tools used by selected skills
 ```
 
-`skills/` is canonical. Harness directories contain configuration or symlinks
-back to canonical source; they are not independent copies.
+Canonical content lives in the top-level directories. Harness directories
+contain configuration or symlinks back to canonical source; they are not
+independent copies, and the committed symlinks are slated for retirement
+once the sync wrapper owns projection (SPEC §2).
 
 ## Core Workflow Skills
 
@@ -86,11 +97,8 @@ python3 -m unittest discover -s tests -v
 Two installation layers are intentional:
 
 - `npx skills` installs independent public skills.
-- APM packages will reproduce opinionated workflow profiles containing skills
-  plus agents, instructions, hooks, and MCP dependencies.
-
-APM packaging will be added after the portable source layout and installer
-behavior are stable.
+- APM installs the whole repo as a user-scope package (`apm install -g`),
+  the backbone of the personal sync design (SPEC §1).
 
 ## Content Boundaries
 
@@ -99,7 +107,9 @@ behavior are stable.
 - Employer repository material is research input only and is not copied,
   migrated, or adapted into this repository.
 
-See [docs/migration-audit.md](docs/migration-audit.md) for the source and
-selection decision behind each migrated skill.
+See [docs/provenance-manifest.md](docs/provenance-manifest.md) for every
+adopt/adapt/author/reject decision (and its predecessor,
+[docs/migration-audit.md](docs/migration-audit.md), for the original skill
+migration).
 
 See [AGENTS.md](AGENTS.md) for contribution rules.
