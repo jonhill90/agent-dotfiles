@@ -38,16 +38,16 @@ hooks/           Canonical hook scripts, harness-agnostic
 settings/        Wrapper-owned config fragments (claude, pi, mcp)
 evals/           Behavioral-parity scenarios and committed results
 docs/            PRD, spec, provenance manifest, research
-.agents/         Codex and cross-harness compatibility projection
-.claude/         Claude-specific configuration and development hooks
+.claude/         Claude-specific repo-development configuration and hooks
 .codex/          Codex-specific configuration and policy
 .github/         GitHub Copilot instructions and repository automation
 ```
 
-Canonical content lives in the top-level directories. Harness directories
-contain configuration or symlinks back to canonical source; they are not
-independent copies, and the committed symlinks are slated for retirement
-once the sync wrapper owns projection (SPEC §2).
+Canonical content lives in the top-level directories. Deployment is
+installer-owned: `apm install -g` places skills/instructions/agents at
+user scope and `scripts/sync.py apply` covers what APM does not (Pi
+projection, settings merges, teardown). The committed symlink matrix is
+retired (SPEC §2).
 
 ## Core Workflow Skills
 

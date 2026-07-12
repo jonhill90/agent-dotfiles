@@ -462,7 +462,7 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 |---|---|---|
 | M1 | Repo rename + layout migration (§2, §9.1–2) | validation suite green on new layout; `npx skills add . --list` still resolves |
 | M2 | APM package works | **Done 2026-07-12** ([verification](research/m2-install-verification.md)): skills deployed to both paths, marker-owned root files written, hand-authored files preserved |
-| M3 | Wrapper v1 | `sync apply/status/doctor/remove` pass unit tests; Pi surface fully projected (V4 resolved) |
+| M3 | Wrapper v1 | **Done 2026-07-12**: `sync apply/status/doctor/remove` implemented TDD (11 tests); live apply on this Mac — 6 stale root files torn down, `~/.pi/agent/AGENTS.md` projected (core + overlay), status clean; committed symlink matrix retired, validator enforces absence |
 | M1.5 | Skill roster cut | propose/veto table resolved; cut skills deleted; acceptance checks written for kept tool skills |
 | M4 | Memory tooling | V6 resolved ✅ (official CLI for the skill; memory = file ops); personal vault selected (not employer-hosted); vault conventions live; E12 passes on this Mac in CC and Pi |
 | M5 | Baseline run + gap-fill | superpowers uninstalled (baseline day); E1–E15 scored for all four v1 pairs; every failing scenario has an adopted fix with a results file; full-matrix re-run clean |
