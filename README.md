@@ -42,7 +42,6 @@ docs/            PRD, spec, provenance manifest, research
 .claude/         Claude-specific configuration and development hooks
 .codex/          Codex-specific configuration and policy
 .github/         GitHub Copilot instructions and repository automation
-tools/           Standalone tools used by selected skills
 ```
 
 Canonical content lives in the top-level directories. Harness directories
@@ -57,17 +56,17 @@ once the sync wrapper owns projection (SPEC §2).
 | `primer` | Orient in an unfamiliar codebase |
 | `using-tmux` | Operate persistent interactive terminal sessions safely |
 | `closing-the-loop` | Produce implementation plans tied to verification |
-| `create-skill` | Design portable skills with progressive disclosure |
-| `validate-skill` | Validate skills against this repository's portable contract |
+| `create-skill` | Design and validate portable skills with progressive disclosure |
 
-Additional skills integrate with GitHub, Azure DevOps, Linear, Microsoft Learn,
-Context7, Obsidian, and YouTube transcripts. Install them selectively to avoid
-overlapping triggers and unnecessary context.
+Additional skills integrate with GitHub, Azure DevOps, Linear, and Obsidian.
+Install them selectively to avoid overlapping triggers and unnecessary
+context.
 
-General software-development methodology skills such as TDD, Git worktrees,
-and parallel-agent dispatch are provided by
-[Superpowers](https://github.com/obra/superpowers) and are intentionally not
-duplicated here.
+The behavioral layer is deliberately minimal: loop discipline lives in the
+canonical instructions, and skills are added only when a failing eval
+justifies them (baseline-first rule — see
+[docs/SPEC.md](docs/SPEC.md) §4). Each kept tool skill has acceptance
+checks under [evals/acceptance/](evals/acceptance/).
 
 ## Authoring Contract
 

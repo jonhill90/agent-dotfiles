@@ -20,7 +20,13 @@ Decision types: **adopt** (pinned dependency, unmodified) · **adapt**
 | TDD stage | baseline instructions; lean skills as gap-fill candidates | Open (baseline-gated) | Auditioned only if E6/E7 fail at baseline |
 | Handoff/complete stage | baseline instructions; lean skills as gap-fill candidates | Open (baseline-gated) | Auditioned only if E13 fails at baseline |
 | Process-owning SDD frameworks (spec-kit, OpenSpec, BMAD, kin) | — | Reject (family) | PRD non-goal: components stay small, composable, individually removable; reaffirmed 2026-07-12 |
-| `ms-learn`, `ms-learn-cli` skills + `tools/mslearn` Go CLI | Jon (authored) | Reject (cut, owner decision 2026-07-12) | Skill-noise reduction; deletion pending roster propose/veto PR; git history is the archive |
+| `ms-learn`, `ms-learn-cli` skills + `tools/mslearn` Go CLI | Jon (authored) | Reject (cut 2026-07-12, deleted M1.5) | Skill-noise reduction, owner-named; git history is the archive |
+| `lint-agents` | Jon (authored) | Reject (cut 2026-07-12, deleted M1.5) | One-trick check; belongs in `scripts/validate_repository.py`, not an agent-facing skill |
+| `validate-skill` | Jon (authored) | Reject (folded into `create-skill`, M1.5) | One owner for skill authoring+validation; `create-skill` already carried the validation workflow |
+| `context7` skill | Jon (authored) | Reject (cut 2026-07-12, deleted M1.5) | Declared MCP server covers it on MCP-capable harnesses; accepted as unavailable on Pi |
+| `youtube-transcript` | Jon (authored) | Reject (cut 2026-07-12, deleted M1.5) | Occasional-use utility, not workflow; restorable from history |
+| `closing-the-loop`, `primer` | Jon (authored) | Open (baseline-gated, benched M1.5) | Kept in repo, removed from the default/baseline stack; earn installation via E1 (primer) and E4/E9/E10 A/B (closing-the-loop) like any candidate |
+| Kept tool-skill roster (`gh-cli`, `az-devops`, `linear`, `obsidian`, `using-tmux`, `create-skill`) | Jon (authored) | Adopt (roster cut 2026-07-12) | Daily drivers; each tool skill has acceptance checks in `evals/acceptance/`; displaceable only per the two-track rule |
 | Obsidian access CLI | third-party obsidian-cli vs official Obsidian CLI | Open (V6 research) | Official CLI adopted only if it covers memory-backend needs (create, search, scriptable read); blocks M4 |
 | `using-tmux` | Jon (authored) vs community candidates | Open (V7 acceptance checks) | Stays until a community skill passes the same acceptance checks with equal-or-fewer tokens |
 | Skill-authoring skill | Jon's `create-skill` | Author (keep) | One owner per stage; superpowers `writing-skills` (6.6k t) and mattpocock `writing-great-skills` rejected as duplicates |
