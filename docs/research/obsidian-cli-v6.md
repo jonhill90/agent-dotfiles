@@ -14,9 +14,16 @@
 
 ## Verdict
 
-**Keep the third-party obsidian-cli (Yakitrak) for v1, pinned.** The
-official CLI fails acceptance check 5 by design and is not installable
-on this machine today. Revisit trigger defined below.
+~~Keep the third-party obsidian-cli (Yakitrak) for v1, pinned.~~
+
+**OVERRIDDEN by owner decision, same day — see Addendum below. The
+official CLI is adopted; the memory backend drops its CLI dependency
+entirely (direct file operations).** The original analysis is preserved
+for the record.
+
+Original verdict: keep the third-party CLI — the official CLI fails
+acceptance check 5 by design and was not installable on this machine at
+research time.
 
 ## The contenders
 
@@ -81,6 +88,39 @@ binary runs anywhere files exist.
   CRUD, or the third-party CLI is abandoned upstream. Then re-run the
   same acceptance checks — the criteria file, not this doc, is the
   contract.
+
+## Addendum: owner override + hands-on verification (2026-07-12)
+
+Jon overrode the verdict: **use the official CLI; remove the
+third-party one.** Executed and verified live the same day:
+
+1. **Installer-vs-core discovery:** the machine "had" Obsidian 1.12.7
+   per the in-app updater, but the .app bundle (installer) was still
+   1.5.12 — and the CLI binary ships in the bundle. In-app updates
+   never deliver the CLI. Fixed by replacing the app with the 1.12.7
+   installer DMG.
+2. **Hands-on results (1.12.7, real vault):** `create` (with
+   frontmatter), `read`, `append`, `search` (indexed, ranked),
+   `property:read`, `delete permanent` — all verified working.
+3. **Docs correction:** the CLI does **not** auto-launch the app as the
+   help page implies. With Obsidian closed it fails fast: "The CLI is
+   unable to find Obsidian." The app must already be running.
+4. **PATH without sudo:** `ln -sf .../Obsidian.app/Contents/MacOS/obsidian-cli ~/bin/obsidian`
+   works; the app's own `/usr/local/bin` registration needs admin.
+5. **Third-party binary removed** from `~/bin`.
+
+**Architecture consequence:** the memory backend no longer depends on
+*any* CLI — its contract is direct file operations on the vault
+(satisfies every acceptance check on every harness trivially). The
+official CLI powers the `obsidian` skill on app-present machines. This
+makes the original check-5 objection moot for memory while giving the
+skill the richer official surface (search index, properties, daily
+notes, tasks).
+
+Side observation during testing: a `permalink` property was auto-added
+to the test note — a vault plugin (likely Basic Memory's sync plugin)
+is still active in Obsidian; harmless, but relevant when basic-memory
+is fully retired (§9.3).
 
 Sources: [Obsidian CLI help](https://obsidian.md/help/cli),
 [Obsidian 1.12 changelog](https://obsidian.md/changelog/2026-02-27-desktop-v1.12.4/),
