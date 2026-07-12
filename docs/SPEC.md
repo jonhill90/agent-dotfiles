@@ -387,7 +387,7 @@ scenarios prove they discriminate (eval-scenarios doctrine).
 
 | # | Item | Blocking? |
 |---|---|---|
-| V1 | APM follows `.apm/` symlinks for local-path install/pack | No — build-step fallback specified (§2) |
+| V1 | APM follows `.apm/` symlinks for local-path install/pack | **Verified 2026-07-12** (APM 0.24.1 live test): in-package symlinks (`.apm/skills -> ../skills`, target inside the package root) are dereferenced and the skill deploys to both `~/.agents/skills` and `~/.claude/skills`; symlinks escaping the package root are rejected with "Local install aborted". The §2 layout works as specified; no build-step fallback needed |
 | V2 | APM hooks primitive at user scope | No — wrapper owns hook wiring until proven (§3.3) |
 | V3 | `targets:` in `~/.apm/apm.yml` scopes global compile | No — cleanup fallback specified (§7) |
 | V4 | Pi local-extension install mechanics; superpowers on Pi 0.80.x | Yes for Pi hooks — resolve before M3 (§12) |
