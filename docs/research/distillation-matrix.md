@@ -74,7 +74,7 @@ matches the PRD's non-goals: small, composable, anti-framework
 
 ~50 skills but predominantly domain/tool skills (macOS apps, GitHub ops,
 SwiftUI, releases) — **not a behavioral layer**. Its loop discipline lives
-in AGENTS.MD (~2,692 tokens, always loaded), not in skills.
+in AGENTS.md (~2,692 tokens, always loaded), not in skills.
 
 - **Static cost:** heavy — 2,692t of hard rules in every session.
 - **Value to this project:** *patterns, not content.*
