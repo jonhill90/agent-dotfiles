@@ -1,0 +1,4 @@
+{"tool":"microsoft_docs_search","arguments":{"query":"Azure Functions triggers and bindings"}}
+{"tool":"microsoft_docs_search","arguments":{"query":"Azure Cosmos DB for NoSQL"}}
+{"tool":"microsoft_code_sample_search","arguments":{"query":"Azure Functions HTTP trigger","language":"python"}}
+{"tool":"microsoft_docs_fetch","arguments":{"url":"https://learn.microsoft.com/en-us/azure/azure-functions/functions-overview"}}
