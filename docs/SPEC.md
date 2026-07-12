@@ -36,7 +36,7 @@ agent-dotfiles repo
         └── sync wrapper (scripts/sync.py)              ← everything APM won't own
               Pi projection (~/.pi/agent/AGENTS.md, extensions, settings)
               Claude Code settings.json merge (permissions, hooks, model defaults)
-              memory tooling config (obsidian-cli, vault conventions)
+              memory tooling config (vault conventions, doctor checks)
               teardown of stale generated root files (by marker)
               preflight/doctor checks
 ```
@@ -215,7 +215,9 @@ Notes:
 ### 3.6 Memory (tooling only)
 
 Per [memory-backends.md](research/memory-backends.md): **Obsidian vault as
-the store, obsidian-cli as the access path, a memory-conventions skill +
+the store, direct file operations as the access path (V6 override —
+official Obsidian CLI powers the `obsidian` skill separately), a
+memory-conventions skill +
 instruction block as the contract.** Content is never synced by this repo.
 
 - **Vault location:** resolved per machine via `AGENT_MEMORY_VAULT` env
@@ -232,12 +234,16 @@ instruction block as the contract.** Content is never synced by this repo.
   - `agent/facts/<slug>.md` — one fact per note; frontmatter `type:
     user|feedback|project|reference`, `created:` (absolute date),
     `source:`; wiki-links between related notes.
-- **Tooling:** the third-party obsidian-cli (Yakitrak), pinned — V6
-  resolved 2026-07-12: direct file operations, GUI-free, deterministic
-  vault resolution; the official CLI requires the running desktop app
-  and is a human-side enhancement only
-  ([research](research/obsidian-cli-v6.md)). Installed by `install.sh`;
-  the existing `obsidian` skill is the access path; a new
+- **Access path (V6 resolved, owner override 2026-07-12):** the memory
+  contract itself uses **direct file operations** on the vault (read,
+  write, grep) — zero dependencies, works on every harness and headless
+  context by definition. The `obsidian` skill wraps the **official
+  Obsidian CLI** (app ≥1.12, verified hands-on) for richer operations
+  when the app is running; the CLI errors when the app is closed, so it
+  is never a memory-path dependency
+  ([research](research/obsidian-cli-v6.md)). `install.sh` checks the
+  installer version and CLI registration instead of installing a
+  third-party binary. A new
   small `memory-conventions` skill (authored, ~300 tokens) owns the
   read/write contract. Works identically on all four harnesses because it
   is CLI + files.
@@ -338,7 +344,8 @@ Commands:
 - `sync status` — drift report: `apm audit` + wrapper-owned surfaces
   (settings keys, Pi files, root files vs marker) vs `state.json`.
 - `sync doctor` — environment checks: required CLIs present (apm, node,
-  obsidian-cli, pi if expected), env vars set (`AGENT_MEMORY_VAULT`,
+  official Obsidian CLI registered if the app is expected, pi if
+  expected), env vars set (`AGENT_MEMORY_VAULT`,
   MCP auth vars, `APM_COPILOT_COWORK_SKILLS_DIR` pinned — live-trial
   wart 2), trust state.
 - `sync remove` — reverse everything `state.json` recorded.
@@ -370,7 +377,9 @@ cd ~/.agent-dotfiles-src && ./install.sh
 `install.sh` (macOS v1; Phase 3 generalizes):
 
 1. Ensure `uv` (installs if missing) → `uv tool install apm` (pinned).
-2. Ensure the Obsidian CLI (pinned; which CLI per V6 research) on PATH.
+2. If Obsidian is installed: verify installer ≥1.12 and register the
+   official CLI on PATH (`~/bin/obsidian` symlink; no third-party CLI).
+   Memory works without it (direct file operations).
 3. Prompt once for machine-local values (`AGENT_MEMORY_VAULT`, MCP env
    vars) → write shell-profile block + untracked local override file.
 4. `python3 scripts/sync.py apply`.
@@ -444,7 +453,7 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | V3 | `targets:` in `~/.apm/apm.yml` scopes global compile | No — cleanup fallback specified (§7) |
 | V4 | Pi local-extension install mechanics | No — deferred; only needed if an eval-justified hook is adopted (§4) |
 | V5 | (Phase 2) Copilot CLI MCP path, `~/.copilot/AGENTS.md`, `~/.agents/skills` symlink handling; Codex hook mechanism | No — Phase 2 |
-| V6 | Official Obsidian CLI vs third-party obsidian-cli | **Resolved 2026-07-12** ([research](research/obsidian-cli-v6.md)): keep third-party (Yakitrak, pinned) — official CLI is a remote control for the running app and fails acceptance check 5 (GUI-free) by design; its headless client (`ob`) is Sync/Publish only. Official CLI = optional human-side enhancement. Revisit if it gains GUI-free note CRUD. **New requirement:** `sync doctor` fails if `AGENT_MEMORY_VAULT` resolves under a corporate mount (`OneDrive-<Org>`); M4 must select a personal vault |
+| V6 | Official Obsidian CLI vs third-party obsidian-cli | **Resolved 2026-07-12, owner override** ([research + addendum](research/obsidian-cli-v6.md)): **official CLI adopted** (Jon's call); third-party removed from the machine. Verified hands-on on 1.12.7: create/read/append/search/property work; the CLI does **not** auto-launch the app — it errors when Obsidian is closed. Consequence: the memory backend uses **direct file operations** (no CLI dependency — passes all acceptance checks trivially); the `obsidian` skill wraps the official CLI for app-present machines. Installer-vs-core gotcha: in-app updates don't deliver the CLI; a fresh installer does. **Unchanged requirement:** `sync doctor` fails if `AGENT_MEMORY_VAULT` resolves under a corporate mount (`OneDrive-<Org>`); M4 must select a personal vault |
 | V7 | Community tmux-skill candidates vs `using-tmux` acceptance checks | No — swap decision, not a blocker; `using-tmux` stays until displaced |
 
 ## 12. Milestones (Phase 1)
@@ -455,7 +464,7 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | M2 | APM package works | `apm install -g <repo-path>` deploys skills to both paths; `compile --global` writes marker-owned root files |
 | M3 | Wrapper v1 | `sync apply/status/doctor/remove` pass unit tests; Pi surface fully projected (V4 resolved) |
 | M1.5 | Skill roster cut | propose/veto table resolved; cut skills deleted; acceptance checks written for kept tool skills |
-| M4 | Memory tooling | V6 resolved (which Obsidian CLI); vault conventions live; E12 passes on this Mac in CC and Pi |
+| M4 | Memory tooling | V6 resolved ✅ (official CLI for the skill; memory = file ops); personal vault selected (not employer-hosted); vault conventions live; E12 passes on this Mac in CC and Pi |
 | M5 | Baseline run + gap-fill | superpowers uninstalled (baseline day); E1–E15 scored for all four v1 pairs; every failing scenario has an adopted fix with a results file; full-matrix re-run clean |
 | M6 | New-machine test | E16 passes on a clean macOS user account/VM for CC + Pi |
 
