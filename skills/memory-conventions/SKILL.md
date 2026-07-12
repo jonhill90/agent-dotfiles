@@ -11,11 +11,15 @@ app required, works headless on every harness.
 
 ## Layout
 
+The `agent/` directory is an OKF-conformant bundle (markdown + YAML
+frontmatter; permissive consumption — never reject a malformed fact).
+
 ```text
 $AGENT_MEMORY_VAULT/
   agent/
     index.md        # the only file loaded at session start
-    facts/<slug>.md # one fact per note
+    log.md          # append-only history (temporal layer)
+    facts/<slug>.md # one fact per note, semantic kebab-slug filename
 ```
 
 ## Session start
@@ -28,12 +32,16 @@ facts on demand when their hook matches the task.
 When the user states something durable (preference, decision,
 constraint, reference):
 
-1. Create `agent/facts/<kebab-slug>.md`:
+1. Create `agent/facts/<kebab-slug>.md` — the slug names the
+   *concept*, never a timestamp (concept = identity; update in place):
 
 ```markdown
 ---
 type: user|feedback|project|reference
-created: YYYY-MM-DD
+title: <display name>
+description: <one line — becomes the index hook>
+created: <ISO 8601 with seconds, UTC, e.g. 2026-07-12T18:42:07Z>
+updated: <same format>
 source: <where this came from>
 ---
 
@@ -42,7 +50,11 @@ source: <where this came from>
 
 2. Add one index line: a markdown list item linking the fact — link
    text is the title, target is `facts/<slug>.md`, followed by
-   ` — <one-line hook>`.
+   ` — <description>`.
+3. Append to `agent/log.md` under a `## YYYY-MM-DD` heading (newest
+   day first). Entry: bold operation verb (`**Create**`, `**Update**`,
+   `**Delete**`), the fact's title linked to its file, ` — <reason>`,
+   and the UTC time `(HH:MM:SSZ)`.
 
 ## Maintaining
 

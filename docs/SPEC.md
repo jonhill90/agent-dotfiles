@@ -227,13 +227,25 @@ instruction block as the contract.** Content is never synced by this repo.
   path resolves under a corporate mount (`OneDrive-<Org>` pattern) —
   the employer boundary applies to memory data, and the current default
   vault on this Mac is employer-hosted (V6 machine-state finding).
-- **Schema inside the vault** (Karpathy-style index + files):
+- **Schema inside the vault** (v2, 2026-07-12 — an OKF v0.1-conformant
+  bundle; lineage and rationale in
+  [memory-format-distillation](research/memory-format-distillation.md)):
   - `agent/index.md` — the only file loaded at session start; hard cap
     200 lines / 25KB (matches CC's native memory budget). One line per
-    memory: `- [title](facts/<slug>.md) — hook`.
-  - `agent/facts/<slug>.md` — one fact per note; frontmatter `type:
-    user|feedback|project|reference`, `created:` (absolute date),
-    `source:`; wiki-links between related notes.
+    memory: `- [title](facts/<slug>.md) — hook` (the hook is the
+    fact's `description`).
+  - `agent/log.md` — append-only history, `## YYYY-MM-DD` headings
+    newest first; entries `**Create|Update|Delete** [title](facts/…) —
+    reason (HH:MM:SSZ)`. The temporal layer.
+  - `agent/facts/<kebab-slug>.md` — one fact per note, **semantic slug
+    filenames** (concept = identity; update in place, never
+    duplicate). Frontmatter: `type: user|feedback|project|reference`
+    (required), `title`, `description`, `created`/`updated` (ISO 8601
+    with seconds, UTC), `source`, optional `tags`. Wiki-links between
+    related facts; broken links = not-yet-written facts (OKF §5.3).
+  - Consumption is permissive (OKF §9): malformed facts are linted,
+    never rejected. Lint (contradictions, stale facts, orphans, index
+    drift) stays convention-only unless M5 evals show memory rot.
 - **Access path (V6 resolved, owner override 2026-07-12):** the memory
   contract itself uses **direct file operations** on the vault (read,
   write, grep) — zero dependencies, works on every harness and headless
