@@ -47,9 +47,7 @@ dynamically via skills and references.
 
 ## Primary Customer
 
-Jon. Me-first, public-friendly: when personal-workflow needs and public
--product needs conflict, personal wins. Public installability of individual
-skills is a preserved constraint, not the driver.
+Jon. Me-first, public-friendly: when personal-workflow needs and public-product needs conflict, personal wins. Public installability of individual skills is a preserved constraint, not the driver.
 
 ## Success Criteria
 
