@@ -1,3 +1,7 @@
+# APM (generated)
+apm_modules/
+build/
+
 # Local environment
 .env
 .DS_Store

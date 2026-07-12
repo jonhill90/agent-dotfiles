@@ -2,9 +2,11 @@
 
 ## Project
 
-`skills` is a personal, multi-harness workflow layer for AI coding agents.
-Portable Agent Skills are the primary product. Agents, instructions, hooks, MCP
-configuration, and future package profiles are optional layers.
+`agent-dotfiles` is Jon's versioned personal harness for AI coding agents —
+dotfiles for agents. Portable Agent Skills remain individually installable;
+canonical instructions, hooks, agents, settings, and MCP declarations are the
+other managed layers. Product requirements live in `docs/PRD.md`; the
+technical design in `docs/SPEC.md`.
 
 This file is the shared repository policy. `CLAUDE.md` and
 `.github/copilot-instructions.md` point here for harness compatibility.
@@ -21,19 +23,28 @@ This file is the shared repository policy. `CLAUDE.md` and
 ## Canonical Layout
 
 ```text
+apm.yml                  # APM package manifest (deploys the repo at user scope)
+.apm/                    # APM source tree — symlinks into the canonical dirs
 skills/
   <skill-name>/
     SKILL.md
     scripts/
     references/
     assets/
+instructions/
+  global.instructions.md # canonical global agent instructions (≤200 lines)
+  overlays/              # per-harness additions, wrapper-projected
 agents/
+hooks/                   # canonical hook scripts, harness-agnostic
+settings/                # wrapper-owned config fragments (claude, pi, mcp)
+evals/                   # behavioral-parity scenarios + committed results
 docs/
 scripts/
 tests/
 ```
 
-Compatibility projections:
+Compatibility projections (retired once `scripts/sync.py apply` owns
+projection — SPEC §2):
 
 - `.agents/skills -> ../skills`
 - `.claude/skills -> ../skills`
@@ -90,7 +101,9 @@ Run language-specific tests when changing bundled scripts or tools.
 ## Distribution
 
 - Use `npx skills` for individual skill discovery and installation.
-- Use APM for future reproducible workflow packages.
+- Use APM as the sync backbone: the repo is an APM package installed at
+  user scope (`apm install -g`), with a thin wrapper for what APM does
+  not own (SPEC §7).
 - Do not hand-maintain a growing matrix of harness skill copies.
 - Generated package or harness output must identify its canonical source.
 
