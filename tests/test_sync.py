@@ -154,11 +154,24 @@ class DoctorTests(SyncTestCase):
         self.assertFalse(checks["memory-vault-personal"][0])
 
     def test_accepts_personal_vault(self) -> None:
-        env = {
-            "AGENT_MEMORY_VAULT": str(
-                self.home / "Library/CloudStorage/OneDrive-Personal/vault"
-            )
-        }
+        vault = self.home / "Library/CloudStorage/OneDrive-Personal/vault"
+        vault.mkdir(parents=True)
+        env = {"AGENT_MEMORY_VAULT": str(vault)}
+        checks = dict(self.syncer.doctor_checks(env=env))
+        self.assertTrue(checks["memory-vault-personal"][0])
+
+    def test_vault_set_but_missing_path_fails(self) -> None:
+        env = {"AGENT_MEMORY_VAULT": str(self.home / "no-such-vault")}
+        checks = dict(self.syncer.doctor_checks(env=env))
+        ok, detail = checks["memory-vault-personal"]
+        self.assertFalse(ok)
+        self.assertIn("does not exist", detail)
+
+    def test_accepts_existing_personal_vault_with_agent_dir(self) -> None:
+        vault = self.home / "icloud" / "Agent Memory"
+        (vault / "agent" / "facts").mkdir(parents=True)
+        (vault / "agent" / "index.md").write_text("# idx\n")
+        env = {"AGENT_MEMORY_VAULT": str(vault)}
         checks = dict(self.syncer.doctor_checks(env=env))
         self.assertTrue(checks["memory-vault-personal"][0])
 
