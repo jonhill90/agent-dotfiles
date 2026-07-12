@@ -232,6 +232,13 @@ class Sync:
                     (False, f"memory vault on a corporate mount: {vault}"),
                 )
             )
+        elif not Path(vault).is_dir():
+            checks.append(
+                (
+                    "memory-vault-personal",
+                    (False, f"memory vault path does not exist: {vault}"),
+                )
+            )
         else:
             checks.append(("memory-vault-personal", (True, vault)))
         claude_md = self.home / ".claude" / "CLAUDE.md"

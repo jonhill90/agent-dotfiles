@@ -31,7 +31,8 @@ Decision types: **adopt** (pinned dependency, unmodified) · **adapt**
 | `using-tmux` | Jon (authored) vs community candidates | Open (V7 acceptance checks) | Stays until a community skill passes the same acceptance checks with equal-or-fewer tokens |
 | Skill-authoring skill | Jon's `create-skill` | Author (keep) | One owner per stage; superpowers `writing-skills` (6.6k t) and mattpocock `writing-great-skills` rejected as duplicates |
 | Memory store | Obsidian vault + obsidian-cli | Adopt (pinned CLI) | Plain markdown, zero infra, vault sync solves cross-machine; CLI path portable to all four harnesses ([memory-backends](research/memory-backends.md)) |
-| Memory conventions skill | self | Author | Contract for index + one-fact-per-note schema (SPEC §3.6) |
+| Memory conventions skill | self | Author (shipped M4) | Contract for index + one-fact-per-note schema (SPEC §3.6) |
+| Memory instruction rules: write completion-gate + read-before-recall | authored, via E12 auditions | Adopt (eval-justified 2026-07-12) | First baseline-first adoptions; CC native memory shadowed the vault until gated ([E12 results](../evals/results/2026-07-12-e12-memory-writeback.md)) |
 | Graphiti (Zep) | Zep | Reject (benched) | Standing graph-DB infra + MCP-only access; revisit trigger = search retrieval demonstrably failing |
 | basic-memory | incumbent | Reject | Dropped by intent decision; MCP server failure mid-session with no CLI fallback (2026-07-11) |
 | Process-owning framework model | spec-kit | Reject (counterexample) | PRD non-goal: components stay small, composable, individually removable |
