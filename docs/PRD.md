@@ -219,3 +219,18 @@ Every candidate is scored against:
 | Obsidian access path | Official Obsidian CLI researched against memory-backend needs before any swap |
 | using-tmux | Community search + acceptance checks before keep/swap decision |
 | Machine migration | Superpowers 5.1.0 stays installed until baseline day (its removal is step 1 of the baseline protocol) |
+
+## Decision Log Addendum 2 (memory format distillation, 2026-07-12)
+
+Sources: INMPARA (Jon's 2025 system), the live Second Brain vault,
+Karpathy's llm-wiki gist, Google OKF v0.1. Full analysis:
+`docs/research/memory-format-distillation.md`.
+
+| Decision | Choice |
+|---|---|
+| Memory vault format | OKF v0.1-conformant bundle (markdown + frontmatter; `type` required; permissive consumption) — interoperable with any OKF consumer |
+| Two systems, one format family | Second Brain = knowledge (its own synaptic/INMPARA conventions); Agent Memory vault = agent memory. Never merged; agents follow each system's own rules |
+| Fact filenames | Semantic kebab slugs (concept = identity; update in place, never duplicate). Timestamp-ID filenames rejected for facts — they are the Second Brain's human-capture pattern |
+| Timestamps | ISO 8601 with seconds, UTC, in frontmatter (`created`/`updated`) and log entries — minute precision collides for agent writers; answers YYYYMMDDHHMM-vs-HHMMSS: neither in filenames, seconds in metadata |
+| Temporal layer | Append-only `log.md` (OKF/Karpathy format) — cheapest temporal reasoning; shrinks the Graphiti gap |
+| Operations model | Karpathy ingest/query/lint; lint stays convention-only until evals show memory rot |
