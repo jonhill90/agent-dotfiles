@@ -1,6 +1,8 @@
 # Technical Spec: agent-dotfiles
 
-- **Status:** Draft v1 — 2026-07-12
+- **Status:** Draft v1.1 — 2026-07-12 (baseline-first revision: superpowers
+  dropped; selection rule replaced — see §4 and the PRD decision log
+  addendum)
 - **Owner:** Jon Hill
 - **Inputs:** [PRD](PRD.md), Phase 0 research
   ([APM verification](research/apm-verification.md),
@@ -58,10 +60,11 @@ Design rules, from the PRD and research:
    enhancement, never the only access path.
 5. **Per-harness thinning is a requirement** (harness baselines Finding
    3): Claude Code gets the thinnest static layer, Pi the thickest.
-6. **Evals arbitrate** (PRD rubric #5): behavioral-layer conflicts are
-   settled by the E1–E16 scenarios, not by this spec's opinions. Where a
-   conflict is still open, this spec names the incumbent and the deciding
-   scenarios.
+6. **Baseline-first, evals arbitrate** (PRD Selection Rubric, 2026-07-12
+   rule): the starting behavioral stack is the canonical instructions and
+   nothing else. Components are added only when a failing eval justifies
+   them, smallest candidate first. There is no framework comparison to
+   win — the eval matrix is the distiller.
 
 ## 2. Repository Layout
 
@@ -124,10 +127,10 @@ Notes:
   `~/.agents/skills/` natively — zero Pi projection for skills.
 - **Third-party skills are declared, pinned dependencies** in `apm.yml`
   (`#tag` or `#sha` from day one — live-trial wart 4). Never vendored.
-  v1 dependency set:
-  - `obra/superpowers#v6.1.1` — behavioral chassis (see §4).
-  - Individual mattpocock skills only after evals decide the duplicate
-    conflicts (§4); installed per-skill, never the whole collection.
+  **The v1 dependency set starts empty.** A third-party skill enters only
+  with evidence: a failing eval it fixes (behavioral) or a passed
+  acceptance check at equal-or-fewer tokens (tool skill) — see §4 and
+  §10. Installed per-skill, never whole collections.
 - Frozen `npx skills` copies in `~/.agents/skills` and drifted plugin
   installs on Jon's machines are replaced by managed installs during
   migration (§9) — the PRD's consolidation criterion.
@@ -161,10 +164,13 @@ Notes:
 
 ### 3.3 Hooks & Guardrails
 
-- **Bootstrap/enforcement hooks:** adopted from superpowers as a pinned
-  dependency — its SessionStart injection (~765 tokens) is the parity
-  engine, with shipped projections for Claude Code (plugin hooks) and Pi
-  (`.pi/extensions`). Not reimplemented.
+- **No bootstrap/enforcement hooks in the v1 baseline.** A session-start
+  injection is a *candidate fix*, auditioned like any other component and
+  only if the baseline run shows the failure it treats: installed skills
+  not firing (E14) or the loop being skipped on weaker pairs (E3/E9
+  model-down). Audition order follows smallest-first: an instruction
+  line → a ~100–200-token authored injection → anything heavier. If
+  nothing fails, no hook exists in v1 on any harness.
 - **Jon's own hooks** (validation, safety checks) live in `hooks/` as
   plain scripts; per-harness wiring is installer-owned:
   - Claude Code: wrapper merges hook entries into `~/.claude/settings.json`.
@@ -185,7 +191,7 @@ Notes:
 - Projection: APM handles Claude Code (`.mcp.json`/settings scopes) and,
   in Phase 2, Codex (`config.toml`) and Copilot. Pi gets none by design;
   every MCP-backed capability must already satisfy the CLI-first rule
-  (e.g. `ms-learn-cli` covers Microsoft Learn where MCP is absent).
+  or be accepted as unavailable on Pi.
 - v1 declared set: the servers Jon actually uses today (context7,
   deepwiki, microsoft-learn). Anything else is per-machine local config,
   not dotfiles.
@@ -222,8 +228,11 @@ instruction block as the contract.** Content is never synced by this repo.
   - `agent/facts/<slug>.md` — one fact per note; frontmatter `type:
     user|feedback|project|reference`, `created:` (absolute date),
     `source:`; wiki-links between related notes.
-- **Tooling:** obsidian-cli pinned (v0.x — pin exact version); installed
-  by `install.sh`; the existing `obsidian` skill is the access path; a new
+- **Tooling:** an Obsidian CLI, pinned — **which one is V6 research**
+  (official Obsidian CLI vs the third-party obsidian-cli the current
+  skill wraps; the official one wins if it covers create/search/
+  scriptable read). Installed by `install.sh`; the `obsidian` skill
+  (rewired to the V6 winner) is the access path; a new
   small `memory-conventions` skill (authored, ~300 tokens) owns the
   read/write contract. Works identically on all four harnesses because it
   is CLI + files.
@@ -234,25 +243,44 @@ instruction block as the contract.** Content is never synced by this repo.
   retrieval failing (agent cannot find facts it stored), per research.
 - basic-memory: removed by migration (§9).
 
-## 4. Behavioral-Layer Composition
+## 4. Behavioral-Layer Composition (baseline-first, revised 2026-07-12)
 
-Per the distillation matrix — hybrid, superpowers as enforcement chassis:
+Superpowers is dropped entirely — dependency, hook, and skills (PRD
+decision log addendum). There is no chassis and no framework
+head-to-head. The behavioral layer is *grown from a measured baseline*:
 
-| Role | Source | Status |
-|---|---|---|
-| Bootstrap/enforcement (skill-check contract, session hooks, Pi/Codex shims) | superpowers, pinned `#v6.1.1` | Adopt (decided — only cross-harness enforcement that exists) |
-| Loop skills where no conflict (writing-plans, executing-plans, systematic-debugging, verification-before-completion, worktrees, subagent dispatch) | superpowers | Adopt via chassis |
-| Intent/grilling | superpowers `brainstorming` (2.6k t) vs matt `grill-me`/`grilling` (36–205 t) | **Open — decided by E3, E5** run model-down; lean wins on rubric #1 if it passes |
-| TDD | superpowers `test-driven-development` (2.5k t) vs matt `tdd` (803 t) | **Open — decided by E6, E7** |
-| Skill authoring | Jon's `create-skill` | Keep one owner; superpowers `writing-skills` and matt `writing-great-skills` rejected as duplicates |
-| Handoff/complete | superpowers `finishing-a-development-branch` vs matt `handoff` | **Open — decided by E13** |
-| Sync mechanics, pointer instructions, tools.md, terse style | agent-scripts | Patterns only; no content dependency |
-| Everything nothing upstream owns (closing-the-loop, primer, tool skills, identity) | Jon's layer | Author/keep |
+1. **Baseline = canonical instructions only.** The ~700-token
+   `global.instructions.md` (plus the Pi overlay on Pi) already encodes
+   the loop: orient → plan → implement → verify → complete. No
+   behavioral skills installed, no hooks, no session injections.
+2. **Baseline run:** execute E1–E15 on all v1 harness×model pairs with
+   that stack. Whatever passes needs nothing — native harness behavior
+   plus instructions already cover it.
+3. **Gap-fill auditions:** for each failing scenario, audition the
+   smallest candidate that plausibly fixes it, re-running only that
+   scenario:
+   - a sentence in the canonical instructions or a harness overlay;
+   - a lean skill (community — e.g. mattpocock's 36–800-token process
+     skills — or authored; superpowers' skills are parts-bin candidates
+     here, nothing more);
+   - a session-start injection (~100–200 tokens, authored) — only for
+     E14-class triggering failures;
+   - heavier machinery last, and only with a results file showing the
+     lighter options failed.
+4. **Adoption:** the winning fix is recorded in the provenance manifest
+   with its deciding results file, pinned in `apm.yml` if third-party,
+   and counted against the static budget (§6) if always-loaded.
 
-Conflict-resolution procedure: install both candidates in the eval
-sandbox only (never both on a live machine — rubric #3, one owner per
-loop stage), run the deciding scenarios on all v1 pairs, record
-winner/loser in the provenance manifest, pin the winner in `apm.yml`.
+Standing constraints: one owner per loop stage (rubric #3 — an adopted
+fix displaces anything overlapping it); candidates are auditioned in
+the eval sandbox, never installed speculatively on a live machine;
+process-owning frameworks (spec-kit, OpenSpec, BMAD, and kin) are
+rejected as a family and are not candidates (PRD non-goal).
+agent-scripts remains a pattern donor only.
+
+Jon's authored layer (identity instructions, skills surviving the
+roster cut) is subject to the same rule in reverse: anything the
+baseline proves redundant is thinned.
 
 ## 5. Per-Harness Projection Summary (v1)
 
@@ -260,7 +288,7 @@ winner/loser in the provenance manifest, pin the winner in `apm.yml`.
 |---|---|---|
 | Skills | APM → `~/.claude/skills/` | native `~/.agents/skills/` (APM-populated) |
 | Instructions | APM → `~/.claude/CLAUDE.md` (marker-owned) | wrapper → `~/.pi/agent/AGENTS.md` (core + pi overlay) |
-| Hooks | superpowers plugin + wrapper-merged settings hooks | superpowers `.pi/extensions` + wrapper extension shim |
+| Hooks | none in v1 baseline; wrapper merges settings hooks only if a fix is adopted (§4) | none in v1 baseline; wrapper extension shim only if a fix is adopted |
 | MCP | APM → settings scopes | none (by design; CLI-first rule) |
 | Agents | APM agents primitive | n/a v1 |
 | Settings | wrapper merge into `~/.claude/settings.json` | wrapper merge into `~/.pi/agent/settings.json` |
@@ -280,7 +308,7 @@ enforced by `scripts/validate_repository.py`; verified live by E15.
 |---|---|
 | Canonical global instructions | ≤ 2,000 (≈200 lines) |
 | Per-harness overlay (worst case: Pi) | ≤ 1,500 |
-| Bootstrap hook injection (superpowers) | ≤ 1,000 (measured 765) |
+| Session-start injection (baseline: none; reserved for an eval-justified fix) | ≤ 500 (baseline measured 0) |
 | Memory index (vault `agent/index.md`) | ≤ 1,500 |
 | Installed-skill descriptions (aggregate frontmatter in system prompt) | ≤ 2,000 |
 | **Total static, thickest harness** | **≤ 8,000** |
@@ -317,10 +345,10 @@ Wrapper-owned jobs (the APM live-trial "wart list" verbatim):
    doesn't use (kiro, hermes, windsurf…) (wart 3). **Verify item V3:**
    whether `targets:` in `~/.apm/apm.yml` scopes global compile; if yes,
    pin targets there instead of cleaning up after.
-2. **Pi projection** — `~/.pi/agent/AGENTS.md`, extension shim install,
-   settings merge. **Verify item V4:** local-extension install mechanics
-   (`pi install <path>` vs settings `extensions` entry) and that
-   superpowers' package installs on Pi 0.80.x.
+2. **Pi projection** — `~/.pi/agent/AGENTS.md` and settings merge. An
+   extension shim is only added if an eval-justified hook is adopted
+   (§4); **verify item V4** (local-extension install mechanics) is
+   deferred until then.
 3. **Settings merges** with state tracking (§3.5).
 4. **First-run adoption** of hand-authored root files (§3.2).
 
@@ -337,7 +365,7 @@ cd ~/.agent-dotfiles-src && ./install.sh
 `install.sh` (macOS v1; Phase 3 generalizes):
 
 1. Ensure `uv` (installs if missing) → `uv tool install apm` (pinned).
-2. Ensure obsidian-cli (pinned) on PATH.
+2. Ensure the Obsidian CLI (pinned; which CLI per V6 research) on PATH.
 3. Prompt once for machine-local values (`AGENT_MEMORY_VAULT`, MCP env
    vars) → write shell-profile block + untracked local override file.
 4. `python3 scripts/sync.py apply`.
@@ -356,8 +384,9 @@ write-back), E15 (token budget) all pass on the fresh machine.
 3. On each existing machine, before first `sync apply`:
    - remove frozen `npx skills` copies in `~/.agents/skills` (wrapper
      preflight detects and lists them; removal is confirmed, not silent);
-   - uninstall drifted superpowers plugin install (5.1.0) — replaced by
-     the pinned dependency;
+   - the superpowers plugin (5.1.0) stays installed until baseline day:
+     uninstalling it is step 1 of the baseline protocol (§10), and
+     nothing replaces it unless a failing eval does;
    - remove basic-memory configuration;
    - back up hand-authored `~/.claude/CLAUDE.md` (§3.2).
 4. Secret scan runs in validation from the first commit of the new layout
@@ -375,13 +404,31 @@ scenarios prove they discriminate (eval-scenarios doctrine).
   the prompt, score against criteria. A pair passes a stage when all its
   scenarios pass **twice consecutively**.
 - Results: `evals/results/<date>-<harness>-<model>.md` — one matrix per
-  run, committed. The distillation-matrix conflicts are closed only by
-  results files referenced from the provenance manifest.
+  run, committed. Adoption decisions are closed only by results files
+  referenced from the provenance manifest.
 - v1 pairs: Claude Code×Fable (baseline), Claude Code×Sonnet, Pi×default,
   Pi×Sonnet-class.
-- Thinning check: E3/E9 on Claude Code×Fable with the behavioral layer
-  OFF — if native behavior passes, the corresponding overlay/static
-  content stays out of the CC projection.
+
+**Baseline protocol (the §4 selection rule, operationalized):**
+
+1. On the eval machine: uninstall the superpowers plugin — rip-out day
+   is baseline day. Stack = canonical instructions (+ Pi overlay on Pi),
+   surviving tool skills, nothing else.
+2. Run E1–E15 on all v1 pairs; commit the matrix.
+3. Per failing scenario: audition the smallest fix (§4 order), re-run
+   that scenario twice, record winner + results file in the provenance
+   manifest.
+4. Re-run the full matrix with the adopted set before declaring M5 done
+   (fixes must not regress previously passing scenarios).
+
+**Tool-skill track (acceptance checks):** loop evals do not cover tool
+skills. Each kept tool skill gets
+`evals/acceptance/<skill>.md` — 3–5 concrete tasks the skill must let
+the agent complete (e.g. obsidian: create note, search, read from a
+script — the memory backend's needs; tmux: start session, verified
+send-keys, recover a stuck pane). A community candidate displaces a
+personal skill only by passing the same checks with equal-or-fewer
+tokens loaded. Swap decisions cite the check file in the manifest.
 
 ## 11. Verification Items (carry into implementation)
 
@@ -390,8 +437,10 @@ scenarios prove they discriminate (eval-scenarios doctrine).
 | V1 | APM follows `.apm/` symlinks for local-path install/pack | **Verified 2026-07-12** (APM 0.24.1 live test): in-package symlinks (`.apm/skills -> ../skills`, target inside the package root) are dereferenced and the skill deploys to both `~/.agents/skills` and `~/.claude/skills`; symlinks escaping the package root are rejected with "Local install aborted". The §2 layout works as specified; no build-step fallback needed |
 | V2 | APM hooks primitive at user scope | No — wrapper owns hook wiring until proven (§3.3) |
 | V3 | `targets:` in `~/.apm/apm.yml` scopes global compile | No — cleanup fallback specified (§7) |
-| V4 | Pi local-extension install mechanics; superpowers on Pi 0.80.x | Yes for Pi hooks — resolve before M3 (§12) |
+| V4 | Pi local-extension install mechanics | No — deferred; only needed if an eval-justified hook is adopted (§4) |
 | V5 | (Phase 2) Copilot CLI MCP path, `~/.copilot/AGENTS.md`, `~/.agents/skills` symlink handling; Codex hook mechanism | No — Phase 2 |
+| V6 | Official Obsidian CLI: capabilities vs memory-backend needs (create, search, read — headless/scriptable); replaces third-party obsidian-cli only if it covers them | Yes for M4 — resolve before memory tooling ships |
+| V7 | Community tmux-skill candidates vs `using-tmux` acceptance checks | No — swap decision, not a blocker; `using-tmux` stays until displaced |
 
 ## 12. Milestones (Phase 1)
 
@@ -400,8 +449,9 @@ scenarios prove they discriminate (eval-scenarios doctrine).
 | M1 | Repo rename + layout migration (§2, §9.1–2) | validation suite green on new layout; `npx skills add . --list` still resolves |
 | M2 | APM package works | `apm install -g <repo-path>` deploys skills to both paths; `compile --global` writes marker-owned root files |
 | M3 | Wrapper v1 | `sync apply/status/doctor/remove` pass unit tests; Pi surface fully projected (V4 resolved) |
-| M4 | Memory tooling | vault conventions live; E12 passes on this Mac in CC and Pi |
-| M5 | Evals run | E1–E15 scored for all four v1 pairs; open conflicts (§4) closed in provenance manifest |
+| M1.5 | Skill roster cut | propose/veto table resolved; cut skills deleted; acceptance checks written for kept tool skills |
+| M4 | Memory tooling | V6 resolved (which Obsidian CLI); vault conventions live; E12 passes on this Mac in CC and Pi |
+| M5 | Baseline run + gap-fill | superpowers uninstalled (baseline day); E1–E15 scored for all four v1 pairs; every failing scenario has an adopted fix with a results file; full-matrix re-run clean |
 | M6 | New-machine test | E16 passes on a clean macOS user account/VM for CC + Pi |
 
 Phase 1 exit = PRD success criteria: M6 (primary), M5 parity matrix
