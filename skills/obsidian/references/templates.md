@@ -54,7 +54,7 @@ DATE_ISO=$(date +"%Y-%m-%d")
 ### Multiline Content via Heredoc
 
 ```bash
-obsidian-cli create "{path}" --content "$(cat <<'EOF'
+obsidian create name="{path}" content="$(cat <<'EOF'
 ---
 id: ...
 type: ...
@@ -73,8 +73,8 @@ EOF
 
 ### Before Creating
 
-1. **Search first** — check if a similar note exists: `obsidian-cli search-content "topic"`
-2. **List the target folder** — verify you're writing to the right place: `obsidian-cli list "{folder}"`
+1. **Search first** — check if a similar note exists: `obsidian search query="topic"`
+2. **List the target folder** — verify you're writing to the right place: `obsidian files folder="{folder}"`
 3. **Check vault rules** — use the correct template for the note type
 4. **If unsure about location** — list parent folders to discover subfolders, ask the user if ambiguous
 
@@ -82,14 +82,14 @@ EOF
 
 When modifying an existing note, always preserve the frontmatter. Use the read-modify-write pattern:
 
-1. `obsidian-cli print "{path}"` — read current content
+1. `obsidian read path="{path}"` — read current content
 2. Modify content (keep frontmatter intact, update `updated` field)
-3. `obsidian-cli create "{path}" --content "..." --overwrite`
+3. `obsidian create name="{path}" content="..." overwrite`
 
 To update just the `updated` field after editing:
 
 ```bash
-obsidian-cli fm "{path}" --edit --key "updated" --value "$(date +%Y-%m-%d)"
+obsidian property:set name="updated" value="$(date +%Y-%m-%d)" type=date file="{path}"
 ```
 
 ### Tags
@@ -97,7 +97,7 @@ obsidian-cli fm "{path}" --edit --key "updated" --value "$(date +%Y-%m-%d)"
 Tags are managed via frontmatter, not inline. When updating tags:
 
 ```bash
-obsidian-cli fm "{path}" --edit --key "tags" --value "[tag1, tag2, tag3]"
+obsidian property:set name="tags" value="tag1,tag2,tag3" type=list file="{path}"
 ```
 
 **Warning:** This overwrites the entire tags field. Include existing tags in the value.

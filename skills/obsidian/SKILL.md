@@ -1,75 +1,72 @@
 ---
 name: obsidian
-description: Read, write, search, and manage notes in Obsidian vaults using obsidian-cli. Use when working with Obsidian notes, vaults, knowledge bases, daily notes, or personal wikis.
+description: Read, write, search, and manage notes in Obsidian vaults using the official Obsidian CLI. Use when working with Obsidian notes, vaults, knowledge bases, daily notes, tasks, or personal wikis.
 ---
 
 # Obsidian Vault Operations
 
-Interact with Obsidian vaults using obsidian-cli (Go binary).
+Interact with Obsidian vaults using the official Obsidian CLI (`obsidian`),
+bundled with the desktop app since v1.12.
 
-**CLI:** `obsidian-cli`
+**Architecture note (verified 2026-07-12):** the CLI remote-controls the
+Obsidian app and **requires it to be already running** — with the app
+closed, commands fail fast with "The CLI is unable to find Obsidian"
+(it does not auto-launch, despite what some docs imply; `open -a
+Obsidian` first if needed). For plain file reads/writes where the app is
+unavailable (headless machines, CI), fall back to direct file operations
+on the vault directory — notes are plain Markdown.
 
 ## Prerequisites
 
 ```bash
-# Verify installation
-obsidian-cli --version
+# Verify the CLI responds (also confirms the app is reachable)
+obsidian version
 ```
 
-### Install
+Requirements: Obsidian desktop **installer** ≥1.12 and CLI enabled in
+**Settings → General → Command line interface**.
 
-**macOS / Linux (Homebrew):**
+**Installer-vs-core gotcha (verified):** Obsidian's in-app updater
+updates only the core (Settings → About "Current version"); the CLI
+binary ships in the .app bundle, so an old installer has no CLI even
+when the app displays 1.12+. Fix: download a fresh installer from
+obsidian.md and replace the app.
+
+The binary lives at
+`/Applications/Obsidian.app/Contents/MacOS/obsidian-cli`. Register it on
+PATH either via the app's own registration
+(`/usr/local/bin/obsidian`, needs admin) or without sudo:
+
 ```bash
-brew tap yakitrak/yakitrak && brew install yakitrak/yakitrak/obsidian-cli
+ln -sf /Applications/Obsidian.app/Contents/MacOS/obsidian-cli ~/bin/obsidian
 ```
 
-**Windows (Scoop):**
-```powershell
-scoop bucket add scoop-yakitrak https://github.com/yakitrak/scoop-yakitrak.git
-scoop install obsidian-cli
+## Syntax Conventions
+
+- Parameters are `key=value`; quote values with spaces: `name="My Note"`.
+- Boolean flags are bare words: `overwrite`, `open`, `total`.
+- `\n` for newlines in content values.
+- Target a specific vault with `vault=<name>` as the **first** parameter;
+  otherwise the CLI uses the vault of the current working directory or the
+  active vault.
+- Many read commands accept `format=json|csv|tsv|md|yaml` — prefer `json`
+  when parsing output.
+
+```bash
+obsidian vault="Second Brain" search query="meeting notes" format=json
 ```
-
-**Any platform (GitHub release):**
-Download the binary for your OS/arch from [GitHub Releases](https://github.com/yakitrak/obsidian-cli/releases) and place it on your PATH.
-
-| OS | Asset |
-|----|-------|
-| macOS (universal) | `obsidian-cli_*_darwin_all.tar.gz` |
-| Linux amd64 | `obsidian-cli_*_linux_amd64.tar.gz` |
-| Linux arm64 | `obsidian-cli_*_linux_arm64.tar.gz` |
-| Windows amd64 | `obsidian-cli_*_windows_amd64.tar.gz` |
-| Windows arm64 | `obsidian-cli_*_windows_arm64.tar.gz` |
 
 ## Vault Setup
 
-On first use, check if a default vault is configured:
-
 ```bash
-obsidian-cli print-default
+# List known vaults; confirm the target
+obsidian vaults verbose
+
+# Vault info (name, path, size, counts)
+obsidian vault info=path
 ```
 
-**If no vault is set**, discover available vaults from the Obsidian config and prompt the user:
-
-```bash
-# macOS
-cat ~/Library/Application\ Support/obsidian/obsidian.json
-
-# Linux
-cat ~/.config/obsidian/obsidian.json
-
-# Windows (PowerShell)
-cat $env:APPDATA/obsidian/obsidian.json
-```
-
-This returns JSON with vault names and paths. Present the options to the user, then set the default:
-
-```bash
-obsidian-cli set-default "{vault-name}"
-```
-
-### CLAUDE.local.md Configuration
-
-After setting the vault, check `CLAUDE.local.md` in the project root for vault configuration:
+Check `CLAUDE.local.md` in the project root for vault configuration:
 
 ```markdown
 ## Obsidian
@@ -77,33 +74,23 @@ After setting the vault, check `CLAUDE.local.md` in the project root for vault c
 - Rules: {path to vault rules note}
 ```
 
-If this section doesn't exist, ask the user:
-1. Which vault to use (if multiple)
-2. Whether the vault has a rules/guide file (and its path)
-
-Then instruct the user to add the config to `CLAUDE.local.md`.
-
-## Vault Rules
-
-**On first use per session**, if `CLAUDE.local.md` specifies a rules path, read it:
+If absent, ask the user which vault to use and whether a rules/guide note
+exists, then have them record it there. **On first use per session**, if a
+rules path is configured, read it and follow its folder, template, naming,
+and tagging rules exactly:
 
 ```bash
-obsidian-cli print "{rules-note-path}"
+obsidian read path="{rules-note-path}"
 ```
 
-The rules file tells you how this specific vault is structured — folder paths, templates, naming conventions, tagging rules. **Follow those rules exactly when creating or organizing notes.**
-
-If no rules file is configured, use the generic best practices in the [Note Creation Guide](references/templates.md).
+If no rules file exists, use the generic practices in the
+[Note Creation Guide](references/templates.md).
 
 ## Read a Note
 
 ```bash
-# Print note contents by name or path
-obsidian-cli print "{note-name}"
-obsidian-cli print "{path/to/note}"
-
-# Print from a specific vault
-obsidian-cli print "{note-name}" --vault "{vault-name}"
+obsidian read file="{note-name}"
+obsidian read path="{path/from/vault/root.md}"
 ```
 
 ## Create a Note
@@ -112,179 +99,140 @@ obsidian-cli print "{note-name}" --vault "{vault-name}"
 
 1. Determine intent (what type of note?)
 2. Read vault rules for the correct template, folder, and naming convention
-3. Search first — check if a similar note exists
+3. Search first — check whether a similar note exists
 4. List the target folder — verify you're writing to the right place
 5. Create the note with proper frontmatter and body structure
 
-See [Note Creation Guide](references/templates.md) for intent determination, generic best practices, and heredoc examples.
-
-### Create / Append / Overwrite
-
 ```bash
-# Create new note (always include frontmatter in content)
-obsidian-cli create "{path}" --content "$(cat <<'EOF'
+# Create (fails into a duplicate-safe state; see gotchas)
+obsidian create name="{path/or/name}" content="$(cat <<'EOF'
 ---
-id: ...
 type: ...
-tags: ...
+tags: []
 created: ...
 updated: ...
 ---
-# Content
+# Title
 EOF
 )"
 
-# Append to existing note
-obsidian-cli create "{path}" --content "additional content" --append
+# Create from a vault template
+obsidian create name="{name}" template="{template-name}"
 
-# Overwrite existing note (read-modify-write pattern)
-obsidian-cli create "{path}" --content "full replacement" --overwrite
+# Replace an existing note (read-modify-write)
+obsidian create name="{path}" content="..." overwrite
 ```
 
-**IMPORTANT:**
-- Without `--append` or `--overwrite`, creating a note that exists makes a duplicate
-- Always use `--overwrite` or `--append` when updating existing notes
-- When overwriting, preserve the original frontmatter and update the `updated` field
-
-## Search Notes
+## Append / Prepend
 
 ```bash
-# Search note content (returns matching files with line numbers)
-obsidian-cli search-content "search term"
-
-# Search in a specific vault
-obsidian-cli search-content "search term" --vault "{vault-name}"
+obsidian append file="{note}" content="- new line"
+obsidian prepend file="{note}" content="…"
+# `inline` joins without a new line
 ```
 
-**WARNING:** Do NOT use `obsidian-cli search` — it launches an interactive fuzzy finder that cannot be used in scripts or automation.
+## Search
+
+```bash
+# Machine-readable results
+obsidian search query="term" format=json limit=20
+
+# With surrounding context lines
+obsidian search:context query="term" path="{folder}" limit=10
+```
+
+Uses Obsidian's own search index — respects the vault's ignore settings
+and returns ranked results, unlike a plain grep.
 
 ## List Files and Folders
 
 ```bash
-# List vault root
-obsidian-cli list
-
-# List a subfolder
-obsidian-cli list "{folder-path}"
-
-# List in a specific vault
-obsidian-cli list "{folder-path}" --vault "{vault-name}"
+obsidian files folder="{path}" ext=md
+obsidian folders folder="{path}"
+obsidian folder path="{path}" info=files
 ```
 
-## Frontmatter Operations
+## Properties (Frontmatter)
 
 ```bash
-# Print frontmatter
-obsidian-cli frontmatter "{note-name}" --print
+obsidian property:read name="{key}" file="{note}"
+obsidian property:set name="{key}" value="{value}" type=text file="{note}"
+obsidian property:remove name="{key}" file="{note}"
 
-# Edit/add a field
-obsidian-cli frontmatter "{note-name}" --edit --key "status" --value "done"
-
-# Delete a field
-obsidian-cli frontmatter "{note-name}" --delete --key "draft"
-
-# Specific vault
-obsidian-cli frontmatter "{note-name}" --print --vault "{vault-name}"
+# All properties of a note
+obsidian properties file="{note}" format=yaml
 ```
 
-Alias: `obsidian-cli fm` works the same as `obsidian-cli frontmatter`.
-
-### Multiple Frontmatter Edits
-
-Run multiple commands sequentially:
+## Daily Notes & Tasks
 
 ```bash
-obsidian-cli fm "{note}" --edit --key "status" --value "active" && \
-obsidian-cli fm "{note}" --edit --key "priority" --value "high" && \
-obsidian-cli fm "{note}" --edit --key "updated" --value "$(date +%Y-%m-%d)"
+obsidian daily:read
+obsidian daily:append content="- [ ] follow up"
+obsidian tasks file="{note}" todo format=json
+obsidian task ref="{note.md}:{line}" done
 ```
 
 ## Move, Rename, Delete
 
 ```bash
-# Move or rename (updates all backlinks in vault)
-obsidian-cli move "{current-path}" "{new-path}"
-
-# Delete a note
-obsidian-cli delete "{note-path}"
-
-# With specific vault
-obsidian-cli move "{current}" "{new}" --vault "{vault-name}"
-obsidian-cli delete "{note-path}" --vault "{vault-name}"
+obsidian move file="{note}" to="{new/folder/path}"
+obsidian rename file="{note}" name="{new-name}"
+obsidian delete file="{note}"            # to trash
+obsidian delete file="{note}" permanent  # careful
 ```
 
-## Open in Obsidian App
+## Links & Graph Queries
 
 ```bash
-# Open a note in the Obsidian app
-obsidian-cli open "{note-name}"
-
-# Open at a specific heading
-obsidian-cli open "{note-name}" --section "{heading-text}"
-
-# Open today's daily note (creates from template if needed)
-obsidian-cli daily
+obsidian backlinks file="{note}" format=json
+obsidian links file="{note}"
+obsidian orphans total
 ```
 
 ## Common Workflows
 
 ### Read-Modify-Write
 
-When you need to edit specific parts of an existing note:
-
 ```bash
-# 1. Read the current content
-obsidian-cli print "{note-path}"
-
-# 2. Modify the content (Claude edits in memory)
-
-# 3. Write back the full modified content
-obsidian-cli create "{note-path}" --content "$(cat <<'EOF'
-... modified full content ...
-EOF
-)" --overwrite
+obsidian read path="{note}"
+# … edit content in memory …
+obsidian create name="{note}" content="…full replacement…" overwrite
 ```
 
 ### Find and Read Related Notes
 
 ```bash
-# Search for related content
-obsidian-cli search-content "topic"
-
-# Read each relevant result
-obsidian-cli print "{result-1}"
-obsidian-cli print "{result-2}"
-```
-
-### Tag Management via Frontmatter
-
-```bash
-# Check current tags
-obsidian-cli fm "{note}" --print
-
-# Add/update tags (overwrites the tags field)
-obsidian-cli fm "{note}" --edit --key "tags" --value "[tag1, tag2, tag3]"
+obsidian search query="topic" format=json limit=10
+obsidian read path="{result-path}"
 ```
 
 ## Gotchas
 
-1. **`search` is interactive** — Always use `search-content` for scripted/automated search
-2. **`create` makes duplicates** — Always pass `--overwrite` or `--append` when updating
-3. **No surgical edits** — Use read-modify-write pattern (print, edit in memory, create --overwrite)
-4. **Paths are from vault root** — Not from your terminal's current working directory
-5. **Frontmatter is one key at a time** — Chain multiple `fm --edit` calls for multiple fields
+1. **The app must already be running** — commands fail with "unable to
+   find Obsidian" otherwise; `open -a Obsidian` first, or use direct
+   file operations on headless machines.
+2. **`create` without `overwrite`** on an existing note does not replace
+   it — always pass `overwrite` (full replacement) or use `append`.
+3. **No surgical edits** — read, modify in memory, write back with
+   `overwrite`; preserve frontmatter and bump `updated`.
+4. **Paths are vault-relative**, not relative to the terminal cwd.
+5. **`vault=` must be the first parameter** when targeting a non-default
+   vault.
+6. Prefer `format=json` on list/search commands when the output feeds
+   further steps.
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| "vault not found" | Run `obsidian-cli set-default "{vault-name}"` |
-| "note not found" | Check path with `obsidian-cli list "{folder}"` |
-| Duplicate note created | Use `--overwrite` or `--append` flag |
-| Search hangs | You used `search` instead of `search-content` |
-| Frontmatter not updating | Ensure note has valid YAML frontmatter block |
+| `obsidian: command not found` | Recreate the symlink (see Prerequisites) or enable the CLI in app settings |
+| CLI hangs / no response | Check the app launched and finished indexing; retry |
+| Wrong vault targeted | Pass `vault="{name}"` first; verify with `obsidian vault info=name` |
+| Note not found | `obsidian files folder="{folder}"` to check the real path |
+| Duplicate content after update | You appended instead of `overwrite` (or vice versa) |
 
 ## References
 
-- [Note Creation Guide](references/templates.md) — Intent determination and generic best practices
-- [Command Reference](references/command-reference.md) — Flag-by-flag details for all commands
+- [Note Creation Guide](references/templates.md) — intent determination and generic best practices
+- [Command Reference](references/command-reference.md) — full official-CLI command tables
+- Official docs: https://obsidian.md/help/cli
