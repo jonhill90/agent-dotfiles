@@ -10,6 +10,9 @@ come from [docs/research/eval-scenarios.md](../docs/research/eval-scenarios.md)
   (verbatim prompt + setup steps), `criteria.md` (observable PASS/FAIL
   criteria), plus fixture files where the scenario needs a rigged repo
   (E2, E6, E7, E9).
+- `acceptance/<skill>.md` — per-tool-skill acceptance checks (3–5
+  concrete tasks). Community candidates displace a personal skill only
+  by passing the same checks with equal-or-fewer tokens loaded.
 - `results/<date>-<harness>-<model>.md` — one committed matrix per run.
 
 ## Protocol (v1: manual by design)
@@ -24,7 +27,14 @@ come from [docs/research/eval-scenarios.md](../docs/research/eval-scenarios.md)
 v1 pairs: Claude Code×Fable (baseline), Claude Code×Sonnet, Pi×default,
 Pi×Sonnet-class.
 
-Distillation-matrix conflicts (grilling, TDD, handoff) are closed only
-by results files here, referenced from
+## Baseline-first (SPEC §4/§10)
+
+The first run is the **baseline**: canonical instructions only — no
+behavioral skills, no hooks, superpowers uninstalled (rip-out day is
+baseline day). Whatever passes needs nothing. Each failing scenario gets
+the smallest fix auditioned (instruction line → ~100–200-token
+injection → lean skill), re-run twice, then a full-matrix re-run to
+catch regressions. Adoptions are closed only by results files here,
+referenced from
 [docs/provenance-manifest.md](../docs/provenance-manifest.md). Do not
 build automation until the scenarios have proven they discriminate.

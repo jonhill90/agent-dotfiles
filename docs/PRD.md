@@ -102,7 +102,18 @@ v1 verifies only its own slice.
 ## Selection Rubric
 
 No behavioral-layer or tooling winner is chosen by opinion or by what is
-currently installed. Every candidate is scored against:
+currently installed.
+
+**Baseline-first rule (added 2026-07-12):** the starting stack is the
+canonical instructions and nothing else. No behavioral component —
+skill, hook, or framework — is adopted unless a failing eval justifies
+it, and the smallest candidate that fixes the failure wins. Tool skills
+use per-skill acceptance checks instead of loop evals; a community
+candidate displaces a personal skill only by passing the same checks
+with equal or fewer tokens loaded. Process-owning frameworks (spec-kit,
+OpenSpec, BMAD, and kin) remain rejected as a family per Non-Goals.
+
+Every candidate is scored against:
 
 1. **Token economy** — respects the static-context budget; specialist
    knowledge behind progressive disclosure. Budget number set in the spec.
@@ -195,3 +206,16 @@ currently installed. Every candidate is scored against:
 | Success test | New-machine test (primary) |
 | APM role | Lead candidate for sync backbone; research verifies Pi + global scope |
 | Memory | Tooling in scope, backend researched; content never synced in v1 |
+
+## Decision Log Addendum (spec revision interview, 2026-07-12)
+
+| Decision | Choice |
+|---|---|
+| Superpowers | Dropped entirely (dependency, hook, skills); parts-bin candidate in gap-fill auditions only |
+| Behavioral-layer selection | Baseline-first rule (see Selection Rubric); the eval matrix is the distiller, not framework comparison |
+| Enforcement hooks | Not researched separately; auditioned only if the baseline shows E14-class failures |
+| Tool-skill swaps | Per-skill acceptance checks in `evals/`; community wins on equal coverage + fewer tokens |
+| Skill cuts | Propose/veto; cut = delete (git history is the archive). Named: ms-learn, ms-learn-cli, tools/mslearn |
+| Obsidian access path | Official Obsidian CLI researched against memory-backend needs before any swap |
+| using-tmux | Community search + acceptance checks before keep/swap decision |
+| Machine migration | Superpowers 5.1.0 stays installed until baseline day (its removal is step 1 of the baseline protocol) |

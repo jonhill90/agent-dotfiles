@@ -14,10 +14,15 @@ Decision types: **adopt** (pinned dependency, unmodified) · **adapt**
 | Sync backbone | microsoft/apm | Adopt (pinned) | Live-trial verified: user-scope install, global compile w/ marker safety, lockfile, drift audit, content scanning ([apm-verification](research/apm-verification.md)) |
 | Pi projection, settings merge, teardown | self | Author (`scripts/sync.py`) | Outside APM's primitive set; APM has no Pi target ([apm-verification](research/apm-verification.md) Finding 2) |
 | Sync mirror mechanics, pointer instructions, tools.md, terse skill style | steipete/agent-scripts | Adapt (patterns only) | Personal-to-Peter content, no consumer versioning; patterns proven ([distillation-matrix](research/distillation-matrix.md)) |
-| Enforcement chassis (bootstrap hook, skill-check contract, Pi/Codex shims) | obra/superpowers 6.1.1 | Adopt (pinned) | Only cross-harness enforcement mechanism that exists, incl. Pi ([distillation-matrix](research/distillation-matrix.md)) |
-| Intent/grilling skill | superpowers `brainstorming` vs mattpocock `grill-me`/`grilling` | Open | Decided by E3, E5 model-down; 70x token difference favors lean if it holds |
-| TDD skill | superpowers `test-driven-development` vs mattpocock `tdd` | Open | Decided by E6, E7 |
-| Handoff/complete skill | superpowers `finishing-a-development-branch` vs mattpocock `handoff` | Open | Decided by E13 |
+| Behavioral-layer selection rule | owner decision, 2026-07-12 grilling | Adopt (baseline-first) | Baseline = canonical instructions only; components added only when a failing eval justifies them, smallest candidate first; the eval matrix is the distiller (SPEC §4) |
+| Enforcement chassis (bootstrap hook, skill-check contract, Pi/Codex shims) | obra/superpowers 6.1.1 | **Reject** (reversed 2026-07-12; was Adopt) | Superpowers dropped entirely — dependency, hook, and skills. Its skills remain parts-bin candidates in gap-fill auditions only. Enforcement hooks are auditioned solely on E14-class baseline failures |
+| Intent/grilling stage | baseline instructions; lean skills as gap-fill candidates | Open (baseline-gated) | Auditioned only if E3/E5 fail at baseline; smallest fix wins |
+| TDD stage | baseline instructions; lean skills as gap-fill candidates | Open (baseline-gated) | Auditioned only if E6/E7 fail at baseline |
+| Handoff/complete stage | baseline instructions; lean skills as gap-fill candidates | Open (baseline-gated) | Auditioned only if E13 fails at baseline |
+| Process-owning SDD frameworks (spec-kit, OpenSpec, BMAD, kin) | — | Reject (family) | PRD non-goal: components stay small, composable, individually removable; reaffirmed 2026-07-12 |
+| `ms-learn`, `ms-learn-cli` skills + `tools/mslearn` Go CLI | Jon (authored) | Reject (cut, owner decision 2026-07-12) | Skill-noise reduction; deletion pending roster propose/veto PR; git history is the archive |
+| Obsidian access CLI | third-party obsidian-cli vs official Obsidian CLI | Open (V6 research) | Official CLI adopted only if it covers memory-backend needs (create, search, scriptable read); blocks M4 |
+| `using-tmux` | Jon (authored) vs community candidates | Open (V7 acceptance checks) | Stays until a community skill passes the same acceptance checks with equal-or-fewer tokens |
 | Skill-authoring skill | Jon's `create-skill` | Author (keep) | One owner per stage; superpowers `writing-skills` (6.6k t) and mattpocock `writing-great-skills` rejected as duplicates |
 | Memory store | Obsidian vault + obsidian-cli | Adopt (pinned CLI) | Plain markdown, zero infra, vault sync solves cross-machine; CLI path portable to all four harnesses ([memory-backends](research/memory-backends.md)) |
 | Memory conventions skill | self | Author | Contract for index + one-fact-per-note schema (SPEC §3.6) |
