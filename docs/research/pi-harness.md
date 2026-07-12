@@ -1,38 +1,62 @@
-# Phase 0: Pi Harness Survey (initial)
+# Phase 0: Pi Harness Survey
 
-- **Date:** 2026-07-11
-- **Status:** partial — evidence from superpowers' shipped Pi projection.
-  Full pass over Pi docs pending (Pi is not installed on this machine yet;
-  installing + hands-on survey is a spec-phase prerequisite).
+- **Date:** 2026-07-11 — **complete** (installed 0.80.6 on Jon's Mac via
+  `npm install -g @earendil-works/pi-coding-agent`; docs ship inside the
+  npm package under `docs/`).
+- **What Pi is:** Mario Zechner's minimal coding agent CLI. Deliberate
+  philosophy: small core, no built-in MCP, sub-agents, permission
+  popups, plan mode, or to-dos — all of that is meant to come from
+  extensions, skills, and packages. That makes Pi the *maximum-need*
+  target for the behavioral layer, and the honest test bed for "same
+  loop on any model" (model/provider switching is first-class:
+  `--provider/--model`, Ctrl+P cycling).
 
-## What is known (from `superpowers/.pi/extensions/superpowers.ts`)
+## Layer support
 
-- Package: `@earendil-works/pi-coding-agent` (Mario Zechner / badlogic's
-  Pi). Extensions are TypeScript modules receiving an `ExtensionAPI`.
-- **Skill discovery:** `resources_discover` event returns `skillPaths` —
-  Pi natively consumes Agent Skills directories. The PRD's portable-format
-  bet holds for Pi.
-- **Hook-equivalents:** events observed — `session_start`,
-  `session_compact`, `agent_end`, and `context` (which can inject messages
-  into the model context). That's enough to implement the
-  bootstrap-injection pattern (superpowers proves it: it re-injects its
-  using-superpowers contract after start/compaction, exactly like its
-  Claude Code SessionStart hook).
-- **Instructions:** not evidenced in this file; expected AGENTS.md-family
-  support — verify in docs.
-- **MCP:** not evidenced here — verify. (APM has no Pi target either, so
-  MCP config for Pi is wrapper-owned regardless.)
+| Layer | Pi surface |
+|---|---|
+| Skills (user) | `~/.pi/agent/skills/` AND **`~/.agents/skills/`** (native, recursive, symlinks per Agent Skills standard; lenient validation) |
+| Skills (project) | `.pi/skills/`, `.agents/skills/` in cwd + ancestors (requires project trust) |
+| Skills (extra) | settings `skills` array — can point at `~/.claude/skills`, `~/.codex/skills`; `--skill <path>` CLI |
+| Skill triggering | descriptions in system prompt (spec-standard XML), progressive disclosure; `/skill:name` forces load |
+| Instructions | `~/.pi/agent/AGENTS.md` global; project `AGENTS.md` **or `CLAUDE.md`** from parents + cwd |
+| Hooks-equivalent | extensions (TS modules): `session_start`, `session_compact`, `agent_end`, `context` (message injection) — bootstrap pattern proven by superpowers' `.pi/extensions` |
+| MCP | **none built-in by design** — available only via extensions/packages |
+| Settings | `~/.pi/agent/settings.json` (global), `.pi/settings.json` (project) |
+| Packages | `pi install <source>` manages extension packages; `package.json` `pi.skills` entries |
+| Trust model | project-local settings/skills/extensions require explicit trust (`~/.pi/agent/trust.json`, `/trust`); non-interactive modes follow `defaultProjectTrust` |
 
-## Consequences for the spec
+## Findings
 
-1. The dotfiles' Pi projection = one small extension (skillPaths +
-   context-injection bootstrap) + whatever instructions/MCP mechanism the
-   docs reveal. Superpowers' extension is a working reference
-   implementation to pattern-match, not copy.
-2. "New-machine test" for Pi must include installing Pi itself (not
-   present on the current machine), so the sync wrapper needs an
-   install-or-skip stance per harness: configure what exists, optionally
-   install what doesn't.
-3. Open verifications for the docs pass: instructions file support, MCP
-   config surface, settings/permissions model, skill scan behavior
-   (recursive? one-level?), extension install path (~/.pi/?).
+1. **The neutral-path convergence is now 3 of 4.** Pi reads
+   `~/.agents/skills/` natively, alongside Codex and Copilot. Claude
+   Code remains the only harness needing projection (per-skill symlinks
+   — officially supported). The dotfiles' skill layer is nearly
+   projection-free.
+2. **Instructions:** `~/.pi/agent/AGENTS.md` is just another root file —
+   the wrapper writes it from the same canonical AGENTS.md that APM
+   compiles for the others (APM has no Pi target, so the wrapper owns
+   this one file).
+3. **Behavioral layer earns maximum value here.** No native plan mode,
+   verification norms, or memory: everything Fable-era Claude Code does
+   natively must come from the dotfiles on Pi. Per-harness thinning
+   (harness-baselines Finding 3) has its two poles: CC = thinnest,
+   Pi = thickest.
+4. **MCP absence validates the CLI-first rule.** Tool skills that wrap
+   CLIs (gh, az, obsidian-cli, mslearn) work on Pi unchanged; MCP-only
+   capabilities don't. The dotfiles should prefer CLI-backed skills and
+   treat MCP as a per-harness enhancement — consistent with the
+   memory-backends decision.
+5. **Trust model affects sync design:** global (`~/.pi/agent/`) content
+   loads without prompts; project-level `.pi/`/`.agents/` needs a trust
+   decision. Dotfiles install at global scope → frictionless.
+6. **Memory:** none native. The memory conventions skill + vault (see
+   memory-backends.md) is the only memory Pi gets — parity depends on it.
+
+## Remaining verify (spec phase, low risk)
+
+- Extension install/run mechanics for a *local* extension (the wrapper's
+  bootstrap injector): `pi install <local path>` vs settings `extensions`
+  entry.
+- Whether superpowers' published package installs cleanly on Pi 0.80.x
+  (`pi install` from its repo) — decides chassis packaging for Pi.
