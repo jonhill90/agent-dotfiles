@@ -16,6 +16,7 @@ until eval-verified.
 | Harness baselines (Anthropic/Codex/Copilot docs sweep) | [harness-baselines.md](harness-baselines.md) | ✅ Done — layer×harness matrix; 4 hands-on verify items remain |
 | Provenance manifest (adopt/adapt/author/reject log) | [../provenance-manifest.md](../provenance-manifest.md) | 🟡 Seeded at spec time (2026-07-12); open rows close via eval results |
 | M2 install verification (apm install -g end-to-end) | [m2-install-verification.md](m2-install-verification.md) | ✅ Done — skills to both paths, marker-owned root files, warts confirmed; M3 job list updated |
+| Memory format distillation (INMPARA × Second Brain × Karpathy × OKF) | [memory-format-distillation.md](memory-format-distillation.md) | ✅ Done — memory vault = OKF-conformant bundle; semantic slugs; ISO 8601 w/ seconds; log.md temporal layer |
 | V6: Obsidian CLI selection (official vs third-party) | [obsidian-cli-v6.md](obsidian-cli-v6.md) | ✅ Done — owner override: official CLI adopted (verified hands-on 1.12.7; no auto-launch); memory = direct file ops, no CLI dependency; memory vault must be personal (employer-mount doctor check) |
 
 ## Key preliminary conclusions
