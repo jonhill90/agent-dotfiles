@@ -13,9 +13,7 @@ until eval-verified.
 | Memory backends | [memory-backends.md](memory-backends.md) | ✅ Done — Obsidian vault + CLI recommended, Graphiti benched |
 | Eval scenarios (parity acceptance tests) | [eval-scenarios.md](eval-scenarios.md) | ✅ Draft — E1–E16 |
 | Pi harness survey | [pi-harness.md](pi-harness.md) | 🟡 Partial — extension API evidenced; docs pass + install pending |
-| Anthropic docs sweep (Claude Code baseline, Agent Skills spec) | — | ⬜ Pending |
-| OpenAI Codex docs sweep | — | ⬜ Pending |
-| GitHub Copilot docs sweep | — | ⬜ Pending |
+| Harness baselines (Anthropic/Codex/Copilot docs sweep) | [harness-baselines.md](harness-baselines.md) | ✅ Done — layer×harness matrix; 4 hands-on verify items remain |
 | Provenance manifest (adopt/adapt/author/reject log) | — | ⬜ Starts at spec time; successor to ../migration-audit.md |
 
 ## Key preliminary conclusions
@@ -29,5 +27,13 @@ until eval-verified.
    donor only. Conflicts resolved by evals E3/E5/E6/E7/E14.
 3. **Memory:** Obsidian vault + obsidian-cli + a conventions skill;
    file-based; no standing infra. Graphiti benched with a revisit trigger.
-4. **The official-docs sweeps determine per-harness thinning** — how much
-   behavioral layer each harness needs given its native features.
+4. **Per-harness thinning is now a spec requirement** (harness-baselines
+   Finding 3): Claude Code natively covers much of the loop; Codex/Copilot
+   have no hooks, so enforcement there rides instructions + descriptions —
+   eval E14 tests that degraded mode.
+5. **`~/.agents/skills` is the emerging neutral user-scope skills path**
+   (Codex native, Copilot accepted; Claude Code via per-skill symlinks —
+   officially supported; Pi via extension `skillPaths`).
+6. **One canonical AGENTS.md projects trivially**: Codex/Copilot read it
+   natively, Claude Code via documented `@AGENTS.md` import, and APM's
+   `compile --global` writes exactly these root files.
