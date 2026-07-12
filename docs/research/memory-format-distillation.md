@@ -24,14 +24,22 @@
     `log.md` (`## YYYY-MM-DD` headings, newest first); permissive
     consumption; broken links = not-yet-written knowledge
 
-## Finding 1: the four sources agree on the fundamentals
+## Finding 1: two sources are load-bearing; two are context only
 
-All four independently converge on: plain markdown + YAML frontmatter,
-an index read first (progressive disclosure), semantic links as the
-graph, structure emerging bottom-up, and tolerance for imperfection
-(OKF's "broken links are not malformed" = INMPARA's forward
-references). The M4 schema is directionally right; it needs alignment,
-not redesign.
+**Correction (owner review, 2026-07-12):** the schema's actual design
+inputs are OKF (interop rules) and Karpathy (operating model). INMPARA
+and the Second Brain were *reviewed for boundary-setting only* —
+nothing in the memory schema derives from them, and per Jon's explicit
+call they are noise for harness purposes: personal note-taking systems
+whose taxonomy machinery (stage/status lifecycles, note typologies,
+MOC hubs) must not leak into agent memory. An earlier draft of this
+doc credited INMPARA as "lineage"; that framing was flattery, not
+analysis, and is retracted.
+
+The load-bearing sources converge on: plain markdown + YAML
+frontmatter, an index read first, semantic links, and tolerance for
+imperfection. The M4 schema was directionally right; it needed
+alignment, not redesign.
 
 ## Finding 2: two distinct systems, one format family
 
@@ -76,7 +84,7 @@ precision there too.
 | `index.md` = link + one-line description per entry | OKF + Karpathy + current M4 | already aligned; keep 200-line/25KB cap |
 | **`log.md`, append-only, `## YYYY-MM-DD` headings, newest first** | OKF + Karpathy | **new** — cheapest possible temporal reasoning; directly shrinks the gap that kept Graphiti on the bench (memory-backends risk: "no temporal reasoning") |
 | Operations vocabulary: ingest / query / **lint** | Karpathy | lint = periodic health check (contradictions, stale facts, orphans, index drift); future `sync doctor` or skill duty at M5+ |
-| Search-first golden rule; emergence; associative tags | INMPARA / Second Brain | already in conventions ("check index before creating"); tags stay optional per OKF |
+| Search-first / check-index-before-creating | independently derivable (also appears in Second Brain) | already in conventions; no INMPARA dependency |
 | Wiki-links between facts | Second Brain / OKF §5 | keep; broken links = not-yet-written facts |
 
 ## Resulting schema (v2 — SPEC §3.6 is normative)
