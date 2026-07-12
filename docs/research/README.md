@@ -14,7 +14,7 @@ until eval-verified.
 | Eval scenarios (parity acceptance tests) | [eval-scenarios.md](eval-scenarios.md) | ✅ Draft — E1–E16 |
 | Pi harness survey | [pi-harness.md](pi-harness.md) | ✅ Done — installed 0.80.6; native ~/.agents/skills, AGENTS.md global file, extensions=hooks, MCP absent by design |
 | Harness baselines (Anthropic/Codex/Copilot docs sweep) | [harness-baselines.md](harness-baselines.md) | ✅ Done — layer×harness matrix; 4 hands-on verify items remain |
-| Provenance manifest (adopt/adapt/author/reject log) | — | ⬜ Starts at spec time; successor to ../migration-audit.md |
+| Provenance manifest (adopt/adapt/author/reject log) | [../provenance-manifest.md](../provenance-manifest.md) | 🟡 Seeded at spec time (2026-07-12); open rows close via eval results |
 
 ## Key preliminary conclusions
 
