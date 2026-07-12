@@ -222,14 +222,16 @@ Every candidate is scored against:
 
 ## Decision Log Addendum 2 (memory format distillation, 2026-07-12)
 
-Sources: INMPARA (Jon's 2025 system), the live Second Brain vault,
-Karpathy's llm-wiki gist, Google OKF v0.1. Full analysis:
+Design inputs: Karpathy's llm-wiki gist and Google OKF v0.1. INMPARA
+and the Second Brain were reviewed for boundary-setting only — owner
+decision: they are personal note-taking systems, not harness inputs,
+and contribute nothing to the memory schema. Full analysis:
 `docs/research/memory-format-distillation.md`.
 
 | Decision | Choice |
 |---|---|
 | Memory vault format | OKF v0.1-conformant bundle (markdown + frontmatter; `type` required; permissive consumption) — interoperable with any OKF consumer |
-| Two systems, one format family | Second Brain = knowledge (its own synaptic/INMPARA conventions); Agent Memory vault = agent memory. Never merged; agents follow each system's own rules |
+| Two systems, hard boundary | Second Brain = Jon's personal notes, kept for himself, not a harness component; Agent Memory vault = agent memory. Never merged; no Second Brain/INMPARA taxonomy (stages, note typologies, MOCs) may enter the memory schema |
 | Fact filenames | Semantic kebab slugs (concept = identity; update in place, never duplicate). Timestamp-ID filenames rejected for facts — they are the Second Brain's human-capture pattern |
 | Timestamps | ISO 8601 with seconds, UTC, in frontmatter (`created`/`updated`) and log entries — minute precision collides for agent writers; answers YYYYMMDDHHMM-vs-HHMMSS: neither in filenames, seconds in metadata |
 | Temporal layer | Append-only `log.md` (OKF/Karpathy format) — cheapest temporal reasoning; shrinks the Graphiti gap |
