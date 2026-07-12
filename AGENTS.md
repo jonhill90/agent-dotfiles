@@ -43,15 +43,9 @@ scripts/
 tests/
 ```
 
-Compatibility projections (retired once `scripts/sync.py apply` owns
-projection — SPEC §2):
-
-- `.agents/skills -> ../skills`
-- `.claude/skills -> ../skills`
-- `.codex/skills -> ../skills`
-- `.claude/agents -> ../agents`
-- `.codex/agents -> ../agents`
-- `.github/agents -> ../agents`
+Projection is installer-owned (`apm install -g` + `scripts/sync.py apply`).
+The former committed symlink matrix (`.claude/skills`, `.codex/skills`, …)
+is retired; validation errors if any reappear.
 
 ## Skill Authoring
 

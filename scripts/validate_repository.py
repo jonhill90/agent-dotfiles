@@ -25,14 +25,16 @@ PORTABLE_FIELDS = {
     "allowed-tools",
 }
 EXECUTABLE_SUFFIXES = {".py", ".sh", ".bash"}
-EXPECTED_PROJECTIONS = {
-    ".agents/skills": "../skills",
-    ".claude/skills": "../skills",
-    ".codex/skills": "../skills",
-    ".claude/agents": "../agents",
-    ".codex/agents": "../agents",
-    ".github/agents": "../agents",
-}
+# Retired at M3: installer-owned projection (APM + scripts/sync.py)
+# replaced the committed symlink matrix. Their presence is now an error.
+RETIRED_PROJECTIONS = (
+    ".agents/skills",
+    ".claude/skills",
+    ".codex/skills",
+    ".claude/agents",
+    ".codex/agents",
+    ".github/agents",
+)
 
 
 @dataclass(frozen=True)
@@ -179,24 +181,17 @@ def discover_skill_dirs(root: Path, target: Path | None) -> list[Path]:
 
 def validate_projections(root: Path) -> list[Finding]:
     findings: list[Finding] = []
-    for relative_path, expected_target in EXPECTED_PROJECTIONS.items():
+    for relative_path in RETIRED_PROJECTIONS:
         projection = root / relative_path
-        if not projection.is_symlink():
-            findings.append(
-                Finding("error", projection, "expected compatibility symlink")
-            )
-            continue
-        actual_target = os.readlink(projection)
-        if actual_target != expected_target:
+        if projection.is_symlink() or projection.exists():
             findings.append(
                 Finding(
                     "error",
                     projection,
-                    f"expected -> {expected_target}, found -> {actual_target}",
+                    "retired compatibility projection present; "
+                    "projection is installer-owned (scripts/sync.py)",
                 )
             )
-        elif not projection.exists():
-            findings.append(Finding("error", projection, "symlink target is broken"))
     return findings
 
 
