@@ -8,7 +8,7 @@ until eval-verified.
 
 | Chunk | Doc | Status |
 |---|---|---|
-| APM verification (Pi + global scope) | [apm-verification.md](apm-verification.md) | ✅ Done — conditional pass, wrapper for Pi |
+| APM verification (Pi + global scope) | [apm-verification.md](apm-verification.md) | ✅ Done — live-trial verified on this Mac; wrapper for Pi + teardown/Cowork warts |
 | Behavioral-layer matrix (superpowers / mattpocock / agent-scripts) | [distillation-matrix.md](distillation-matrix.md) | ✅ Done — preliminary hybrid synthesis |
 | Memory backends | [memory-backends.md](memory-backends.md) | ✅ Done — Obsidian vault + CLI recommended, Graphiti benched |
 | Eval scenarios (parity acceptance tests) | [eval-scenarios.md](eval-scenarios.md) | ✅ Draft — E1–E16 |
