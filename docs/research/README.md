@@ -12,7 +12,7 @@ until eval-verified.
 | Behavioral-layer matrix (superpowers / mattpocock / agent-scripts) | [distillation-matrix.md](distillation-matrix.md) | ✅ Done — preliminary hybrid synthesis |
 | Memory backends | [memory-backends.md](memory-backends.md) | ✅ Done — Obsidian vault + CLI recommended, Graphiti benched |
 | Eval scenarios (parity acceptance tests) | [eval-scenarios.md](eval-scenarios.md) | ✅ Draft — E1–E16 |
-| Pi harness survey | [pi-harness.md](pi-harness.md) | 🟡 Partial — extension API evidenced; docs pass + install pending |
+| Pi harness survey | [pi-harness.md](pi-harness.md) | ✅ Done — installed 0.80.6; native ~/.agents/skills, AGENTS.md global file, extensions=hooks, MCP absent by design |
 | Harness baselines (Anthropic/Codex/Copilot docs sweep) | [harness-baselines.md](harness-baselines.md) | ✅ Done — layer×harness matrix; 4 hands-on verify items remain |
 | Provenance manifest (adopt/adapt/author/reject log) | — | ⬜ Starts at spec time; successor to ../migration-audit.md |
 
