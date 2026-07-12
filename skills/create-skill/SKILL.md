@@ -1,6 +1,6 @@
 ---
 name: create-skill
-description: Design and create portable Agent Skills with effective triggers, concise instructions, and reusable scripts, references, or assets. Use when adding a new skill or substantially restructuring an existing skill.
+description: Design, create, and validate portable Agent Skills with effective triggers, concise instructions, and reusable scripts, references, or assets. Use when adding a new skill, substantially restructuring an existing skill, or validating a skill's structure, frontmatter, links, and bundled scripts.
 ---
 
 # Create a Skill
