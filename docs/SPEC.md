@@ -464,7 +464,7 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | M2 | APM package works | **Done 2026-07-12** ([verification](research/m2-install-verification.md)): skills deployed to both paths, marker-owned root files written, hand-authored files preserved |
 | M3 | Wrapper v1 | **Done 2026-07-12**: `sync apply/status/doctor/remove` implemented TDD (11 tests); live apply on this Mac — 6 stale root files torn down, `~/.pi/agent/AGENTS.md` projected (core + overlay), status clean; committed symlink matrix retired, validator enforces absence |
 | M1.5 | Skill roster cut | propose/veto table resolved; cut skills deleted; acceptance checks written for kept tool skills |
-| M4 | Memory tooling | V6 resolved ✅ (official CLI for the skill; memory = file ops); personal vault selected (not employer-hosted); vault conventions live; E12 passes on this Mac in CC and Pi |
+| M4 | Memory tooling | **Done 2026-07-12**: "Agent Memory" vault created in iCloud + registered; `AGENT_MEMORY_VAULT` wired; memory-conventions skill shipped; doctor validates vault (personal + exists); basic-memory user-scope MCP removed; E12 passes 2× on CC×Fable and Pi×default incl. cross-harness recall ([results](../evals/results/2026-07-12-e12-memory-writeback.md)) |
 | M5 | Baseline run + gap-fill | superpowers uninstalled (baseline day); E1–E15 scored for all four v1 pairs; every failing scenario has an adopted fix with a results file; full-matrix re-run clean |
 | M6 | New-machine test | E16 passes on a clean macOS user account/VM for CC + Pi |
 
