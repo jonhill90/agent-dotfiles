@@ -1,21 +1,17 @@
 # Technical Spec: agent-dotfiles
 
-- **Status:** Draft v1.1 — 2026-07-12 (baseline-first revision: superpowers
-  dropped; selection rule replaced — see §4 and the PRD decision log
-  addendum)
+- **Status:** Implemented v1.2 — 2026-07-13
 - **Owner:** Jon Hill
-- **Inputs:** [PRD](PRD.md), Phase 0 research
-  ([APM verification](research/apm-verification.md),
-  [distillation matrix](research/distillation-matrix.md),
-  [memory backends](research/memory-backends.md),
-  [eval scenarios](research/eval-scenarios.md),
-  [Pi harness survey](research/pi-harness.md),
-  [harness baselines](research/harness-baselines.md))
+- **Inputs:** [PRD](PRD.md), [harness engineering](harness-engineering.md),
+  [memory](memory.md), and [behavioral evals](evals.md). Dated research is
+  preserved in git history (`106e69c`, `c089a95`, `8a222ce`, `065bc9d`,
+  `a4de1ac`, `e33f08b`).
 - **Companion artifact:** [provenance manifest](provenance-manifest.md) —
   every adopt/adapt/author/reject decision in this spec is recorded there.
-- **Scope of this spec:** Phase 1 (v1) — this Mac, Claude Code + Pi, all
-  five layers plus memory tooling. Later phases are constrained (the
-  architecture must not preclude them) but not designed here.
+- **Scope of this spec:** Phase 1 (v1) — Claude Code + Pi, all five layers
+  plus memory tooling. The shared bootstrap core is accepted on isolated
+  Linux; macOS-only integration is verified separately on Jon's existing Mac.
+  Later phases are constrained but not designed here.
 
 ## 1. Architecture Overview
 
@@ -43,9 +39,9 @@ agent-dotfiles repo
 
 Design rules, from the PRD and research:
 
-1. **APM is the backbone** (verified live,
-   [apm-verification.md](research/apm-verification.md)): user-scope
-   install, global compile
+1. **APM is the backbone** (verified live; see
+   [harness-engineering.md](harness-engineering.md)): user-scope install,
+   global compile
    with marker safety, lockfile + drift detection + content scanning come
    free. The wrapper is additive, not a fork — if APM gains a Pi target,
    the wrapper shrinks.
@@ -97,7 +93,7 @@ agent-dotfiles/
     scenarios/             # E1–E16 runnable fixtures (prompt + pass criteria)
     results/               # per-run matrices: <date>-<harness>-<model>.md
   tests/                   # unittest suite (wrapper + validators)
-  docs/                    # PRD, this spec, provenance manifest, research
+  docs/                    # living product, architecture, memory, eval docs
   install.sh               # new-machine bootstrap (see §8)
 ```
 
@@ -131,6 +127,10 @@ Notes:
   with evidence: a failing eval it fixes (behavioral) or a passed
   acceptance check at equal-or-fewer tokens (tool skill) — see §4 and
   §10. Installed per-skill, never whole collections.
+- **Public collection is not the default install.** `skills/` contains every
+  independently installable public skill. The wrapper passes repeated APM
+  `--skill` filters from `settings/default-skills.txt`, so benched `primer` and
+  `closing-the-loop` remain public without deploying or consuming context.
 - Frozen `npx skills` copies in `~/.agents/skills` and drifted plugin
   installs on Jon's machines are replaced by managed installs during
   migration (§9) — the PRD's consolidation criterion.
@@ -214,7 +214,7 @@ Notes:
 
 ### 3.6 Memory (tooling only)
 
-Per [memory-backends.md](research/memory-backends.md): **Obsidian vault as
+Per [memory.md](memory.md): **Obsidian vault as
 the store, direct file operations as the access path (V6 override —
 official Obsidian CLI powers the `obsidian` skill separately), a
 memory-conventions skill +
@@ -228,8 +228,7 @@ instruction block as the contract.** Content is never synced by this repo.
   the employer boundary applies to memory data, and the current default
   vault on this Mac is employer-hosted (V6 machine-state finding).
 - **Schema inside the vault** (v2, 2026-07-12 — an OKF v0.1-conformant
-  bundle; lineage and rationale in
-  [memory-format-distillation](research/memory-format-distillation.md)):
+  bundle; lineage and rationale in [memory.md](memory.md)):
   - `agent/index.md` — the only file loaded at session start; hard cap
     200 lines / 25KB (matches CC's native memory budget). One line per
     memory: `- [title](facts/<slug>.md) — hook` (the hook is the
@@ -253,7 +252,7 @@ instruction block as the contract.** Content is never synced by this repo.
   Obsidian CLI** (app ≥1.12, verified hands-on) for richer operations
   when the app is running; the CLI errors when the app is closed, so it
   is never a memory-path dependency
-  ([research](research/obsidian-cli-v6.md)). `install.sh` checks the
+  (hands-on evidence: commit `b752300`). `install.sh` checks the
   installer version and CLI registration instead of installing a
   third-party binary. A new
   small `memory-conventions` skill (authored, ~300 tokens) owns the
@@ -386,7 +385,7 @@ git clone https://github.com/jonhill90/agent-dotfiles ~/.agent-dotfiles-src
 cd ~/.agent-dotfiles-src && ./install.sh
 ```
 
-`install.sh` (macOS v1; Phase 3 generalizes):
+`install.sh` (macOS and Linux shared core; later phases generalize further):
 
 1. Ensure `uv` (installs if missing) → `uv tool install apm` (pinned).
 2. If Obsidian is installed: verify installer ≥1.12 and register the
@@ -432,8 +431,9 @@ scenarios prove they discriminate (eval-scenarios doctrine).
 - Results: `evals/results/<date>-<harness>-<model>.md` — one matrix per
   run, committed. Adoption decisions are closed only by results files
   referenced from the provenance manifest.
-- v1 pairs: Claude Code×Fable (baseline), Claude Code×Sonnet, Pi×default,
-  Pi×Sonnet-class.
+- v1 release-required pairs: Claude Code×Fable and Pi×default. Claude
+  Code×Sonnet and Pi×Sonnet-class are the secondary model-variation matrix;
+  record partial coverage honestly when provider accounts are unavailable.
 
 **Baseline protocol (the §4 selection rule, operationalized):**
 
@@ -460,26 +460,27 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 
 | # | Item | Blocking? |
 |---|---|---|
-| V1 | APM follows `.apm/` symlinks for local-path install/pack | **Verified 2026-07-12** (APM 0.24.1 live test): in-package symlinks (`.apm/skills -> ../skills`, target inside the package root) are dereferenced and the skill deploys to both `~/.agents/skills` and `~/.claude/skills`; symlinks escaping the package root are rejected with "Local install aborted". The §2 layout works as specified; no build-step fallback needed |
+| V1 | APM follows `.apm/` symlinks for local-path install/pack | **Verified 2026-07-12** (APM 0.24.1, evidence commit `dff03d0`): in-package symlinks whose targets stay inside the package root are dereferenced and deploy to user skill paths. APM's `--skill` filter was re-verified on the clean 2026-07-13 remote run. |
 | V2 | APM hooks primitive at user scope | No — wrapper owns hook wiring until proven (§3.3) |
 | V3 | `targets:` in `~/.apm/apm.yml` scopes global compile | No — cleanup fallback specified (§7) |
 | V4 | Pi local-extension install mechanics | No — deferred; only needed if an eval-justified hook is adopted (§4) |
 | V5 | (Phase 2) Copilot CLI MCP path, `~/.copilot/AGENTS.md`, `~/.agents/skills` symlink handling; Codex hook mechanism. **Added 2026-07-13:** APM emitted `~/.copilot/copilot-instructions.md` (not AGENTS.md) on AlmaLinux — verify per-platform filename before Phase 2/3 status rules | No — Phase 2 |
-| V6 | Official Obsidian CLI vs third-party obsidian-cli | **Resolved 2026-07-12, owner override** ([research + addendum](research/obsidian-cli-v6.md)): **official CLI adopted** (Jon's call); third-party removed from the machine. Verified hands-on on 1.12.7: create/read/append/search/property work; the CLI does **not** auto-launch the app — it errors when Obsidian is closed. Consequence: the memory backend uses **direct file operations** (no CLI dependency — passes all acceptance checks trivially); the `obsidian` skill wraps the official CLI for app-present machines. Installer-vs-core gotcha: in-app updates don't deliver the CLI; a fresh installer does. **Unchanged requirement:** `sync doctor` fails if `AGENT_MEMORY_VAULT` resolves under a corporate mount (`OneDrive-<Org>`); M4 must select a personal vault |
+| V6 | Official Obsidian CLI vs third-party obsidian-cli | **Resolved 2026-07-12, owner override** (evidence commit `b752300`): official CLI adopted for the optional `obsidian` skill; memory uses direct files and has no CLI dependency. Verified hands-on on 1.12.7. The CLI does not auto-launch the app. `sync doctor` rejects vaults on corporate mounts. |
 | V7 | Community tmux-skill candidates vs `using-tmux` acceptance checks | No — swap decision, not a blocker; `using-tmux` stays until displaced |
-| V8 | APM serves stale root-file content after source edits ("files unchanged" while content differs); observed twice on 2026-07-12 | Yes for wrapper hardening — `sync apply/status` must hash-check compiled root files against the `apm_modules` source and force-recompile on drift |
+| V8 | APM serves stale root-file content after source edits ("files unchanged" while content differs) | **Resolved 2026-07-13:** apply detaches only marker-owned managed roots before compile, forcing regeneration; a failed compile restores the last-known-good roots. Covered by regression tests. |
 
 ## 12. Milestones (Phase 1)
 
 | M | Deliverable | Done when |
 |---|---|---|
 | M1 | Repo rename + layout migration (§2, §9.1–2) | validation suite green on new layout; `npx skills add . --list` still resolves |
-| M2 | APM package works | **Done 2026-07-12** ([verification](research/m2-install-verification.md)): skills deployed to both paths, marker-owned root files written, hand-authored files preserved |
+| M2 | APM package works | **Done 2026-07-12** (evidence commit `dff03d0`): skills deployed to both paths, marker-owned root files written, hand-authored files preserved |
 | M3 | Wrapper v1 | **Done 2026-07-12**: `sync apply/status/doctor/remove` implemented TDD (11 tests); live apply on this Mac — 6 stale root files torn down, `~/.pi/agent/AGENTS.md` projected (core + overlay), status clean; committed symlink matrix retired, validator enforces absence |
-| M1.5 | Skill roster cut | propose/veto table resolved; cut skills deleted; acceptance checks written for kept tool skills |
+| M1.5 | Skill roster cut | **Done 2026-07-13:** cut skills deleted; kept tool checks committed; the filtered APM install contains seven accepted skills while benched public skills remain individually installable. Validator enforces the split. |
 | M4 | Memory tooling | **Done 2026-07-12**: "Agent Memory" vault created in iCloud + registered; `AGENT_MEMORY_VAULT` wired; memory-conventions skill shipped; doctor validates vault (personal + exists); basic-memory user-scope MCP removed; E12 passes 2× on CC×Fable and Pi×default incl. cross-harness recall ([results](../evals/results/2026-07-12-e12-memory-writeback.md)) |
-| M5 | Baseline run + gap-fill | **Substantially done 2026-07-12** ([results](../evals/results/2026-07-12-baseline-day.md)): superpowers uninstalled; 10 of 15 scenarios scored on 3 of 4 pairs — no authoritative-mode failures, no gap-fills required, E14 passes hookless. Remaining: Pi×Sonnet column (blocked on pi provider auth — Jon), E04/E07/E08 fixtures, E11/E13 interactive, flake-guard seconds. New wart V8: APM stale root-file compile; wrapper hash-check TODO |
-| M6 | New-machine test | **install.sh shipped 2026-07-12; bootstrap bug fixed 2026-07-13** (`uv tool install apm` pulled the wrong PyPI package on clean machines — now `apm-cli==0.24.1` pinned; found by an isolated AlmaLinux run, would have failed every E16). (idempotent, --non-interactive, fake-HOME smoke-tested: skills+profile+vault skeleton+doctor). **E16 attempt 1 FAILED 2026-07-13** ([results](../evals/results/2026-07-13-e16-attempt1.md)): apply lacked the compile step; validator needed PyYAML — both fixed with tests. **E16 attempt 2 PASSED 2026-07-13** on fresh Linux users (owner-approved deviation; [results](../evals/results/2026-07-13-e16-attempt2-pass.md)): 53 seconds clone-to-green, E14+E12+E15 all pass, four fixes shipped from live findings. PRD primary criterion met. **Exit also includes docs distillation:** `docs/research/*` prose distilled into a small set of living topical docs (e.g. harness-engineering.md, memory.md, evals.md) and the dated research files deleted — git history/PRs remain the archive, manifest citations switch to commit SHAs. `evals/` (scenarios, acceptance, results) stays: it is the test suite, not research |
+| M5 | Baseline run + gap-fill | **v1 behavioral baseline complete 2026-07-12** ([results](../evals/results/2026-07-12-baseline-day.md)): all E1–E15 scenarios covered on required Claude Code×Fable and Pi×default surfaces; the only authoritative failure, Pi E11, passed twice after the smallest overlay fix. Sonnet-class sampling passed but its entire optional matrix and every second-run cell are not complete; that is recorded secondary coverage, not a claim of a full 4-pair matrix. No framework or hook was justified. |
+| M6 | New-machine test | **Complete 2026-07-13.** Attempt 1 failed and produced bootstrap fixes. [Attempt 2](../evals/results/2026-07-13-e16-attempt2-pass.md) supplied authenticated E14/E12 behavior. The [remote regression](../evals/results/2026-07-13-e16-current-tree-regression.md) used a brand-new Linux user: bootstrap and doctor passed in 12 seconds, the then-38-test suite and no-PyYAML validation passed, stale-root regeneration passed, exactly seven default skills deployed, and corrected E15 measured ~1,793/8,000 tokens. A final last-known-good preservation test brought the branch suite to 39 and was run by Pi; production sync code was unchanged after the remote run. The remote account had no model credentials, so release acceptance explicitly combines its deployment evidence with attempt 2's unchanged behavioral assets. Research scaffolding was distilled into living topical docs and deleted; git history remains the archive. |
 
-Phase 1 exit = PRD success criteria: M6 (primary), M5 parity matrix
-(secondary), §9.3 consolidation complete on Jon's machines (secondary).
+Phase 1 exit satisfies M6 (primary) and the required-pair M5 baseline. The
+full four-pair consecutive-pass matrix remains incomplete secondary coverage,
+and the results say so explicitly.

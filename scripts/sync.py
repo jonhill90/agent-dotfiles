@@ -76,6 +76,15 @@ def deep_merge(base: dict, patch: dict) -> dict:
     return out
 
 
+def load_default_skills(repo: Path) -> list[str]:
+    roster = repo / "settings" / "default-skills.txt"
+    return [
+        line.strip()
+        for line in roster.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
 class Sync:
     def __init__(self, repo_root: Path, home: Path | None = None) -> None:
         self.repo = Path(repo_root)
@@ -158,6 +167,26 @@ class Sync:
         )
         return removed
 
+    def detach_managed_root_files(self) -> dict[Path, str]:
+        """Remove only APM-owned roots so compile cannot reuse stale output."""
+        backups: dict[Path, str] = {}
+        for relative in MANAGED_ROOT_FILES:
+            path = self.home / relative
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            if APM_MARKER in text:
+                backups[path] = text
+                path.unlink()
+        return backups
+
+    @staticmethod
+    def restore_root_files(backups: dict[Path, str]) -> None:
+        for path, text in backups.items():
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+
     # -- settings ---------------------------------------------------------
 
     def merge_settings(self, fragment_name: str, live_path: Path) -> None:
@@ -193,8 +222,14 @@ class Sync:
         # populates it even when no other harness is detected yet
         (self.home / ".agents" / "skills").mkdir(parents=True, exist_ok=True)
         if not no_apm:
+            skill_args = [
+                argument
+                for skill in load_default_skills(self.repo)
+                for argument in ("--skill", skill)
+            ]
             result = self.runner(
-                ["apm", "install", "-g", str(self.repo)], check=False
+                ["apm", "install", "-g", str(self.repo), *skill_args],
+                check=False,
             )
             if result.returncode != 0:
                 print("ERROR: apm install failed; aborting apply")
@@ -202,7 +237,18 @@ class Sync:
             # install does NOT reliably compile root files on fresh
             # machines (E16 failure 2026-07-13) — compile explicitly,
             # BEFORE teardown so stale unused-harness roots are removed.
-            self.runner(["apm", "compile", "-g"], check=False)
+            # Marker-owned managed roots are detached first: APM has also
+            # reported "unchanged" for stale output after source edits (V8).
+            root_backups = self.detach_managed_root_files()
+            compile_result = self.runner(["apm", "compile", "-g"], check=False)
+            if compile_result.returncode != 0:
+                self.restore_root_files(root_backups)
+                print("ERROR: apm compile failed; aborting apply")
+                return compile_result.returncode
+            # A detected harness should be regenerated. If APM skipped one,
+            # preserve its last-known-good marker-owned root instead of
+            # turning a refresh into accidental removal.
+            self.restore_root_files(root_backups)
         self.ensure_neutral_skills()
         removed = self.teardown_unused_root_files()
         pi = self.project_pi()
