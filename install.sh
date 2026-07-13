@@ -74,7 +74,11 @@ step 4 "sync apply"
 python3 "$REPO_DIR/scripts/sync.py" apply
 
 step 5 "doctor"
-python3 "$REPO_DIR/scripts/sync.py" doctor || true
-
-echo
-echo "Done. Open a NEW terminal (or 'source $PROFILE') and start your harness."
+if python3 "$REPO_DIR/scripts/sync.py" doctor; then
+  echo
+  echo "Done. Open a NEW terminal (or 'source $PROFILE') and start your harness."
+else
+  echo
+  echo "INSTALL INCOMPLETE: doctor reported failures above." >&2
+  exit 1
+fi
