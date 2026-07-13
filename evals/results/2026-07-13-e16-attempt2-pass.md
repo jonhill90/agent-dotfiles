@@ -48,3 +48,13 @@
   revoked by Jon.
 
 **PRD primary success criterion: MET.**
+
+## Later qualification
+
+This result records what passed in attempt 2; it is not the final-tree
+mechanical record. The later
+[current-tree regression](2026-07-13-e16-current-tree-regression.md) fixed and
+verified compile-error propagation, forced stale-root regeneration, the
+no-PyYAML validator path, the seven-skill default roster, and complete E15
+component accounting. Its clean account intentionally had no model credential,
+so the release record combines the two files as described there.
