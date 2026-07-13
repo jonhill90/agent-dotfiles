@@ -222,6 +222,13 @@ Every candidate is scored against:
 | using-tmux | Community search + acceptance checks before keep/swap decision |
 | Machine migration | Superpowers 5.1.0 stays installed until baseline day (its removal is step 1 of the baseline protocol) |
 
+### Repository governance (2026-07-12)
+
+| Decision | Choice |
+|---|---|
+| Docs vs noise | `docs/` holds living documents only; `evals/` is the permanent test suite; research prose is scaffolding — distilled into topical living docs and deleted at each spec iteration's exit (git/PRs are the archive, manifest cites SHAs) |
+| Privacy guard | Employer names and sensitive terms live only in an untracked local `.privacy-denylist`; validation errors on any tracked markdown containing them |
+
 ### Memory format distillation (2026-07-12)
 
 Design inputs: Karpathy's llm-wiki gist and Google OKF v0.1. INMPARA
