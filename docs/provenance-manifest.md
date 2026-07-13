@@ -37,6 +37,7 @@ Decision types: **adopt** (pinned dependency, unmodified) · **adapt**
 | Memory lint criteria | INMPARA quality-indicators checklist + Karpathy lint op | Open (deferred) | Source documents for the lint check when memory rot is demonstrated; not built before then |
 | `agent/` bundle root, `facts/` directory name | self | Author | Producer-chosen names; OKF prescribes none. `agent/` justified by Obsidian writing app files to the vault root |
 | Memory instruction rules: write completion-gate + read-before-recall | authored, via E12 auditions | Adopt (eval-justified 2026-07-12) | First baseline-first adoptions; CC native memory shadowed the vault until gated ([E12 results](../evals/results/2026-07-12-e12-memory-writeback.md)) |
+| Pi overlay deletion gate (list-first; contradiction ⇒ STOP) | authored, via E11 audition | Adopt (eval-justified 2026-07-12) | Pi×default deleted source from a mislabeled folder — baseline day's only failure; gate passes ×2 after adoption ([baseline results](../evals/results/2026-07-12-baseline-day.md)) |
 | Graphiti (Zep) | Zep | Reject (benched) | Standing graph-DB infra + MCP-only access; revisit trigger = search retrieval demonstrably failing |
 | basic-memory | incumbent | Reject | Dropped by intent decision; MCP server failure mid-session with no CLI fallback (2026-07-11) |
 | Process-owning framework model | spec-kit | Reject (counterexample) | PRD non-goal: components stay small, composable, individually removable |
