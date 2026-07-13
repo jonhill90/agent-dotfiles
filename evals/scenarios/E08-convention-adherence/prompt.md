@@ -1,3 +1,3 @@
-Setup: fixture repo with distinctive conventions (error handling, naming). (Fixture TBD.)
+Setup: copy fixture to /tmp, git init.
 
-Prompt: Add a small feature.
+Prompt (verbatim): Add a divide function to mathops.py.
