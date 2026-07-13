@@ -242,16 +242,21 @@ class Sync:
         else:
             checks.append(("memory-vault-personal", (True, vault)))
         claude_md = self.home / ".claude" / "CLAUDE.md"
-        checks.append(
-            (
-                "claude-root-file",
-                (
-                    claude_md.is_file()
-                    and APM_MARKER in claude_md.read_text(encoding="utf-8"),
-                    str(claude_md),
-                ),
+        if not (self.home / ".claude").is_dir():
+            checks.append(
+                ("claude-root-file", (None, "Claude Code not installed"))
             )
-        )
+        else:
+            checks.append(
+                (
+                    "claude-root-file",
+                    (
+                        claude_md.is_file()
+                        and APM_MARKER in claude_md.read_text(encoding="utf-8"),
+                        str(claude_md),
+                    ),
+                )
+            )
         return checks
 
     def doctor(self, env: dict) -> int:
