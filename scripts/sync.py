@@ -99,10 +99,17 @@ class Sync:
 
     # -- pi projection ----------------------------------------------------
 
+    def pi_available(self) -> bool:
+        return shutil.which("pi") is not None
+
     def project_pi(self) -> Path | None:
         pi_dir = self.home / ".pi" / "agent"
         if not pi_dir.is_dir():
-            return None
+            # pi installed but never launched (fresh machine): initialize
+            if self.pi_available():
+                pi_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                return None
         target = pi_dir / "AGENTS.md"
         if target.exists() and SYNC_MARKER not in target.read_text(encoding="utf-8"):
             print(f"[skip] hand-authored, not overwriting: {target}")
@@ -168,6 +175,9 @@ class Sync:
         if not (self.repo / "apm.yml").is_file():
             print(f"ERROR: {self.repo} is not the agent-dotfiles repo")
             return 2
+        # ensure the neutral user-scope skills path exists so APM
+        # populates it even when no other harness is detected yet
+        (self.home / ".agents" / "skills").mkdir(parents=True, exist_ok=True)
         if not no_apm:
             result = self.runner(
                 ["apm", "install", "-g", str(self.repo)], check=False

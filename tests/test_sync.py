@@ -47,6 +47,16 @@ class SyncTestCase(unittest.TestCase):
 
 
 class PiProjectionTests(SyncTestCase):
+    def test_initializes_pi_dir_when_binary_on_path(self) -> None:
+        self.syncer.pi_available = lambda: True
+        self.syncer.project_pi()
+        out = self.home / ".pi" / "agent" / "AGENTS.md"
+        self.assertTrue(out.is_file())
+
+    def test_apply_creates_neutral_skills_dir(self) -> None:
+        self.syncer.apply(no_apm=True)
+        self.assertTrue((self.home / ".agents" / "skills").is_dir())
+
     def test_projects_core_plus_overlay_when_pi_present(self) -> None:
         (self.home / ".pi" / "agent").mkdir(parents=True)
         self.syncer.project_pi()
@@ -57,6 +67,7 @@ class PiProjectionTests(SyncTestCase):
         self.assertNotIn("description: test", out)  # frontmatter stripped
 
     def test_skipped_when_pi_absent(self) -> None:
+        self.syncer.pi_available = lambda: False
         self.syncer.project_pi()
         self.assertFalse((self.home / ".pi" / "agent" / "AGENTS.md").exists())
 
