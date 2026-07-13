@@ -130,6 +130,20 @@ class Sync:
         self.state["pi_agents_md"] = str(target)
         return target
 
+    def ensure_neutral_skills(self) -> None:
+        """APM's neutral-path (~/.agents/skills) targeting is unreliable on
+        fresh machines; mirror claude-scope skills into it when empty so
+        Pi/Codex/Copilot always see the canonical set."""
+        neutral = self.home / ".agents" / "skills"
+        claude_skills = self.home / ".claude" / "skills"
+        if not claude_skills.is_dir():
+            return
+        neutral.mkdir(parents=True, exist_ok=True)
+        for skill in sorted(claude_skills.iterdir()):
+            target = neutral / skill.name
+            if skill.is_dir() and not target.exists():
+                target.symlink_to(skill)
+
     # -- teardown ---------------------------------------------------------
 
     def teardown_unused_root_files(self) -> list[Path]:
@@ -189,6 +203,7 @@ class Sync:
             # machines (E16 failure 2026-07-13) — compile explicitly,
             # BEFORE teardown so stale unused-harness roots are removed.
             self.runner(["apm", "compile", "-g"], check=False)
+        self.ensure_neutral_skills()
         removed = self.teardown_unused_root_files()
         pi = self.project_pi()
         self.merge_settings("claude", self.home / ".claude" / "settings.json")
