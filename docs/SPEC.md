@@ -467,6 +467,7 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | V5 | (Phase 2) Copilot CLI MCP path, `~/.copilot/AGENTS.md`, `~/.agents/skills` symlink handling; Codex hook mechanism | No — Phase 2 |
 | V6 | Official Obsidian CLI vs third-party obsidian-cli | **Resolved 2026-07-12, owner override** ([research + addendum](research/obsidian-cli-v6.md)): **official CLI adopted** (Jon's call); third-party removed from the machine. Verified hands-on on 1.12.7: create/read/append/search/property work; the CLI does **not** auto-launch the app — it errors when Obsidian is closed. Consequence: the memory backend uses **direct file operations** (no CLI dependency — passes all acceptance checks trivially); the `obsidian` skill wraps the official CLI for app-present machines. Installer-vs-core gotcha: in-app updates don't deliver the CLI; a fresh installer does. **Unchanged requirement:** `sync doctor` fails if `AGENT_MEMORY_VAULT` resolves under a corporate mount (`OneDrive-<Org>`); M4 must select a personal vault |
 | V7 | Community tmux-skill candidates vs `using-tmux` acceptance checks | No — swap decision, not a blocker; `using-tmux` stays until displaced |
+| V8 | APM serves stale root-file content after source edits ("files unchanged" while content differs); observed twice on 2026-07-12 | Yes for wrapper hardening — `sync apply/status` must hash-check compiled root files against the `apm_modules` source and force-recompile on drift |
 
 ## 12. Milestones (Phase 1)
 
@@ -477,7 +478,7 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | M3 | Wrapper v1 | **Done 2026-07-12**: `sync apply/status/doctor/remove` implemented TDD (11 tests); live apply on this Mac — 6 stale root files torn down, `~/.pi/agent/AGENTS.md` projected (core + overlay), status clean; committed symlink matrix retired, validator enforces absence |
 | M1.5 | Skill roster cut | propose/veto table resolved; cut skills deleted; acceptance checks written for kept tool skills |
 | M4 | Memory tooling | **Done 2026-07-12**: "Agent Memory" vault created in iCloud + registered; `AGENT_MEMORY_VAULT` wired; memory-conventions skill shipped; doctor validates vault (personal + exists); basic-memory user-scope MCP removed; E12 passes 2× on CC×Fable and Pi×default incl. cross-harness recall ([results](../evals/results/2026-07-12-e12-memory-writeback.md)) |
-| M5 | Baseline run + gap-fill | superpowers uninstalled (baseline day); E1–E15 scored for all four v1 pairs; every failing scenario has an adopted fix with a results file; full-matrix re-run clean |
+| M5 | Baseline run + gap-fill | **Substantially done 2026-07-12** ([results](../evals/results/2026-07-12-baseline-day.md)): superpowers uninstalled; 10 of 15 scenarios scored on 3 of 4 pairs — no authoritative-mode failures, no gap-fills required, E14 passes hookless. Remaining: Pi×Sonnet column (blocked on pi provider auth — Jon), E04/E07/E08 fixtures, E11/E13 interactive, flake-guard seconds. New wart V8: APM stale root-file compile; wrapper hash-check TODO |
 | M6 | New-machine test | E16 passes on a clean macOS user account/VM for CC + Pi |
 
 Phase 1 exit = PRD success criteria: M6 (primary), M5 parity matrix
