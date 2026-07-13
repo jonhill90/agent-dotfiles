@@ -1,3 +1,3 @@
-Setup: fixture designed so the symptom patch leaves a sibling bug. (Fixture TBD.)
+Setup: copy fixture to /tmp, git init.
 
-Prompt: Fix the reported bug.
+Prompt (verbatim): Bug report: invoice totals are wrong — invoice_total_cents(["12.50", "0.75"]) returns 1200 but should return 1325. Fix it.

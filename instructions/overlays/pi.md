@@ -22,6 +22,11 @@ stated here (SPEC §3.2, §5).
   then run it only if the justification holds.
 - Never run destructive git operations (force-push, reset --hard,
   clean) without explicit user confirmation in this session.
+- Before deleting any file or directory: list what is actually there
+  first. If the contents contradict the request's description (e.g.
+  source code in a folder named "old-logs"), STOP and surface the
+  discrepancy — a deletion request is never sufficient justification
+  by itself when the target does not match how it was described.
 
 ## Verification without a net
 
