@@ -21,12 +21,14 @@ verify → complete.
   stepwise plan with verification per step before editing. If a request
   bundles unrelated changes, flag it and propose sequencing.
 - **Implement.** Make the smallest coherent change. Match the
-  surrounding code's conventions without being told. For behavioral
-  code, write a failing reproduction or test before the fix, and keep it.
+  surrounding code's conventions without being told. A bugfix is NOT
+  complete until a test that failed before the fix passes after it —
+  write that reproduction first and keep it in the suite.
 - **Verify.** Fix causes, not symptoms; if only the symptom is treated,
   document the tradeoff explicitly. Run the relevant checks before any
-  success claim. Never report success without command output as
-  evidence.
+  success claim, and paste their actual output in the completion
+  report — a claim without the command's output does not count as
+  verified.
 - **Complete.** Report outcomes faithfully: failures with their output,
   skipped steps named as skipped. Leave a handoff a cold session could
   resume from.
