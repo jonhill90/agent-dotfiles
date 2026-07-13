@@ -28,6 +28,9 @@ def make_repo(root: Path) -> Path:
     )
     (repo / "settings" / "claude").mkdir(parents=True)
     (repo / "settings" / "pi").mkdir(parents=True)
+    (repo / "settings" / "default-skills.txt").write_text(
+        "gh-cli\nmemory-conventions\n", encoding="utf-8"
+    )
     (repo / "settings" / "claude" / "settings.json").write_text("{}\n")
     (repo / "settings" / "pi" / "settings.json").write_text("{}\n")
     return repo
@@ -174,6 +177,71 @@ class StatusTests(SyncTestCase):
 
 
 class ApplyOrderTests(SyncTestCase):
+    def test_apply_pins_the_default_skill_roster(self) -> None:
+        calls = []
+
+        def runner(cmd, check=False):
+            calls.append(cmd)
+
+            class R:
+                returncode = 0
+
+            return R()
+
+        self.syncer.runner = runner
+        self.assertEqual(self.syncer.apply(), 0)
+        self.assertEqual(
+            calls[0],
+            [
+                "apm",
+                "install",
+                "-g",
+                str(self.repo),
+                "--skill",
+                "gh-cli",
+                "--skill",
+                "memory-conventions",
+            ],
+        )
+
+    def test_apply_forces_marker_owned_roots_to_recompile(self) -> None:
+        claude = self.home / ".claude" / "CLAUDE.md"
+        claude.parent.mkdir(parents=True)
+        claude.write_text(APM_MARKER + "\nstale rules\n")
+        saw_missing_before_compile = False
+
+        def runner(cmd, check=False):
+            nonlocal saw_missing_before_compile
+            if cmd[1] == "compile":
+                saw_missing_before_compile = not claude.exists()
+                claude.write_text(APM_MARKER + "\ncurrent rules\n")
+
+            class R:
+                returncode = 0
+
+            return R()
+
+        self.syncer.runner = runner
+        self.assertEqual(self.syncer.apply(), 0)
+        self.assertTrue(saw_missing_before_compile)
+        self.assertIn("current rules", claude.read_text())
+
+    def test_apply_preserves_last_good_root_when_compile_skips_it(self) -> None:
+        claude = self.home / ".claude" / "CLAUDE.md"
+        claude.parent.mkdir(parents=True)
+        original = APM_MARKER + "\nlast known good\n"
+        claude.write_text(original)
+
+        def runner(cmd, check=False):
+            class R:
+                returncode = 0
+
+            return R()
+
+        self.syncer.runner = runner
+        self.assertEqual(self.syncer.apply(), 0)
+        self.assertEqual(claude.read_text(), original)
+
     def test_apply_runs_install_then_compile_then_teardown(self) -> None:
         calls = []
         home = self.home
@@ -195,6 +263,27 @@ class ApplyOrderTests(SyncTestCase):
         self.assertEqual(calls[:2], ["install", "compile"])
         # teardown must run AFTER compile: the stale root compile wrote is gone
         self.assertFalse((home / ".cursor" / "AGENTS.md").exists())
+
+    def test_apply_aborts_when_compile_fails(self) -> None:
+        calls = []
+        claude = self.home / ".claude" / "CLAUDE.md"
+        claude.parent.mkdir(parents=True)
+        original = APM_MARKER + "\nlast known good\n"
+        claude.write_text(original)
+
+        def runner(cmd, check=False):
+            calls.append(cmd[1])
+
+            class R:
+                returncode = 7 if cmd[1] == "compile" else 0
+
+            return R()
+
+        self.syncer.runner = runner
+        self.assertEqual(self.syncer.apply(), 7)
+        self.assertEqual(calls, ["install", "compile"])
+        self.assertEqual(claude.read_text(), original)
+        self.assertFalse(self.syncer.state_file.exists())
 
 
 class DoctorTests(SyncTestCase):

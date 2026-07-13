@@ -16,6 +16,9 @@ try:
 except ImportError:  # fresh machines lack PyYAML; use the fallback parser
     yaml = None
 
+YAML_ERRORS = (yaml.YAMLError,) if yaml is not None else ()
+PARSE_ERRORS = (OSError, UnicodeError, ValueError) + YAML_ERRORS
+
 
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
@@ -28,6 +31,20 @@ PORTABLE_FIELDS = {
     "allowed-tools",
 }
 EXECUTABLE_SUFFIXES = {".py", ".sh", ".bash"}
+INSTRUCTION_TOKEN_CAP = 2_000
+OVERLAY_TOKEN_CAP = 1_500
+DESCRIPTION_TOKEN_CAP = 2_000
+MEMORY_INDEX_TOKEN_RESERVE = 1_500
+TOTAL_STATIC_TOKEN_CAP = 8_000
+DEFAULT_APM_SKILLS = {
+    "az-devops",
+    "create-skill",
+    "gh-cli",
+    "linear",
+    "memory-conventions",
+    "obsidian",
+    "using-tmux",
+}
 # Retired at M3: installer-owned projection (APM + scripts/sync.py)
 # replaced the committed symlink matrix. Their presence is now an error.
 RETIRED_PROJECTIONS = (
@@ -103,7 +120,7 @@ def validate_skill(skill_dir: Path) -> list[Finding]:
 
     try:
         frontmatter, body = parse_skill(skill_file)
-    except (OSError, UnicodeError, yaml.YAMLError, ValueError) as exc:
+    except PARSE_ERRORS as exc:
         return [Finding("error", skill_file, str(exc))]
 
     unknown_fields = sorted(set(frontmatter) - PORTABLE_FIELDS)
@@ -216,6 +233,38 @@ def validate_projections(root: Path) -> list[Finding]:
     return findings
 
 
+def validate_apm_skill_roster(root: Path) -> list[Finding]:
+    """Keep public skills distinct from the personal default package."""
+    roster = root / "settings" / "default-skills.txt"
+    if not roster.is_file():
+        return [Finding("error", roster, "default skill roster missing")]
+    actual = {
+        line.strip()
+        for line in roster.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    findings: list[Finding] = []
+    missing = sorted(DEFAULT_APM_SKILLS - actual)
+    unexpected = sorted(actual - DEFAULT_APM_SKILLS)
+    if missing:
+        findings.append(
+            Finding(
+                "error",
+                roster,
+                f"missing default-package skills: {', '.join(missing)}",
+            )
+        )
+    if unexpected:
+        findings.append(
+            Finding(
+                "error",
+                roster,
+                f"unexpected default-package skills: {', '.join(unexpected)}",
+            )
+        )
+    return findings
+
+
 def validate_privacy(root: Path) -> list[Finding]:
     """Flag tracked markdown containing terms from the untracked
     .privacy-denylist (one term per line; the terms never enter git)."""
@@ -254,7 +303,7 @@ def validate_skill_collection(skill_dirs: list[Path]) -> list[Finding]:
         findings.extend(validate_skill(skill_dir))
         try:
             frontmatter, _ = parse_skill(skill_dir / "SKILL.md")
-        except (OSError, UnicodeError, yaml.YAMLError, ValueError):
+        except PARSE_ERRORS:
             continue
         name = frontmatter.get("name")
         if isinstance(name, str):
@@ -273,13 +322,110 @@ def validate_skill_collection(skill_dirs: list[Path]) -> list[Finding]:
     return findings
 
 
+def token_estimate_bytes(size: int) -> float:
+    return size / 4
+
+
+def validate_static_context(root: Path) -> list[Finding]:
+    """Enforce the SPEC section 6 static-context budgets.
+
+    The memory index is machine-local, so the repository check reserves its
+    full component budget when enforcing the total. E15 measures the live
+    index separately.
+    """
+    findings: list[Finding] = []
+    instructions = root / "instructions" / "global.instructions.md"
+    if not instructions.is_file():
+        return [Finding("error", instructions, "canonical instructions missing")]
+
+    instruction_tokens = token_estimate_bytes(instructions.stat().st_size)
+    if instruction_tokens > INSTRUCTION_TOKEN_CAP:
+        findings.append(
+            Finding(
+                "error",
+                instructions,
+                f"canonical instructions use ~{instruction_tokens:.0f} tokens; "
+                f"cap is {INSTRUCTION_TOKEN_CAP}",
+            )
+        )
+
+    overlay_tokens = 0.0
+    overlays = root / "instructions" / "overlays"
+    if overlays.is_dir():
+        for overlay in sorted(overlays.glob("*.md")):
+            tokens = token_estimate_bytes(overlay.stat().st_size)
+            overlay_tokens = max(overlay_tokens, tokens)
+            if tokens > OVERLAY_TOKEN_CAP:
+                findings.append(
+                    Finding(
+                        "error",
+                        overlay,
+                        f"harness overlay uses ~{tokens:.0f} tokens; "
+                        f"cap is {OVERLAY_TOKEN_CAP}",
+                    )
+                )
+
+    description_bytes = 0
+    roster = root / "settings" / "default-skills.txt"
+    description_skill_dirs = (
+        [
+            root / "skills" / name
+            for name in sorted(
+                line.strip()
+                for line in roster.read_text(encoding="utf-8").splitlines()
+                if line.strip() and not line.lstrip().startswith("#")
+            )
+        ]
+        if roster.is_file()
+        else discover_skill_dirs(root, None)
+    )
+    for skill_dir in description_skill_dirs:
+        try:
+            frontmatter, _ = parse_skill(skill_dir / "SKILL.md")
+        except PARSE_ERRORS:
+            continue
+        description = frontmatter.get("description")
+        if isinstance(description, str):
+            description_bytes += len(description.encode("utf-8"))
+    description_tokens = token_estimate_bytes(description_bytes)
+    if description_tokens > DESCRIPTION_TOKEN_CAP:
+        findings.append(
+            Finding(
+                "error",
+                root / "skills",
+                f"installed-skill descriptions use ~{description_tokens:.0f} "
+                f"tokens; cap is {DESCRIPTION_TOKEN_CAP}",
+            )
+        )
+
+    total_tokens = (
+        instruction_tokens
+        + overlay_tokens
+        + description_tokens
+        + MEMORY_INDEX_TOKEN_RESERVE
+    )
+    if total_tokens > TOTAL_STATIC_TOKEN_CAP:
+        findings.append(
+            Finding(
+                "error",
+                root / "instructions",
+                f"thickest-harness static context uses ~{total_tokens:.0f} "
+                f"tokens including the memory-index reserve; cap is "
+                f"{TOTAL_STATIC_TOKEN_CAP}",
+            )
+        )
+    return findings
+
+
 def validate(root: Path, target: Path | None = None) -> list[Finding]:
     skill_dirs = discover_skill_dirs(root, target)
     findings = validate_skill_collection(skill_dirs)
 
     if target is None:
         findings.extend(validate_projections(root))
+        findings.extend(validate_apm_skill_roster(root))
         findings.extend(validate_privacy(root))
+        findings.extend(validate_static_context(root))
 
     return findings
 

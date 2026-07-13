@@ -37,7 +37,7 @@ agents/          Reusable agent definitions
 hooks/           Canonical hook scripts, harness-agnostic
 settings/        Wrapper-owned config fragments (claude, pi, mcp)
 evals/           Behavioral-parity scenarios and committed results
-docs/            PRD, spec, provenance manifest, research
+docs/            Living product, architecture, memory, and eval documentation
 .claude/         Claude-specific repo-development configuration and hooks
 .codex/          Codex-specific configuration and policy
 .github/         GitHub Copilot instructions and repository automation
@@ -53,14 +53,14 @@ retired (SPEC §2).
 
 | Skill | Purpose |
 |---|---|
-| `primer` | Orient in an unfamiliar codebase |
 | `using-tmux` | Operate persistent interactive terminal sessions safely |
-| `closing-the-loop` | Produce implementation plans tied to verification |
 | `create-skill` | Design and validate portable skills with progressive disclosure |
 
 Additional skills integrate with GitHub, Azure DevOps, Linear, and Obsidian.
 Install them selectively to avoid overlapping triggers and unnecessary
-context.
+context. `primer` and `closing-the-loop` remain independently installable but
+are not part of the default APM package because the baseline evals did not
+justify their static description cost.
 
 The behavioral layer is deliberately minimal: loop discipline lives in the
 canonical instructions, and skills are added only when a failing eval
