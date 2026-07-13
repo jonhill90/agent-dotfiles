@@ -1,5 +1,5 @@
 #!/bin/bash
-# agent-dotfiles bootstrap (SPEC §8). macOS v1. Idempotent.
+# agent-dotfiles bootstrap (SPEC §8). macOS/Linux shared core. Idempotent.
 # Usage: ./install.sh [--non-interactive]
 #   Non-interactive mode requires AGENT_MEMORY_VAULT to be exported (or
 #   already present in the shell profile) and skips all prompts.

@@ -1,9 +1,9 @@
 # PRD: agent-dotfiles
 
-- **Status:** Draft v1 — decisions from intent interview, 2026-07-11
+- **Status:** Approved v1 requirements — 2026-07-13
 - **Owner:** Jon Hill
 - **Successor to:** `skills` repository identity (rename in place, history preserved)
-- **Next artifact:** Distillation research report, then technical spec
+- **Technical design:** [SPEC.md](SPEC.md)
 
 ## Problem
 
@@ -51,10 +51,12 @@ Jon. Me-first, public-friendly: when personal-workflow needs and public-product 
 
 ## Success Criteria
 
-**Primary — the new-machine test:** sit at a fresh machine (or fresh
-harness install), run one command, and within minutes any first-class
-harness behaves like Jon's agent — same discipline, same skills, same
-tools. If this fails, the project failed.
+**Primary — the new-machine test:** start with an isolated environment,
+run one command sequence, and within 15 minutes the v1 harness behaves like
+Jon's agent: managed instructions and skills, durable memory, skill triggering,
+and static context within budget. The accepted v1 clean-room platform is Linux;
+macOS-only application integration is verified separately and is not implied by
+the Linux run.
 
 **Secondary:**
 
@@ -73,7 +75,7 @@ tools. If this fails, the project failed.
 | Hooks & guardrails | Session bootstraps, validation, safety checks, per-harness shims |
 | MCP configuration | Declared servers, env-var auth, projected per harness config format |
 | Agents + settings | Subagent definitions, permission allowlists, model defaults |
-| Memory (tooling only) | Memory infrastructure/config on every machine; backend TBD by research. Memory *content* is data, not dotfiles — never synced by this repo in v1 |
+| Memory (tooling only) | Personal Obsidian vault conventions and validation on every machine; direct file access is the portable backend. Memory *content* is data, not dotfiles — never synced by this repo in v1 |
 
 ### First-class harnesses (end state)
 
@@ -91,10 +93,14 @@ The full matrix is 4 harnesses × 3 OSes × 5+ layers. It is delivered as a
 vertical slice first; the architecture must not preclude later phases, but
 v1 verifies only its own slice.
 
-- **Phase 0 — Distillation research** (see Research Phase below).
-- **Phase 1 (v1) — Vertical slice:** this Mac (macOS), Claude Code + Pi,
-  ALL layers managed end-to-end. New-machine test passes for these two
-  harnesses.
+- **Phase 0 — Distillation research** (complete; decisions live in topical
+  docs and detailed prose remains in git history).
+- **Phase 1 (v1) — Vertical slice:** Claude Code + Pi configuration and
+  behavior. The shared bootstrap core is accepted in an isolated Linux
+  environment; macOS-specific integration is verified on Jon's existing Mac.
+  Claude Code runs E16 end-to-end. Pi's fresh projection is checked by E16 and
+  its behavior is covered by the M5 matrix because third-party provider auth
+  is not part of the installer.
 - **Phase 2:** Codex + Copilot first-class; still macOS.
 - **Phase 3:** Windows/WSL and Linux support in the sync tooling.
 - **Phase 4:** Curated public bundles/profiles, if demand exists.
@@ -126,7 +132,12 @@ Every candidate is scored against:
 5. **Eval-passing** — the decisive criterion: candidates are kept or cut by
    scenario evals, not by reputation.
 
-## Research Phase (Phase 0) — Deliverables
+## Research Phase (Phase 0) — Completed Deliverables
+
+The dated working notes were temporary scaffolding and are preserved in git
+history. Their maintained conclusions live in
+[harness-engineering.md](harness-engineering.md), [memory.md](memory.md), and
+[evals.md](evals.md).
 
 1. **Distillation matrix.** For each source × harness layer × loop stage:
    what it recommends, token cost, portability, conflicts. Sources:
@@ -180,16 +191,15 @@ Every candidate is scored against:
 - Hand-maintained per-harness projection trees. Projections are generated
   or installer-owned; committed symlink matrices are retired.
 
-## Open Questions (deferred to spec, informed by Phase 0)
+## Questions Resolved by the Spec
 
-1. Sync tool implementation (APM wrapper vs custom; language if custom).
-2. Static context token budget (number and measurement method).
-3. Eval harness mechanics (how scenarios run per harness×model pair).
-4. Behavioral-layer composition (superpowers vs alternatives vs authored —
-   decided by rubric + evals, per Research Phase).
-5. Memory backend (per Research Phase).
-6. Repo layout for the renamed repository (spec proposes; must serve both
-   `apm`/`npx skills` resolution and sync).
+1. Sync uses pinned APM CLI plus a Python standard-library wrapper.
+2. Static context is measured as UTF-8 bytes/4 with an 8,000-token total cap.
+3. Evals are manual, evidence-scored fixtures with consecutive-pass guards.
+4. Behavioral composition is baseline-first; only failing evals justify a
+   component.
+5. Memory is a personal Obsidian vault accessed through direct files.
+6. Canonical top-level sources feed an installer-owned `.apm/` package view.
 
 ## Decision Log
 
@@ -201,7 +211,7 @@ Every candidate is scored against:
 | First-class harnesses (end state) | Claude Code, Codex, Copilot, Pi |
 | Managed layers | All five + memory tooling |
 | OS support (end state) | macOS, Windows/WSL, Linux |
-| V1 slice | This Mac, Claude Code + Pi, all layers |
+| V1 slice | Claude Code + Pi; Linux clean-room core plus macOS integration |
 | Repo identity | Rename in place to `agent-dotfiles` |
 | Privacy model | Public repo, secrets externalized |
 | Process | Rubric in PRD; research decides; evals arbitrate |
@@ -234,8 +244,9 @@ Every candidate is scored against:
 Design inputs: Karpathy's llm-wiki gist and Google OKF v0.1. INMPARA
 and the Second Brain were reviewed for boundary-setting only — owner
 decision: they are personal note-taking systems, not harness inputs,
-and contribute nothing to the memory schema. Full analysis:
-`docs/research/memory-format-distillation.md`.
+and contribute nothing to the memory schema. The maintained contract is
+[memory.md](memory.md); detailed analysis remains in git history at `a4de1ac`
+and `e33f08b`.
 
 | Decision | Choice |
 |---|---|

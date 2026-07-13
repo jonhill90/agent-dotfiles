@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "validate_repository.py"
@@ -114,10 +115,6 @@ class ValidateRepositoryTests(unittest.TestCase):
             )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PrivacyDenylistTests(unittest.TestCase):
     def test_flags_denylisted_terms_in_tracked_markdown(self) -> None:
         import tempfile
@@ -178,3 +175,68 @@ class FallbackFrontmatterTests(unittest.TestCase):
 
         parsed = vr.mini_yaml("# comment\nname: 'x'\n\ndescription: y\n")
         self.assertEqual(parsed, {"name": "x", "description": "y"})
+
+    def test_invalid_skill_is_reported_without_pyyaml(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            skill_dir = Path(temporary) / "skills" / "bad-skill"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text("not frontmatter\n")
+            with mock.patch.object(validator, "yaml", None):
+                findings = validator.validate_skill(skill_dir)
+            self.assertEqual(len(findings), 1)
+            self.assertIn("must start with ---", findings[0].message)
+
+
+class StaticContextBudgetTests(unittest.TestCase):
+    def make_root(self, temporary: str, instruction_bytes: int = 400) -> Path:
+        root = Path(temporary)
+        instructions = root / "instructions"
+        (instructions / "overlays").mkdir(parents=True)
+        (instructions / "global.instructions.md").write_text(
+            "x" * instruction_bytes
+        )
+        (instructions / "overlays" / "pi.md").write_text("pi overlay\n")
+        skill = root / "skills" / "example-skill"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: example-skill\n"
+            "description: Run examples. Use when testing.\n---\n\n# Skill\n"
+        )
+        return root
+
+    def test_static_context_within_budget_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            self.assertEqual([], validator.validate_static_context(root))
+
+    def test_instruction_component_over_budget_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary, instruction_bytes=8_004)
+            findings = validator.validate_static_context(root)
+            self.assertTrue(
+                any("canonical instructions" in finding.message for finding in findings)
+            )
+
+
+class ApmPackageRosterTests(unittest.TestCase):
+    def test_benched_skills_are_not_in_default_apm_package(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            settings = root / "settings"
+            settings.mkdir()
+            (settings / "default-skills.txt").write_text(
+                "\n".join(sorted(validator.DEFAULT_APM_SKILLS | {"primer"}))
+            )
+
+            findings = validator.validate_apm_skill_roster(root)
+
+        self.assertTrue(
+            any(
+                "unexpected default-package skills: primer" in finding.message
+                for finding in findings
+            )
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

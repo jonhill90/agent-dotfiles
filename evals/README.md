@@ -1,7 +1,7 @@
 # evals/
 
 Behavioral-parity acceptance tests (SPEC §10). Scenario definitions
-come from [docs/research/eval-scenarios.md](../docs/research/eval-scenarios.md)
+are maintained in [docs/evals.md](../docs/evals.md)
 (E1–E16); this directory holds their runnable form and results.
 
 ## Layout
@@ -24,8 +24,9 @@ come from [docs/research/eval-scenarios.md](../docs/research/eval-scenarios.md)
 4. A pair passes a loop stage when all its scenarios pass **twice
    consecutively** (flake guard).
 
-v1 pairs: Claude Code×Fable (baseline), Claude Code×Sonnet, Pi×default,
-Pi×Sonnet-class.
+v1 release-required pairs are Claude Code×Fable and Pi×default. Claude
+Code×Sonnet and Pi×Sonnet-class form the secondary model-variation matrix;
+unavailable provider accounts are recorded as missing coverage, never passes.
 
 ## Baseline-first (SPEC §4/§10)
 
