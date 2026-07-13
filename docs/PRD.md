@@ -191,7 +191,9 @@ Every candidate is scored against:
 6. Repo layout for the renamed repository (spec proposes; must serve both
    `apm`/`npx skills` resolution and sync).
 
-## Decision Log (intent interview, 2026-07-11)
+## Decision Log
+
+### Intent interview (2026-07-11)
 
 | Decision | Choice |
 |---|---|
@@ -207,7 +209,7 @@ Every candidate is scored against:
 | APM role | Lead candidate for sync backbone; research verifies Pi + global scope |
 | Memory | Tooling in scope, backend researched; content never synced in v1 |
 
-## Decision Log Addendum (spec revision interview, 2026-07-12)
+### Spec revision interview (2026-07-12)
 
 | Decision | Choice |
 |---|---|
@@ -220,7 +222,7 @@ Every candidate is scored against:
 | using-tmux | Community search + acceptance checks before keep/swap decision |
 | Machine migration | Superpowers 5.1.0 stays installed until baseline day (its removal is step 1 of the baseline protocol) |
 
-## Decision Log Addendum 2 (memory format distillation, 2026-07-12)
+### Memory format distillation (2026-07-12)
 
 Design inputs: Karpathy's llm-wiki gist and Google OKF v0.1. INMPARA
 and the Second Brain were reviewed for boundary-setting only — owner
