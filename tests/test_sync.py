@@ -153,6 +153,30 @@ class StatusTests(SyncTestCase):
         self.assertEqual(self.syncer.status(), 1)
 
 
+class ApplyOrderTests(SyncTestCase):
+    def test_apply_runs_install_then_compile_then_teardown(self) -> None:
+        calls = []
+        home = self.home
+
+        def runner(cmd, check=False):
+            calls.append(cmd[1])
+            if cmd[1] == "compile":
+                stale = home / ".cursor" / "AGENTS.md"
+                stale.parent.mkdir(parents=True, exist_ok=True)
+                stale.write_text(APM_MARKER + "\ngenerated\n")
+
+            class R:
+                returncode = 0
+
+            return R()
+
+        self.syncer.runner = runner
+        self.assertEqual(self.syncer.apply(), 0)
+        self.assertEqual(calls[:2], ["install", "compile"])
+        # teardown must run AFTER compile: the stale root compile wrote is gone
+        self.assertFalse((home / ".cursor" / "AGENTS.md").exists())
+
+
 class DoctorTests(SyncTestCase):
     def test_flags_corporate_memory_vault(self) -> None:
         env = {

@@ -154,3 +154,27 @@ class PrivacyDenylistTests(unittest.TestCase):
             (root / ".privacy-denylist").write_text("term\n")
             (root / "gone.md").symlink_to(root / "missing-target.md")
             self.assertEqual(vr.validate_privacy(root), [])
+
+
+class FallbackFrontmatterTests(unittest.TestCase):
+    def test_mini_yaml_matches_real_yaml_for_skill_frontmatter(self) -> None:
+        import validate_repository as vr
+        import yaml as real_yaml
+
+        text = (
+            "name: my-skill\n"
+            "description: Does things safely. Use when testing.\n"
+            'license: "MIT"\n'
+        )
+        self.assertEqual(vr.mini_yaml(text), real_yaml.safe_load(text))
+        # the fallback is deliberately more lenient than YAML: embedded
+        # colons stay verbatim instead of raising
+        self.assertEqual(
+            vr.mini_yaml("description: a: b\n"), {"description": "a: b"}
+        )
+
+    def test_mini_yaml_strips_quotes_and_ignores_comments(self) -> None:
+        import validate_repository as vr
+
+        parsed = vr.mini_yaml("# comment\nname: 'x'\n\ndescription: y\n")
+        self.assertEqual(parsed, {"name": "x", "description": "y"})

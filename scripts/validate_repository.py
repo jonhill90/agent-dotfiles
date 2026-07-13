@@ -11,7 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote
 
-import yaml
+try:
+    import yaml
+except ImportError:  # fresh machines lack PyYAML; use the fallback parser
+    yaml = None
 
 
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -44,6 +47,23 @@ class Finding:
     message: str
 
 
+def mini_yaml(text: str) -> dict[str, object]:
+    """Minimal fallback for flat `key: value` frontmatter when PyYAML is
+    unavailable (fresh machines). Handles quoted values and comments;
+    values keep embedded colons verbatim."""
+    parsed: dict[str, object] = {}
+    for line in text.splitlines():
+        line = line.rstrip()
+        if not line or line.lstrip().startswith("#") or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        parsed[key.strip()] = value
+    return parsed
+
+
 def parse_skill(skill_file: Path) -> tuple[dict[str, object], str]:
     text = skill_file.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -55,7 +75,8 @@ def parse_skill(skill_file: Path) -> tuple[dict[str, object], str]:
     except ValueError as exc:
         raise ValueError("SKILL.md has unclosed YAML frontmatter") from exc
 
-    frontmatter = yaml.safe_load("\n".join(lines[1:closing]))
+    raw = "\n".join(lines[1:closing])
+    frontmatter = yaml.safe_load(raw) if yaml else mini_yaml(raw)
     if not isinstance(frontmatter, dict):
         raise ValueError("frontmatter must be a YAML mapping")
 
