@@ -175,6 +175,12 @@ class DoctorTests(SyncTestCase):
         checks = dict(self.syncer.doctor_checks(env=env))
         self.assertTrue(checks["memory-vault-personal"][0])
 
+    def test_missing_claude_harness_is_warning_not_failure(self) -> None:
+        checks = dict(self.syncer.doctor_checks(env={}))
+        ok, detail = checks["claude-root-file"]
+        self.assertIsNone(ok)
+        self.assertIn("not installed", detail)
+
     def test_unset_vault_is_warning_not_failure(self) -> None:
         checks = dict(self.syncer.doctor_checks(env={}))
         ok, detail = checks["memory-vault-personal"]
