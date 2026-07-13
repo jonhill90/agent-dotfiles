@@ -19,7 +19,7 @@ if ! command -v uv >/dev/null; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
   export PATH="$HOME/.local/bin:$PATH"
 fi
-command -v apm >/dev/null || uv tool install apm
+command -v apm >/dev/null || uv tool install "apm-cli==0.24.1"
 echo "  apm: $(apm --version 2>/dev/null | head -1)"
 
 step 2 "Obsidian CLI (optional — memory uses direct file ops)"
@@ -50,7 +50,7 @@ if ! grep -q "$MARKER_BEGIN" "$PROFILE" 2>/dev/null; then
     echo "$MARKER_BEGIN"
     echo 'export PATH="$HOME/bin:$HOME/.local/bin:$PATH"'
     [ -n "${AGENT_MEMORY_VAULT:-}" ] && printf 'export AGENT_MEMORY_VAULT="%s"\n' "$AGENT_MEMORY_VAULT"
-    echo 'export APM_COPILOT_COWORK_SKILLS_DIR="$HOME/Library/CloudStorage/OneDrive-Personal/Cowork/skills"'
+    [ "$(uname -s)" = "Darwin" ] && echo 'export APM_COPILOT_COWORK_SKILLS_DIR="$HOME/Library/CloudStorage/OneDrive-Personal/Cowork/skills"'
     echo '[ -f ~/.zshrc.local ] && source ~/.zshrc.local  # secrets live here, untracked'
     echo "$MARKER_END"
   } >> "$PROFILE"

@@ -143,6 +143,16 @@ class RemoveTests(SyncTestCase):
         self.assertFalse((self.home / ".pi" / "agent" / "AGENTS.md").exists())
 
 
+class StatusTests(SyncTestCase):
+    def test_status_skips_uninstalled_harnesses(self) -> None:
+        # no harness dirs exist in the fresh fake home
+        self.assertEqual(self.syncer.status(), 0)
+
+    def test_status_flags_missing_file_when_harness_present(self) -> None:
+        (self.home / ".claude").mkdir()
+        self.assertEqual(self.syncer.status(), 1)
+
+
 class DoctorTests(SyncTestCase):
     def test_flags_corporate_memory_vault(self) -> None:
         env = {
