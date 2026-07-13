@@ -195,6 +195,36 @@ def validate_projections(root: Path) -> list[Finding]:
     return findings
 
 
+def validate_privacy(root: Path) -> list[Finding]:
+    """Flag tracked markdown containing terms from the untracked
+    .privacy-denylist (one term per line; the terms never enter git)."""
+    denylist_file = root / ".privacy-denylist"
+    if not denylist_file.is_file():
+        return []
+    terms = [
+        line.strip()
+        for line in denylist_file.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    findings: list[Finding] = []
+    skip_parts = {".git", "apm_modules", "node_modules"}
+    for md in sorted(root.rglob("*.md")):
+        if skip_parts & set(md.parts):
+            continue
+        text = md.read_text(encoding="utf-8", errors="ignore").lower()
+        for index, term in enumerate(terms, start=1):
+            if term.lower() in text:
+                findings.append(
+                    Finding(
+                        "error",
+                        md,
+                        f"contains privacy-denylisted term #{index} "
+                        "(see local .privacy-denylist)",
+                    )
+                )
+    return findings
+
+
 def validate_skill_collection(skill_dirs: list[Path]) -> list[Finding]:
     findings: list[Finding] = []
     names: dict[str, Path] = {}
@@ -228,6 +258,7 @@ def validate(root: Path, target: Path | None = None) -> list[Finding]:
 
     if target is None:
         findings.extend(validate_projections(root))
+        findings.extend(validate_privacy(root))
 
     return findings
 

@@ -4,8 +4,8 @@ This audit records how overlapping personal skills were selected during the
 `vibes` to `skills` refactor. Hill90 was refreshed from `origin/main` before the
 comparison; its latest commit was `169dd57` on 2026-04-26.
 
-Gentiva was used only to identify patterns and gaps. No Gentiva content was
-migrated.
+The employer workspace was used only to identify patterns and gaps. No
+employer content was migrated.
 
 | Skill | Selected basis | Migration decision |
 |---|---|---|
