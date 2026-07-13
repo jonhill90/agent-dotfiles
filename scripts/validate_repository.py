@@ -209,7 +209,7 @@ def validate_privacy(root: Path) -> list[Finding]:
     findings: list[Finding] = []
     skip_parts = {".git", "apm_modules", "node_modules"}
     for md in sorted(root.rglob("*.md")):
-        if skip_parts & set(md.parts):
+        if skip_parts & set(md.parts) or not md.is_file():
             continue
         text = md.read_text(encoding="utf-8", errors="ignore").lower()
         for index, term in enumerate(terms, start=1):

@@ -143,3 +143,14 @@ class PrivacyDenylistTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual(vr.validate_privacy(Path(td)), [])
+
+    def test_broken_symlink_is_skipped(self) -> None:
+        import tempfile
+        from pathlib import Path
+        import validate_repository as vr
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / ".privacy-denylist").write_text("term\n")
+            (root / "gone.md").symlink_to(root / "missing-target.md")
+            self.assertEqual(vr.validate_privacy(root), [])
