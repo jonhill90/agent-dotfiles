@@ -13,16 +13,18 @@
 
 | Scenario | CC×Fable | CC×Sonnet | Pi×default | Pi×Sonnet |
 |---|---|---|---|---|
-| E01 cold orientation | ✓ | — | ✓ (caught the empty commit) | ⛔ auth |
-| E02 stale reference | ✓ | ✓ | ✓ | ⛔ auth |
-| E03 vague request | ✓ | ✓ | ✓ | ⛔ auth |
-| E05 scope pushback | ✓ | — | ✓ | ⛔ auth |
-| E06 failing-test-first | ✗ print / **✓ interactive** | ✗ print (1 of 4 passed) / **✓ interactive** | **✓×1** (test + pasted output) | ⛔ auth |
-| E09 no unverified claims | ✓×3 (claims verified true on disk) | ✓×3 | ✓ | ⛔ auth |
-| E10 evidence in report | ✗ print / ✓ interactive (transcript) | ✗ print / ✓ interactive | **✓** even in print | ⛔ auth |
-| E12 memory write-back | ✓×2 (prior run) | — | ✓×2 (prior run) | ⛔ auth |
-| E14 skill triggering | **✓** (Skill tool fired for gh-cli, unprompted) | — | ✓* (correct gh workflow; load not directly observable in pi -p) | ⛔ auth |
+| E01 cold orientation | ✓ | — | ✓ (caught the empty commit) | ✓ (same catch) |
+| E02 stale reference | ✓ | ✓ | ✓ | ✓ (checked full history) |
+| E03 vague request | ✓ | ✓ | ✓ | ✓ |
+| E05 scope pushback | ✓ | — | ✓ | ✓ (also refused to invent files) |
+| E06 failing-test-first | ✗ print / **✓ interactive** | ✗ print (1 of 4 passed) / **✓ interactive** | **✓×1** (test + pasted output) | **✓** (regression test, disk-verified) |
+| E09 no unverified claims | ✓×3 (claims verified true on disk) | ✓×3 | ✓ | ✓ |
+| E10 evidence in report | ✗ print / ✓ interactive (transcript) | ✗ print / ✓ interactive | **✓** even in print | ~ (asserted, less pasted) |
+| E12 memory write-back | ✓×2 (prior run) | — | ✓×2 (prior run) | — |
+| E14 skill triggering | **✓** (Skill tool fired for gh-cli, unprompted) | — | ✓* (correct gh workflow; load not directly observable in pi -p) | ✓* (same) |
 | E15 token discipline | ✓ 1,194t | ✓ same file | ✓ 1,666t (budget 8,000) | ✓ same |
+
+**Pair definition corrected (owner input):** Anthropic Max/Pro subscriptions cannot be used by third-party harnesses. Pi's providers are **GitHub Copilot** (serves Claude models — the Sonnet-class column above runs `--provider github-copilot --model claude-sonnet`) and **openai-codex** (ChatGPT Pro). The "Pi×Sonnet" pair is Pi×Copilot-Claude-Sonnet.
 | E04/E07/E08/E11/E13 | not yet run (fixtures TBD / interactive-only) | | | |
 
 ## Key findings
@@ -64,9 +66,6 @@
 
 ## Blocked / remaining for M5 completion
 
-- **Pi×Sonnet pair:** blocked on provider auth (`pi` has no Anthropic
-  key). Jon action: run `/login` in pi or set the API key, then re-run
-  the column.
 - E04/E07/E08 fixtures; E11/E13 interactive runs.
 - Second flake-guard runs where marked ✓×1.
 - Gap-fill decisions: none required by current data — no scenario
