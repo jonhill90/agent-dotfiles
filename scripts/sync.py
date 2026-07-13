@@ -80,6 +80,7 @@ class Sync:
     def __init__(self, repo_root: Path, home: Path | None = None) -> None:
         self.repo = Path(repo_root)
         self.home = Path(home) if home else Path.home()
+        self.runner = subprocess.run
         self.state_file = self.home / ".agent-dotfiles" / "state.json"
         self.state = self._load_state()
 
@@ -168,12 +169,16 @@ class Sync:
             print(f"ERROR: {self.repo} is not the agent-dotfiles repo")
             return 2
         if not no_apm:
-            result = subprocess.run(
+            result = self.runner(
                 ["apm", "install", "-g", str(self.repo)], check=False
             )
             if result.returncode != 0:
                 print("ERROR: apm install failed; aborting apply")
                 return result.returncode
+            # install does NOT reliably compile root files on fresh
+            # machines (E16 failure 2026-07-13) — compile explicitly,
+            # BEFORE teardown so stale unused-harness roots are removed.
+            self.runner(["apm", "compile", "-g"], check=False)
         removed = self.teardown_unused_root_files()
         pi = self.project_pi()
         self.merge_settings("claude", self.home / ".claude" / "settings.json")
