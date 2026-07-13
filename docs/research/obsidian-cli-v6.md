@@ -70,7 +70,7 @@ binary runs anywhere files exist.
    official CLI ships with. The official CLI isn't even present until
    the app updates. Not a blocker for the verdict; noted for hygiene.
 2. **⚠ The current default vault is employer-hosted:** `Second Brain`
-   at `~/Library/CloudStorage/OneDrive-Gentiva/...`. The memory vault
+   at an employer OneDrive mount (`OneDrive-<Employer>`). The memory vault
    (`AGENT_MEMORY_VAULT`) **must not** point there — personal agent
    memory syncing through employer storage violates the employer
    boundary (AGENTS.md/PRD). **New spec requirement:** `sync doctor`

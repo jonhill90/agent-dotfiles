@@ -116,3 +116,30 @@ class ValidateRepositoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PrivacyDenylistTests(unittest.TestCase):
+    def test_flags_denylisted_terms_in_tracked_markdown(self) -> None:
+        import tempfile
+        from pathlib import Path
+        import validate_repository as vr
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / ".privacy-denylist").write_text("AcmeCorp\nsecretproject\n")
+            docs = root / "docs"; docs.mkdir()
+            (docs / "note.md").write_text("mentions AcmeCorp storage\n")
+            (docs / "clean.md").write_text("nothing to see\n")
+            findings = vr.validate_privacy(root)
+            self.assertEqual(len(findings), 1)
+            self.assertIn("note.md", str(findings[0].path))
+            # the term itself must not appear in the finding message
+            self.assertNotIn("AcmeCorp", findings[0].message)
+
+    def test_no_denylist_file_means_no_findings(self) -> None:
+        import tempfile
+        from pathlib import Path
+        import validate_repository as vr
+
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(vr.validate_privacy(Path(td)), [])
