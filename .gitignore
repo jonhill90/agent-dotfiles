@@ -25,3 +25,5 @@ repos
 
 # Hook artifacts
 .claude/backups/
+# Local privacy denylist (terms never enter git)
+.privacy-denylist
