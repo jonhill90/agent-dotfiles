@@ -57,6 +57,15 @@ class PiProjectionTests(SyncTestCase):
         self.syncer.apply(no_apm=True)
         self.assertTrue((self.home / ".agents" / "skills").is_dir())
 
+    def test_apply_mirrors_claude_skills_into_empty_neutral_path(self) -> None:
+        src = self.home / ".claude" / "skills" / "gh-cli"
+        src.mkdir(parents=True)
+        (src / "SKILL.md").write_text("---\nname: gh-cli\n---\nbody\n")
+        self.syncer.apply(no_apm=True)
+        mirrored = self.home / ".agents" / "skills" / "gh-cli"
+        self.assertTrue(mirrored.is_symlink() or mirrored.is_dir())
+        self.assertTrue((mirrored / "SKILL.md").is_file())
+
     def test_projects_core_plus_overlay_when_pi_present(self) -> None:
         (self.home / ".pi" / "agent").mkdir(parents=True)
         self.syncer.project_pi()
