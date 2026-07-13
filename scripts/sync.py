@@ -187,6 +187,9 @@ class Sync:
         issues = 0
         for relative in MANAGED_ROOT_FILES:
             path = self.home / relative
+            if not path.parent.is_dir():
+                print(f"[skip] {path} (harness not installed)")
+                continue
             if not path.is_file():
                 print(f"[missing] {path}")
                 issues += 1
