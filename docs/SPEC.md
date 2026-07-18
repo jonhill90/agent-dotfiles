@@ -90,7 +90,8 @@ agent-dotfiles/
     sync.py                # the wrapper (Python 3 stdlib only)
     validate_repository.py # extended with token-budget + secret checks
   evals/
-    scenarios/             # E1–E16 runnable fixtures (prompt + pass criteria)
+    scenarios/             # E1–E15 runnable fixtures; E16 is the live
+                           # bootstrap acceptance (docs/evals.md)
     results/               # per-run matrices: <date>-<harness>-<model>.md
   tests/                   # unittest suite (wrapper + validators)
   docs/                    # living product, architecture, memory, eval docs
