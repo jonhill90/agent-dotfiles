@@ -44,6 +44,8 @@ Decision types: **adopt** (pinned dependency, unmodified) · **adapt**
 | Instructions projection | one canonical AGENTS.md, APM-compiled root files, marker-owned `~/.claude/CLAUDE.md` | Adopt (pattern) | Every target reads an AGENTS-family surface ([harness engineering](harness-engineering.md); evidence `c089a95`) |
 | Committed compatibility symlink matrix (`.claude/skills` etc.) | this repo (gen 3/4) | Reject (retire) | Installer-owned projection replaces it; PRD non-goal |
 | Neutral skills path `~/.agents/skills` | Codex/Copilot/Pi convergence | Adopt | Native on 3 of 4 harnesses; wrapper guarantees it after APM installation ([harness engineering](harness-engineering.md)) |
+| MCP projection (declared set → `~/.claude.json` user scope) | self | Author (`scripts/sync.py`, 2026-07-17) | APM did not deliver the declared set at user scope; wrapper merge with state-tracked reversal closes the §3.4 layer (regression-tested) |
+| Claude Code plugins (`ralph-loop`, `frontend-design`, `playwright`, official marketplace) | Anthropic | Adopt (managed 2026-07-17) | Previously unmanaged installs; now declared via the `enabledPlugins` settings fragment so every machine converges on the same roster |
 
 Prior migration decisions (vibes → skills, per-skill selection basis)
 remain recorded in [migration-audit.md](migration-audit.md); they are not
