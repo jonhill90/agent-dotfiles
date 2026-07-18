@@ -41,7 +41,7 @@ updated. Session-only state stays in the harness's native memory.
 
 The `memory-conventions` skill is the normative operating procedure. E12
 demonstrates write-back and cross-harness recall in
-`evals/results/2026-07-12-e12-memory-writeback.md`.
+`tests/evals/results/2026-07-12-e12-memory-writeback.md`.
 
 ## Tooling choices
 

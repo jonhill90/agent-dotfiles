@@ -15,8 +15,9 @@ This file is the shared repository policy. `CLAUDE.md` and
 
 - Keep `skills/` portable and independently installable.
 - Keep canonical content out of harness-owned directories.
-- Treat `.agents/`, `.claude/`, `.codex/`, and `.github/` as adapters,
-  configuration, or repository automation.
+- Treat `.claude/` and `.github/` as repo-development configuration or
+  repository automation; other harness-owned directories must not
+  accumulate content.
 - Do not make installation of one skill inherit the complete personal workflow.
 - Keep project-specific and employer-specific material out of this repository.
 
@@ -37,10 +38,9 @@ instructions/
 agents/
 hooks/                   # canonical hook scripts, harness-agnostic
 settings/                # wrapper-owned config fragments (claude, pi, mcp)
-evals/                   # behavioral-parity scenarios + committed results
 docs/
 scripts/
-tests/
+tests/                   # unittest suite + evals/ (scenarios, results)
 ```
 
 Projection is installer-owned (`apm install -g` + `scripts/sync.py apply`).
