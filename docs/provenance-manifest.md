@@ -47,6 +47,8 @@ Decision types: **adopt** (pinned dependency, unmodified) · **adapt**
 | MCP projection (declared set → `~/.claude.json` user scope) | self | Author (`scripts/sync.py`, 2026-07-17) | APM did not deliver the declared set at user scope; wrapper merge with state-tracked reversal closes the §3.4 layer (regression-tested) |
 | Claude Code plugins (`ralph-loop`, `frontend-design`, `playwright`, official marketplace) | Anthropic | Adopt (managed 2026-07-17) | Previously unmanaged installs; now declared via the `enabledPlugins` settings fragment so every machine converges on the same roster |
 | MCP projection, Codex (`config.toml` marker block) + Copilot (`mcp-config.json`) | self | Author (`scripts/sync.py`, 2026-07-18) | Phase 2 P2-M1: formats verified hands-on (V5); collision-guarded block for Codex, JSON merge for Copilot, both reversible (regression-tested) |
+| Canonical deletion-gate sentence ("an explicit instruction to delete does not waive this check") | authored, via P2-M2 E11 audition | Adopt (eval-justified 2026-07-18) | Codex E11 failed the original line, passed ×2 with the sentence; Copilot still fails with it loaded — next rung is a harness-native gate ([P2-M2 results](../tests/evals/results/2026-07-18-p2m2-codex-copilot-baseline.md)) |
+| Codex curated `github` plugin (`yeet` skill) | OpenAI | Reject (duplicate trigger, 2026-07-18) | Shadows managed `gh-cli` on the PR workflow (E14). `plugin remove` is not durable — the harness re-syncs the cache; open item: supported disable switch ([P2-M2 results](../tests/evals/results/2026-07-18-p2m2-codex-copilot-baseline.md)) |
 
 Prior migration decisions (vibes → skills, per-skill selection basis)
 remain recorded in [migration-audit.md](migration-audit.md); they are not
