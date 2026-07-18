@@ -4,7 +4,7 @@ The eval suite defines what “behaves like Jon's agent” means. It tests
 observable behavior rather than implementation details: orient, plan,
 implement, verify, complete, remember, trigger skills, stay within the static
 budget, and bootstrap a fresh environment. Its original design is preserved
-in commit `106e69c`; runnable scenarios and results live under `evals/`.
+in commit `106e69c`; runnable scenarios and results live under `tests/evals/`.
 
 ## Selection rule
 
@@ -21,7 +21,7 @@ order:
 Record an adoption in `docs/provenance-manifest.md` with its deciding results
 file. One component owns each loop stage; overlapping components do not remain
 installed “just in case.” Tool skills use the concrete checks in
-`evals/acceptance/` instead of loop scenarios.
+`tests/evals/acceptance/` instead of loop scenarios.
 
 ## Protocol
 
@@ -33,7 +33,7 @@ installed “just in case.” Tool skills use the concrete checks in
   by print/non-interactive mode.
 - A required cell passes after two consecutive successful runs. Record skipped
   or blocked cells explicitly; absence of a result is not a pass.
-- Store durable matrices in `evals/results/`. Raw transcripts may remain local
+- Store durable matrices in `tests/evals/results/`. Raw transcripts may remain local
   when they contain credentials, private paths, or unnecessary bulk.
 
 The baseline run found one authoritative behavioral failure: Pi deleted

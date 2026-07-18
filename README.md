@@ -36,10 +36,8 @@ instructions/    Canonical global agent instructions + per-harness overlays
 agents/          Reusable agent definitions
 hooks/           Canonical hook scripts, harness-agnostic
 settings/        Wrapper-owned config fragments (claude, pi, mcp)
-evals/           Behavioral-parity scenarios and committed results
 docs/            Living product, architecture, memory, and eval documentation
 .claude/         Claude-specific repo-development configuration and hooks
-.codex/          Codex-specific configuration and policy
 .github/         GitHub Copilot instructions and repository automation
 ```
 
@@ -66,7 +64,7 @@ The behavioral layer is deliberately minimal: loop discipline lives in the
 canonical instructions, and skills are added only when a failing eval
 justifies them (baseline-first rule — see
 [docs/SPEC.md](docs/SPEC.md) §4). Each kept tool skill has acceptance
-checks under [evals/acceptance/](evals/acceptance/).
+checks under [tests/evals/acceptance/](tests/evals/acceptance/).
 
 ## Authoring Contract
 
