@@ -29,9 +29,9 @@ directories; `.apm/` is only the package view.
 | User skills | `~/.claude/skills` | `~/.agents/skills` | `~/.agents/skills` |
 | Global instructions | APM-generated `CLAUDE.md` | wrapper-generated `AGENTS.md` | APM-generated AGENTS-family file |
 | Hooks | rich native lifecycle | extension events | no v1 dependency |
-| MCP | supported | deliberately absent | optional enhancement |
-| Long-term memory | shared vault plus native session memory | shared vault | later-phase verification |
-| Release status | v1 behavioral target | v1 behavioral target | Phase 2 |
+| MCP | wrapper → `~/.claude.json` | deliberately absent | wrapper → `config.toml` block / `mcp-config.json` |
+| Long-term memory | shared vault plus native session memory | shared vault | shared vault (conventions skill) |
+| Release status | v1 behavioral target | v1 behavioral target | Phase 2: sync-managed; eval columns pending |
 
 Pi's lack of MCP is a useful portability constraint: a first-class capability
 must have a CLI or direct-file path. MCP can improve a capable harness, but it
@@ -51,9 +51,25 @@ semantics and a non-MCP degradation path exists.
   `~/.pi/agent/AGENTS.md`, so its adapter remains small.
 - Claude Code is the thinnest v1 surface; Pi's overlay supplies the extra
   safety gates that its minimal harness lacks.
-- Codex and Copilot remain Phase 2. Their instruction filenames, MCP formats,
-  and any hook equivalents must be verified before they become release
-  blockers.
+- Codex and Copilot Phase 2 mechanics, verified hands-on 2026-07-18 on
+  macOS (Codex CLI 0.144.1, Copilot CLI 1.0.70):
+  - APM writes **both** `~/.copilot/AGENTS.md` and
+    `~/.copilot/copilot-instructions.md` as marker-owned files, so the
+    per-platform filename question (V5) is moot — content lands on
+    whichever surface the CLI reads.
+  - Copilot reads MCP servers from `~/.copilot/mcp-config.json`
+    (standard `mcpServers` schema); the wrapper merges the declared set
+    there with state-tracked reversal.
+  - Codex has no user-scope JSON MCP surface; its `~/.codex/config.toml`
+    carries `[mcp_servers.<name>]` tables (`url` +
+    `bearer_token_env_var`). The wrapper owns a marker-delimited block
+    and never touches servers defined outside it.
+  - APM's agents primitive already projects `agents/*.md` to
+    `~/.copilot/agents/*.agent.md`.
+  - Both harnesses read `~/.agents/skills` natively; no extra skill
+    projection is needed.
+  - Behavioral eval columns (E14-class degraded mode — no hook surface)
+    are still required before Codex/Copilot breakage blocks release.
 - The bootstrap is portable across macOS and Linux for its shared core.
   Obsidian application integration is macOS-only and optional; memory itself
   uses direct files.
