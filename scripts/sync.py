@@ -351,6 +351,10 @@ class Sync:
         pi = self.project_pi()
         self.merge_settings("claude", self.home / ".claude" / "settings.json")
         self.merge_settings("pi", self.home / ".pi" / "agent" / "settings.json")
+        if (self.home / ".copilot").is_dir():
+            self.merge_settings(
+                "copilot", self.home / ".copilot" / "settings.json"
+            )
         self.merge_mcp()
         self.merge_codex_mcp()
         self.merge_copilot_mcp()

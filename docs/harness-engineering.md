@@ -31,7 +31,7 @@ directories; `.apm/` is only the package view.
 | Hooks | rich native lifecycle | extension events | no v1 dependency |
 | MCP | wrapper → `~/.claude.json` | deliberately absent | wrapper → `config.toml` block / `mcp-config.json` |
 | Long-term memory | shared vault plus native session memory | shared vault | shared vault (conventions skill) |
-| Release status | v1 behavioral target | v1 behavioral target | Phase 2: sync-managed; eval columns pending |
+| Release status | v1 behavioral target | v1 behavioral target | **first-class since 2026-07-18** (P2-M3): breakage blocks release |
 
 Pi's lack of MCP is a useful portability constraint: a first-class capability
 must have a CLI or direct-file path. MCP can improve a capable harness, but it
@@ -78,7 +78,15 @@ semantics and a non-MCP degradation path exists.
     and survives `plugin remove` via cache re-sync (E14 unstable; open).
   - Copilot in print mode loads the global instructions but does not
     reliably bind guardrails (E11 fails with the gate provably in
-    context); harness-native permission gates are the escalation path.
+    context); small focused skills bind where instructions do not
+    (`safe-deletion`, `failing-test-first` — both eval-adopted).
+  - Copilot's `Auto` model routing changes the effective model per run
+    and breaks behavioral consistency; the managed settings fragment
+    pins the model.
+  - Codex plugin-skill shadowing is durably fixed by `[[skills.config]]`
+    per-skill disables in `config.toml`; `plugin remove` alone re-syncs.
+  - Codex CLI auto-updates can interrupt interactive automation
+    mid-session.
 - The bootstrap is portable across macOS and Linux for its shared core.
   Obsidian application integration is macOS-only and optional; memory itself
   uses direct files.
