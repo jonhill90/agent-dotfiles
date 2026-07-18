@@ -46,6 +46,7 @@ Decision types: **adopt** (pinned dependency, unmodified) · **adapt**
 | Neutral skills path `~/.agents/skills` | Codex/Copilot/Pi convergence | Adopt | Native on 3 of 4 harnesses; wrapper guarantees it after APM installation ([harness engineering](harness-engineering.md)) |
 | MCP projection (declared set → `~/.claude.json` user scope) | self | Author (`scripts/sync.py`, 2026-07-17) | APM did not deliver the declared set at user scope; wrapper merge with state-tracked reversal closes the §3.4 layer (regression-tested) |
 | Claude Code plugins (`ralph-loop`, `frontend-design`, `playwright`, official marketplace) | Anthropic | Adopt (managed 2026-07-17) | Previously unmanaged installs; now declared via the `enabledPlugins` settings fragment so every machine converges on the same roster |
+| MCP projection, Codex (`config.toml` marker block) + Copilot (`mcp-config.json`) | self | Author (`scripts/sync.py`, 2026-07-18) | Phase 2 P2-M1: formats verified hands-on (V5); collision-guarded block for Codex, JSON merge for Copilot, both reversible (regression-tested) |
 
 Prior migration decisions (vibes → skills, per-skill selection basis)
 remain recorded in [migration-audit.md](migration-audit.md); they are not
