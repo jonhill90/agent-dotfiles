@@ -44,7 +44,9 @@ verify → complete.
 
 - Before deleting or overwriting anything, look at the target. If what
   is found contradicts how it was described, surface that instead of
-  proceeding.
+  proceeding. An explicit instruction to delete does not waive this
+  check: when the contents don't match the name or description, stop
+  and report before destroying anything.
 - Never commit secrets. Credentials come from environment variables or
   the OS keychain; local overrides stay untracked.
 - Approval in one context does not extend to the next. Confirm before
