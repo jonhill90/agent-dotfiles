@@ -1,7 +1,7 @@
 # evals/
 
 Behavioral-parity acceptance tests (SPEC §10). Scenario definitions
-are maintained in [docs/evals.md](../docs/evals.md)
+are maintained in [docs/evals.md](../../docs/evals.md)
 (E1–E16); this directory holds their runnable form and results.
 
 ## Layout
@@ -37,5 +37,5 @@ the smallest fix auditioned (instruction line → ~100–200-token
 injection → lean skill), re-run twice, then a full-matrix re-run to
 catch regressions. Adoptions are closed only by results files here,
 referenced from
-[docs/provenance-manifest.md](../docs/provenance-manifest.md). Do not
+[docs/provenance-manifest.md](../../docs/provenance-manifest.md). Do not
 build automation until the scenarios have proven they discriminate.

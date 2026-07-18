@@ -1,7 +1,7 @@
 # E16 mechanical regression — MCP projection change (2026-07-18)
 
 Trigger: PR #33 changed projection code (`sync.py` MCP merge), which per
-[docs/evals.md](../../docs/evals.md) requires another clean mechanical run.
+[docs/evals.md](../../../docs/evals.md) requires another clean mechanical run.
 
 - Platform: `remote.hill90.com` (AlmaLinux 10.2, Python 3.12.13), brand-new
   Linux user `e16-mcp-regress`, no model credentials.
