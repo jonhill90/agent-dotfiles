@@ -45,6 +45,14 @@ into specialist roles on demand through progressive disclosure. Static
 context (loaded every session) is a hard budget; everything else loads
 dynamically via skills and references.
 
+**Self-hosting:** the harness must be sufficient to maintain itself. The
+deployed instructions, skills, and sync tooling are the complete toolchain
+for changing this repo — an agent running under the managed harness can
+implement, validate, deploy, and verify a change to the harness without
+unmanaged tools. Behavioral changes still require human-scored evals in a
+fresh session (an agent cannot grade the behavior it is currently running);
+the self-application guardrail lives in SPEC §7.
+
 ## Primary Customer
 
 Jon. Me-first, public-friendly: when personal-workflow needs and public-product needs conflict, personal wins. Public installability of individual skills is a preserved constraint, not the driver.

@@ -33,6 +33,10 @@ def make_repo(root: Path) -> Path:
     )
     (repo / "settings" / "claude" / "settings.json").write_text("{}\n")
     (repo / "settings" / "pi" / "settings.json").write_text("{}\n")
+    (repo / "settings" / "mcp").mkdir(parents=True)
+    (repo / "settings" / "mcp" / "servers.json").write_text(
+        json.dumps({"mcpServers": {}}) + "\n"
+    )
     return repo
 
 
@@ -136,6 +140,128 @@ class SettingsMergeTests(SyncTestCase):
         self.syncer.merge_settings("claude", live)
         self.assertEqual(json.loads(live.read_text()), {"theme": "dark"})
         self.assertNotIn(str(live), self.syncer.state["settings"])
+
+
+class McpMergeTests(SyncTestCase):
+    def write_fragment(self, servers: dict) -> None:
+        (self.repo / "settings" / "mcp" / "servers.json").write_text(
+            json.dumps({"mcpServers": servers}) + "\n"
+        )
+
+    def test_merge_writes_declared_servers_preserving_unmanaged(self) -> None:
+        self.write_fragment(
+            {"context7": {"type": "http", "url": "https://c7.example/mcp"}}
+        )
+        live = self.home / ".claude.json"
+        live.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {"personal": {"command": "foo"}},
+                    "projects": {"/x": {}},
+                }
+            )
+        )
+
+        self.syncer.merge_mcp()
+
+        merged = json.loads(live.read_text())
+        self.assertEqual(
+            merged["mcpServers"]["context7"]["url"], "https://c7.example/mcp"
+        )
+        self.assertEqual(merged["mcpServers"]["personal"], {"command": "foo"})
+        self.assertEqual(merged["projects"], {"/x": {}})  # untouched
+        prev = self.syncer.state["mcp"][str(live)]
+        self.assertEqual(prev["context7"], sync.ABSENT)
+
+    def test_merge_records_previous_value_of_overridden_server(self) -> None:
+        self.write_fragment({"context7": {"type": "http", "url": "https://new"}})
+        live = self.home / ".claude.json"
+        live.write_text(
+            json.dumps({"mcpServers": {"context7": {"command": "old"}}})
+        )
+        self.syncer.merge_mcp()
+        prev = self.syncer.state["mcp"][str(live)]
+        self.assertEqual(prev["context7"], {"command": "old"})
+
+    def test_merge_creates_live_file_when_absent(self) -> None:
+        self.write_fragment({"deepwiki": {"type": "http", "url": "https://dw"}})
+        self.syncer.merge_mcp()
+        merged = json.loads((self.home / ".claude.json").read_text())
+        self.assertEqual(merged["mcpServers"]["deepwiki"]["url"], "https://dw")
+
+    def test_empty_or_missing_fragment_is_noop(self) -> None:
+        self.syncer.merge_mcp()
+        self.assertFalse((self.home / ".claude.json").exists())
+        (self.repo / "settings" / "mcp" / "servers.json").unlink()
+        self.syncer.merge_mcp()
+        self.assertFalse((self.home / ".claude.json").exists())
+
+    def test_apply_runs_mcp_merge(self) -> None:
+        self.write_fragment({"deepwiki": {"type": "http", "url": "https://dw"}})
+        self.syncer.apply(no_apm=True)
+        merged = json.loads((self.home / ".claude.json").read_text())
+        self.assertIn("deepwiki", merged["mcpServers"])
+
+    def test_remove_restores_previous_mcp_state(self) -> None:
+        self.write_fragment(
+            {
+                "context7": {"type": "http", "url": "https://new"},
+                "deepwiki": {"type": "http", "url": "https://dw"},
+            }
+        )
+        live = self.home / ".claude.json"
+        live.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "context7": {"command": "old"},
+                        "personal": {"command": "foo"},
+                    }
+                }
+            )
+        )
+        self.syncer.apply(no_apm=True)
+        self.syncer.remove(no_apm=True)
+        restored = json.loads(live.read_text())
+        self.assertEqual(
+            restored["mcpServers"],
+            {"context7": {"command": "old"}, "personal": {"command": "foo"}},
+        )
+
+    def test_apply_twice_then_remove_restores_original(self) -> None:
+        self.write_fragment({"deepwiki": {"type": "http", "url": "https://dw"}})
+        live = self.home / ".claude.json"
+        live.write_text(json.dumps({"mcpServers": {}}))
+        self.syncer.apply(no_apm=True)
+        self.syncer.apply(no_apm=True)
+        self.syncer.remove(no_apm=True)
+        self.assertEqual(json.loads(live.read_text()), {"mcpServers": {}})
+
+    def test_doctor_warns_on_unset_mcp_env_var(self) -> None:
+        self.write_fragment(
+            {
+                "context7": {
+                    "type": "http",
+                    "url": "https://c7",
+                    "headers": {"Authorization": "Bearer ${CONTEXT7_API_KEY}"},
+                }
+            }
+        )
+        checks = dict(self.syncer.doctor_checks(env={}))
+        ok, detail = checks["mcp-env-CONTEXT7_API_KEY"]
+        self.assertIsNone(ok)  # warning, not failure
+        self.assertIn("CONTEXT7_API_KEY", detail)
+        checks = dict(
+            self.syncer.doctor_checks(env={"CONTEXT7_API_KEY": "abc"})
+        )
+        self.assertTrue(checks["mcp-env-CONTEXT7_API_KEY"][0])
+
+    def test_status_flags_declared_server_missing_from_live(self) -> None:
+        self.write_fragment({"deepwiki": {"type": "http", "url": "https://dw"}})
+        self.syncer.apply(no_apm=True)
+        live = self.home / ".claude.json"
+        live.write_text(json.dumps({"mcpServers": {}}))
+        self.assertEqual(self.syncer.status(), 1)
 
 
 class RemoveTests(SyncTestCase):

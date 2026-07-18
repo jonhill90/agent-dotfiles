@@ -3,7 +3,7 @@
 
 Commands:
   apply   preflight -> apm install -g -> teardown -> Pi projection ->
-          settings merges -> state file
+          settings merges -> mcp merge -> state file
   status  report managed surfaces vs recorded state
   doctor  environment checks (CLIs, env vars, root-file ownership)
   remove  reverse everything recorded in state
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -98,7 +99,13 @@ class Sync:
     def _load_state(self) -> dict:
         if self.state_file.is_file():
             return json.loads(self.state_file.read_text(encoding="utf-8"))
-        return {"version": 1, "settings": {}, "pi_agents_md": None, "removed": []}
+        return {
+            "version": 1,
+            "settings": {},
+            "mcp": {},
+            "pi_agents_md": None,
+            "removed": [],
+        }
 
     def save_state(self) -> None:
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
@@ -212,6 +219,41 @@ class Sync:
             encoding="utf-8",
         )
 
+    # -- mcp --------------------------------------------------------------
+
+    def mcp_fragment_file(self) -> Path:
+        return self.repo / "settings" / "mcp" / "servers.json"
+
+    def declared_mcp_servers(self) -> dict:
+        fragment_file = self.mcp_fragment_file()
+        if not fragment_file.is_file():
+            return {}
+        return json.loads(fragment_file.read_text(encoding="utf-8")).get(
+            "mcpServers", {}
+        )
+
+    def merge_mcp(self) -> None:
+        """Project the declared MCP set into Claude Code user scope
+        (~/.claude.json). Pi gets none by design (SPEC §3.4)."""
+        servers = self.declared_mcp_servers()
+        if not servers:
+            return
+        live_path = self.home / ".claude.json"
+        live = {}
+        if live_path.is_file():
+            live = json.loads(live_path.read_text(encoding="utf-8"))
+
+        previous = self.state.setdefault("mcp", {}).setdefault(str(live_path), {})
+        live_servers = live.get("mcpServers", {})
+        for name in servers:
+            if name not in previous:
+                previous[name] = live_servers.get(name, ABSENT)
+
+        live["mcpServers"] = deep_merge(live_servers, servers)
+        live_path.write_text(
+            json.dumps(live, indent=2) + "\n", encoding="utf-8"
+        )
+
     # -- commands ---------------------------------------------------------
 
     def apply(self, no_apm: bool = False) -> int:
@@ -254,6 +296,7 @@ class Sync:
         pi = self.project_pi()
         self.merge_settings("claude", self.home / ".claude" / "settings.json")
         self.merge_settings("pi", self.home / ".pi" / "agent" / "settings.json")
+        self.merge_mcp()
         self.state["repo"] = str(self.repo)
         self.save_state()
         print(f"[ok] apply complete (teardown: {len(removed)}, pi: {bool(pi)})")
@@ -282,6 +325,20 @@ class Sync:
         pi = self.state.get("pi_agents_md")
         if pi:
             print(f"[ok] {pi}" if Path(pi).is_file() else f"[missing] {pi}")
+        declared = self.declared_mcp_servers()
+        if declared:
+            live_path = self.home / ".claude.json"
+            live_servers = {}
+            if live_path.is_file():
+                live_servers = json.loads(
+                    live_path.read_text(encoding="utf-8")
+                ).get("mcpServers", {})
+            for name in sorted(declared):
+                if name in live_servers:
+                    print(f"[ok] mcp:{name}")
+                else:
+                    print(f"[missing] mcp:{name} (declared, not in ~/.claude.json)")
+                    issues += 1
         print(f"{issues} issue(s)")
         return 1 if issues else 0
 
@@ -320,6 +377,23 @@ class Sync:
             )
         else:
             checks.append(("memory-vault-personal", (True, vault)))
+        fragment_file = self.mcp_fragment_file()
+        if fragment_file.is_file():
+            text = fragment_file.read_text(encoding="utf-8")
+            for var in sorted(set(re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", text))):
+                if env.get(var):
+                    checks.append((f"mcp-env-{var}", (True, f"{var} set")))
+                else:
+                    checks.append(
+                        (
+                            f"mcp-env-{var}",
+                            (
+                                None,
+                                f"{var} referenced by settings/mcp/servers.json"
+                                " but not set",
+                            ),
+                        )
+                    )
         claude_md = self.home / ".claude" / "CLAUDE.md"
         if not (self.home / ".claude").is_dir():
             checks.append(
@@ -372,6 +446,23 @@ class Sync:
                 json.dumps(live, indent=2) + "\n", encoding="utf-8"
             )
         self.state["settings"] = {}
+
+        for live_path_str, previous in self.state.get("mcp", {}).items():
+            live_path = Path(live_path_str)
+            if not live_path.is_file():
+                continue
+            live = json.loads(live_path.read_text(encoding="utf-8"))
+            servers = live.get("mcpServers", {})
+            for name, value in previous.items():
+                if value == ABSENT:
+                    servers.pop(name, None)
+                else:
+                    servers[name] = value
+            live["mcpServers"] = servers
+            live_path.write_text(
+                json.dumps(live, indent=2) + "\n", encoding="utf-8"
+            )
+        self.state["mcp"] = {}
 
         if not no_apm and self.state.get("repo"):
             subprocess.run(
