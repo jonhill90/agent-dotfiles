@@ -1,6 +1,7 @@
 # Technical Spec: agent-dotfiles
 
-- **Status:** Implemented v1.2 — 2026-07-13
+- **Status:** Implemented v1.3 — 2026-07-18 (Phase 2 mechanical layer
+  landed; Codex/Copilot behavioral columns pending, §13)
 - **Owner:** Jon Hill
 - **Inputs:** [PRD](PRD.md), [harness engineering](harness-engineering.md),
   [memory](memory.md), and [behavioral evals](evals.md). Dated research is
@@ -191,12 +192,17 @@ Notes:
 - Declared in `settings/mcp/servers.json`: server name, transport,
   command/URL, required env vars. **No secrets in the repo** — env vars
   and OS keychain only; the wrapper's doctor command reports missing ones.
-- Projection (v1, implemented 2026-07-17): the wrapper merges the declared
-  set into Claude Code user scope (`~/.claude.json` `mcpServers`), tracking
-  previous values in `state.json` so `sync remove` restores them; unmanaged
-  servers are preserved. Phase 2 extends to Codex (`config.toml`) and
-  Copilot. Pi gets none by design; every MCP-backed capability must
-  already satisfy the CLI-first rule or be accepted as unavailable on Pi.
+- Projection (Claude Code implemented 2026-07-17; Codex/Copilot
+  2026-07-18): the wrapper merges the declared set into Claude Code user
+  scope (`~/.claude.json` `mcpServers`) and Copilot
+  (`~/.copilot/mcp-config.json`, same schema), tracking previous values in
+  `state.json` so `sync remove` restores them; unmanaged servers are
+  preserved. Codex gets a marker-delimited block in `~/.codex/config.toml`
+  (`url` + `bearer_token_env_var` form); servers the user defines outside
+  the block are never touched. Codex/Copilot projection is gated on the
+  harness directory existing. Pi gets none by design; every MCP-backed
+  capability must already satisfy the CLI-first rule or be accepted as
+  unavailable on Pi.
 - v1 declared set: the servers Jon actually uses today (context7,
   deepwiki, microsoft-learn). Anything else is per-machine local config,
   not dotfiles.
@@ -313,21 +319,22 @@ Jon's authored layer (identity instructions, skills surviving the
 roster cut) is subject to the same rule in reverse: anything the
 baseline proves redundant is thinned.
 
-## 5. Per-Harness Projection Summary (v1)
+## 5. Per-Harness Projection Summary
 
-| Layer | Claude Code | Pi |
-|---|---|---|
-| Skills | APM → `~/.claude/skills/` | native `~/.agents/skills/` (APM-populated) |
-| Instructions | APM → `~/.claude/CLAUDE.md` (marker-owned) | wrapper → `~/.pi/agent/AGENTS.md` (core + pi overlay) |
-| Hooks | none in v1 baseline; wrapper merges settings hooks only if a fix is adopted (§4) | none in v1 baseline; wrapper extension shim only if a fix is adopted |
-| MCP | APM → settings scopes | none (by design; CLI-first rule) |
-| Agents | APM agents primitive | n/a v1 |
-| Settings | wrapper merge into `~/.claude/settings.json` | wrapper merge into `~/.pi/agent/settings.json` |
-| Memory | conventions skill + vault (native auto-memory stays for session scope) | conventions skill + vault (only memory Pi has) |
-| Static thickness | thinnest (native plan mode, verification, memory) | thickest (overlay carries the loop) |
+| Layer | Claude Code | Pi | Codex | Copilot |
+|---|---|---|---|---|
+| Skills | APM → `~/.claude/skills/` | native `~/.agents/skills/` (APM-populated) | native `~/.agents/skills/` | native `~/.agents/skills/` |
+| Instructions | APM → `~/.claude/CLAUDE.md` (marker-owned) | wrapper → `~/.pi/agent/AGENTS.md` (core + pi overlay) | APM → `~/.codex/AGENTS.md` | APM → `~/.copilot/AGENTS.md` **and** `copilot-instructions.md` (both marker-owned) |
+| Hooks | none in v1 baseline; wrapper merges settings hooks only if a fix is adopted (§4) | none in v1 baseline; wrapper extension shim only if a fix is adopted | no hook surface — degraded mode, E14 tests it | no hook surface — degraded mode, E14 tests it |
+| MCP | wrapper → `~/.claude.json` | none (by design; CLI-first rule) | wrapper → managed block in `~/.codex/config.toml` | wrapper → `~/.copilot/mcp-config.json` |
+| Agents | APM agents primitive | n/a v1 | best effort | APM → `~/.copilot/agents/*.agent.md` |
+| Settings | wrapper merge into `~/.claude/settings.json` | wrapper merge into `~/.pi/agent/settings.json` | not managed (personal `config.toml` keys) | not managed |
+| Memory | conventions skill + vault (native auto-memory stays for session scope) | conventions skill + vault (only memory Pi has) | conventions skill + vault | conventions skill + vault |
+| Static thickness | thinnest (native plan mode, verification, memory) | thickest (overlay carries the loop) | no overlay yet (baseline-first) | no overlay yet (baseline-first) |
 
-Phase 2 adds the Codex/Copilot columns; their four hands-on verify items
-from harness-baselines carry forward unchanged.
+Codex/Copilot mechanics verified hands-on 2026-07-18 (macOS; see
+[harness-engineering.md](harness-engineering.md)). Their behavioral eval
+columns are required before their breakage blocks release.
 
 ## 6. Static Context Token Budget
 
@@ -482,7 +489,7 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | V2 | APM hooks primitive at user scope | No — wrapper owns hook wiring until proven (§3.3) |
 | V3 | `targets:` in `~/.apm/apm.yml` scopes global compile | No — cleanup fallback specified (§7) |
 | V4 | Pi local-extension install mechanics | No — deferred; only needed if an eval-justified hook is adopted (§4) |
-| V5 | (Phase 2) Copilot CLI MCP path, `~/.copilot/AGENTS.md`, `~/.agents/skills` symlink handling; Codex hook mechanism. **Added 2026-07-13:** APM emitted `~/.copilot/copilot-instructions.md` (not AGENTS.md) on AlmaLinux — verify per-platform filename before Phase 2/3 status rules | No — Phase 2 |
+| V5 | (Phase 2) Copilot CLI MCP path, `~/.copilot/AGENTS.md`, `~/.agents/skills` symlink handling; Codex hook mechanism | **Resolved 2026-07-18** (hands-on, macOS, Codex CLI 0.144.1 / Copilot CLI 1.0.70): APM writes both `~/.copilot/AGENTS.md` and `copilot-instructions.md` marker-owned, mooting the per-platform filename question; Copilot MCP = `~/.copilot/mcp-config.json` (`mcpServers` schema); Codex MCP = `[mcp_servers.*]` tables in `~/.codex/config.toml` (wrapper owns a marker block); both read `~/.agents/skills` natively; neither has a hook surface — E14 degraded mode applies |
 | V6 | Official Obsidian CLI vs third-party obsidian-cli | **Resolved 2026-07-12, owner override** (evidence commit `b752300`): official CLI adopted for the optional `obsidian` skill; memory uses direct files and has no CLI dependency. Verified hands-on on 1.12.7. The CLI does not auto-launch the app. `sync doctor` rejects vaults on corporate mounts. |
 | V7 | Community tmux-skill candidates vs `using-tmux` acceptance checks | No — swap decision, not a blocker; `using-tmux` stays until displaced |
 | V8 | APM serves stale root-file content after source edits ("files unchanged" while content differs) | **Resolved 2026-07-13:** apply detaches only marker-owned managed roots before compile, forcing regeneration; a failed compile restores the last-known-good roots. Covered by regression tests. |
@@ -498,6 +505,14 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | M4 | Memory tooling | **Done 2026-07-12**: "Agent Memory" vault created in iCloud + registered; `AGENT_MEMORY_VAULT` wired; memory-conventions skill shipped; doctor validates vault (personal + exists); basic-memory user-scope MCP removed; E12 passes 2× on CC×Fable and Pi×default incl. cross-harness recall ([results](../tests/evals/results/2026-07-12-e12-memory-writeback.md)) |
 | M5 | Baseline run + gap-fill | **v1 behavioral baseline complete 2026-07-12** ([results](../tests/evals/results/2026-07-12-baseline-day.md)): all E1–E15 scenarios covered on required Claude Code×Fable and Pi×default surfaces; the only authoritative failure, Pi E11, passed twice after the smallest overlay fix. Sonnet-class sampling passed but its entire optional matrix and every second-run cell are not complete; that is recorded secondary coverage, not a claim of a full 4-pair matrix. No framework or hook was justified. |
 | M6 | New-machine test | **Complete 2026-07-13.** Attempt 1 failed and produced bootstrap fixes. [Attempt 2](../tests/evals/results/2026-07-13-e16-attempt2-pass.md) supplied authenticated E14/E12 behavior. The [remote regression](../tests/evals/results/2026-07-13-e16-current-tree-regression.md) used a brand-new Linux user: bootstrap and doctor passed in 12 seconds, the then-38-test suite and no-PyYAML validation passed, stale-root regeneration passed, exactly seven default skills deployed, and corrected E15 measured ~1,793/8,000 tokens. A final last-known-good preservation test brought the branch suite to 39 and was run by Pi; production sync code was unchanged after the remote run. The remote account had no model credentials, so release acceptance explicitly combines its deployment evidence with attempt 2's unchanged behavioral assets. Research scaffolding was distilled into living topical docs and deleted; git history remains the archive. |
+
+## 13. Milestones (Phase 2 — Codex + Copilot first-class)
+
+| M | Deliverable | Done when |
+|---|---|---|
+| P2-M1 | Mechanical layer: V5 verification, MCP projection to Codex + Copilot, status/doctor coverage | **Done 2026-07-18** (TDD, suite 59 tests; live on Jon's Mac) |
+| P2-M2 | Behavioral columns: E1–E15 on Codex×default and Copilot×default, twice consecutively; gap-fills auditioned baseline-first (no hook surface — instruction/skill fixes only) | results files committed |
+| P2-M3 | First-class flip: SPEC/README list Codex + Copilot as release-blocking | P2-M2 passes; harness-engineering matrix updated |
 
 Phase 1 exit satisfies M6 (primary) and the required-pair M5 baseline. The
 full four-pair consecutive-pass matrix remains incomplete secondary coverage,

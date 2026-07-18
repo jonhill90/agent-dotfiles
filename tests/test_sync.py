@@ -264,6 +264,118 @@ class McpMergeTests(SyncTestCase):
         self.assertEqual(self.syncer.status(), 1)
 
 
+class CodexMcpTests(SyncTestCase):
+    def write_fragment(self, servers: dict) -> None:
+        (self.repo / "settings" / "mcp" / "servers.json").write_text(
+            json.dumps({"mcpServers": servers}) + "\n"
+        )
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.config = self.home / ".codex" / "config.toml"
+        self.config.parent.mkdir()
+        self.config.write_text(
+            'model = "gpt"\n\n[mcp_servers.node_repl]\ncommand = "node"\n'
+        )
+        self.write_fragment(
+            {
+                "context7": {
+                    "type": "http",
+                    "url": "https://c7.example/mcp",
+                    "headers": {"Authorization": "Bearer ${CONTEXT7_API_KEY}"},
+                },
+                "deepwiki": {"type": "http", "url": "https://dw.example/mcp"},
+            }
+        )
+
+    def test_writes_marker_block_preserving_existing_config(self) -> None:
+        self.syncer.merge_codex_mcp()
+        text = self.config.read_text()
+        self.assertIn('model = "gpt"', text)
+        self.assertIn("[mcp_servers.node_repl]", text)
+        self.assertIn(sync.CODEX_MCP_BEGIN, text)
+        self.assertIn("[mcp_servers.context7]", text)
+        self.assertIn('url = "https://c7.example/mcp"', text)
+        self.assertIn('bearer_token_env_var = "CONTEXT7_API_KEY"', text)
+        self.assertIn("[mcp_servers.deepwiki]", text)
+        self.assertIn(sync.CODEX_MCP_END, text)
+
+    def test_idempotent_reapply_keeps_single_block(self) -> None:
+        self.syncer.merge_codex_mcp()
+        first = self.config.read_text()
+        self.syncer.merge_codex_mcp()
+        self.assertEqual(self.config.read_text(), first)
+
+    def test_skips_server_already_defined_outside_block(self) -> None:
+        self.config.write_text(
+            'model = "gpt"\n\n[mcp_servers.context7]\ncommand = "mine"\n'
+        )
+        self.syncer.merge_codex_mcp()
+        text = self.config.read_text()
+        self.assertEqual(text.count("[mcp_servers.context7]"), 1)
+        self.assertIn('command = "mine"', text)
+        self.assertIn("[mcp_servers.deepwiki]", text)  # others still land
+
+    def test_skipped_when_codex_absent(self) -> None:
+        self.config.unlink()
+        self.config.parent.rmdir()
+        self.syncer.merge_codex_mcp()
+        self.assertFalse(self.config.exists())
+
+    def test_remove_strips_block_only(self) -> None:
+        self.syncer.merge_codex_mcp()
+        self.syncer.save_state()
+        self.syncer.remove(no_apm=True)
+        text = self.config.read_text()
+        self.assertIn('model = "gpt"', text)
+        self.assertIn("[mcp_servers.node_repl]", text)
+        self.assertNotIn(sync.CODEX_MCP_BEGIN, text)
+        self.assertNotIn("context7", text)
+
+
+class CopilotMcpTests(SyncTestCase):
+    def write_fragment(self, servers: dict) -> None:
+        (self.repo / "settings" / "mcp" / "servers.json").write_text(
+            json.dumps({"mcpServers": servers}) + "\n"
+        )
+
+    def setUp(self) -> None:
+        super().setUp()
+        (self.home / ".copilot").mkdir()
+        self.mcp_config = self.home / ".copilot" / "mcp-config.json"
+        self.write_fragment(
+            {"deepwiki": {"type": "http", "url": "https://dw.example/mcp"}}
+        )
+
+    def test_merge_creates_mcp_config_preserving_unmanaged(self) -> None:
+        self.mcp_config.write_text(
+            json.dumps({"mcpServers": {"personal": {"command": "foo"}}})
+        )
+        self.syncer.merge_copilot_mcp()
+        merged = json.loads(self.mcp_config.read_text())
+        self.assertEqual(
+            merged["mcpServers"]["deepwiki"]["url"], "https://dw.example/mcp"
+        )
+        self.assertEqual(merged["mcpServers"]["personal"], {"command": "foo"})
+
+    def test_skipped_when_copilot_absent(self) -> None:
+        (self.home / ".copilot").rmdir()
+        self.syncer.merge_copilot_mcp()
+        self.assertFalse(self.mcp_config.exists())
+
+    def test_remove_restores_previous(self) -> None:
+        self.syncer.apply(no_apm=True)
+        self.assertTrue(self.mcp_config.is_file())
+        self.syncer.remove(no_apm=True)
+        merged = json.loads(self.mcp_config.read_text())
+        self.assertNotIn("deepwiki", merged["mcpServers"])
+
+    def test_status_flags_missing_copilot_server(self) -> None:
+        self.syncer.apply(no_apm=True)
+        self.mcp_config.write_text(json.dumps({"mcpServers": {}}))
+        self.assertEqual(self.syncer.status(), 1)
+
+
 class RemoveTests(SyncTestCase):
     def test_remove_restores_settings_and_deletes_projection(self) -> None:
         (self.home / ".pi" / "agent").mkdir(parents=True)
@@ -449,6 +561,23 @@ class DoctorTests(SyncTestCase):
         ok, detail = checks["claude-root-file"]
         self.assertIsNone(ok)
         self.assertIn("not installed", detail)
+
+    def test_codex_and_copilot_root_files_checked_when_installed(self) -> None:
+        for harness in (".codex", ".copilot"):
+            (self.home / harness).mkdir()
+        checks = dict(self.syncer.doctor_checks(env={}))
+        self.assertFalse(checks["codex-root-file"][0])  # dir, no root file
+        self.assertFalse(checks["copilot-root-file"][0])
+        (self.home / ".codex" / "AGENTS.md").write_text(APM_MARKER + "\nx\n")
+        (self.home / ".copilot" / "AGENTS.md").write_text(APM_MARKER + "\nx\n")
+        checks = dict(self.syncer.doctor_checks(env={}))
+        self.assertTrue(checks["codex-root-file"][0])
+        self.assertTrue(checks["copilot-root-file"][0])
+
+    def test_codex_copilot_absent_is_warning(self) -> None:
+        checks = dict(self.syncer.doctor_checks(env={}))
+        self.assertIsNone(checks["codex-root-file"][0])
+        self.assertIsNone(checks["copilot-root-file"][0])
 
     def test_unset_vault_is_warning_not_failure(self) -> None:
         checks = dict(self.syncer.doctor_checks(env={}))
