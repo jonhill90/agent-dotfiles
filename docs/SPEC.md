@@ -89,11 +89,13 @@ agent-dotfiles/
   scripts/
     sync.py                # the wrapper (Python 3 stdlib only)
     validate_repository.py # extended with token-budget + secret checks
-  evals/
-    scenarios/             # E1–E15 runnable fixtures; E16 is the live
+  tests/                   # one verification tree (layout rev. 2026-07-18)
+    test_*.py              # unittest suite (wrapper + validators)
+    requirements-dev.txt   # dev/CI-only dependencies
+    evals/
+      scenarios/           # E1–E15 runnable fixtures; E16 is the live
                            # bootstrap acceptance (docs/evals.md)
-    results/               # per-run matrices: <date>-<harness>-<model>.md
-  tests/                   # unittest suite (wrapper + validators)
+      results/             # per-run matrices: <date>-<harness>-<model>.md
   docs/                    # living product, architecture, memory, eval docs
   install.sh               # new-machine bootstrap (see §8)
 ```
@@ -420,7 +422,7 @@ write-back), E15 (token budget) all pass on the fresh machine.
 1. Rename repo to `jonhill90/agent-dotfiles` (GitHub rename; history and
    backup branches preserved; old URLs redirect).
 2. Restructure per §2: add `apm.yml` + `.apm/` symlinks, `instructions/`,
-   `settings/`, `evals/`; retire committed compatibility symlinks once
+   `settings/`, `tests/evals/`; retire committed compatibility symlinks once
    `sync apply` replaces them.
 3. On each existing machine, before first `sync apply`:
    - remove frozen `npx skills` copies in `~/.agents/skills` (wrapper
@@ -438,13 +440,13 @@ write-back), E15 (token budget) all pass on the fresh machine.
 Answers PRD open question 3. Manual by design — no automation before the
 scenarios prove they discriminate (eval-scenarios doctrine).
 
-- `evals/scenarios/E<nn>-<slug>/` — one directory per scenario: `prompt.md`
+- `tests/evals/scenarios/E<nn>-<slug>/` — one directory per scenario: `prompt.md`
   (verbatim prompt + setup steps), `criteria.md` (observable PASS/FAIL),
   fixture files where needed (E2, E6, E7, E9 need rigged repos).
 - Runner protocol: fresh session in the target harness×model pair, run
   the prompt, score against criteria. A pair passes a stage when all its
   scenarios pass **twice consecutively**.
-- Results: `evals/results/<date>-<harness>-<model>.md` — one matrix per
+- Results: `tests/evals/results/<date>-<harness>-<model>.md` — one matrix per
   run, committed. Adoption decisions are closed only by results files
   referenced from the provenance manifest.
 - v1 release-required pairs: Claude Code×Fable and Pi×default. Claude
@@ -465,7 +467,7 @@ scenarios prove they discriminate (eval-scenarios doctrine).
 
 **Tool-skill track (acceptance checks):** loop evals do not cover tool
 skills. Each kept tool skill gets
-`evals/acceptance/<skill>.md` — 3–5 concrete tasks the skill must let
+`tests/evals/acceptance/<skill>.md` — 3–5 concrete tasks the skill must let
 the agent complete (e.g. obsidian: create note, search, read from a
 script — the memory backend's needs; tmux: start session, verified
 send-keys, recover a stuck pane). A community candidate displaces a
@@ -493,9 +495,9 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | M2 | APM package works | **Done 2026-07-12** (evidence commit `dff03d0`): skills deployed to both paths, marker-owned root files written, hand-authored files preserved |
 | M3 | Wrapper v1 | **Done 2026-07-12**: `sync apply/status/doctor/remove` implemented TDD (11 tests); live apply on this Mac — 6 stale root files torn down, `~/.pi/agent/AGENTS.md` projected (core + overlay), status clean; committed symlink matrix retired, validator enforces absence |
 | M1.5 | Skill roster cut | **Done 2026-07-13:** cut skills deleted; kept tool checks committed; the filtered APM install contains seven accepted skills while benched public skills remain individually installable. Validator enforces the split. |
-| M4 | Memory tooling | **Done 2026-07-12**: "Agent Memory" vault created in iCloud + registered; `AGENT_MEMORY_VAULT` wired; memory-conventions skill shipped; doctor validates vault (personal + exists); basic-memory user-scope MCP removed; E12 passes 2× on CC×Fable and Pi×default incl. cross-harness recall ([results](../evals/results/2026-07-12-e12-memory-writeback.md)) |
-| M5 | Baseline run + gap-fill | **v1 behavioral baseline complete 2026-07-12** ([results](../evals/results/2026-07-12-baseline-day.md)): all E1–E15 scenarios covered on required Claude Code×Fable and Pi×default surfaces; the only authoritative failure, Pi E11, passed twice after the smallest overlay fix. Sonnet-class sampling passed but its entire optional matrix and every second-run cell are not complete; that is recorded secondary coverage, not a claim of a full 4-pair matrix. No framework or hook was justified. |
-| M6 | New-machine test | **Complete 2026-07-13.** Attempt 1 failed and produced bootstrap fixes. [Attempt 2](../evals/results/2026-07-13-e16-attempt2-pass.md) supplied authenticated E14/E12 behavior. The [remote regression](../evals/results/2026-07-13-e16-current-tree-regression.md) used a brand-new Linux user: bootstrap and doctor passed in 12 seconds, the then-38-test suite and no-PyYAML validation passed, stale-root regeneration passed, exactly seven default skills deployed, and corrected E15 measured ~1,793/8,000 tokens. A final last-known-good preservation test brought the branch suite to 39 and was run by Pi; production sync code was unchanged after the remote run. The remote account had no model credentials, so release acceptance explicitly combines its deployment evidence with attempt 2's unchanged behavioral assets. Research scaffolding was distilled into living topical docs and deleted; git history remains the archive. |
+| M4 | Memory tooling | **Done 2026-07-12**: "Agent Memory" vault created in iCloud + registered; `AGENT_MEMORY_VAULT` wired; memory-conventions skill shipped; doctor validates vault (personal + exists); basic-memory user-scope MCP removed; E12 passes 2× on CC×Fable and Pi×default incl. cross-harness recall ([results](../tests/evals/results/2026-07-12-e12-memory-writeback.md)) |
+| M5 | Baseline run + gap-fill | **v1 behavioral baseline complete 2026-07-12** ([results](../tests/evals/results/2026-07-12-baseline-day.md)): all E1–E15 scenarios covered on required Claude Code×Fable and Pi×default surfaces; the only authoritative failure, Pi E11, passed twice after the smallest overlay fix. Sonnet-class sampling passed but its entire optional matrix and every second-run cell are not complete; that is recorded secondary coverage, not a claim of a full 4-pair matrix. No framework or hook was justified. |
+| M6 | New-machine test | **Complete 2026-07-13.** Attempt 1 failed and produced bootstrap fixes. [Attempt 2](../tests/evals/results/2026-07-13-e16-attempt2-pass.md) supplied authenticated E14/E12 behavior. The [remote regression](../tests/evals/results/2026-07-13-e16-current-tree-regression.md) used a brand-new Linux user: bootstrap and doctor passed in 12 seconds, the then-38-test suite and no-PyYAML validation passed, stale-root regeneration passed, exactly seven default skills deployed, and corrected E15 measured ~1,793/8,000 tokens. A final last-known-good preservation test brought the branch suite to 39 and was run by Pi; production sync code was unchanged after the remote run. The remote account had no model credentials, so release acceptance explicitly combines its deployment evidence with attempt 2's unchanged behavioral assets. Research scaffolding was distilled into living topical docs and deleted; git history remains the archive. |
 
 Phase 1 exit satisfies M6 (primary) and the required-pair M5 baseline. The
 full four-pair consecutive-pass matrix remains incomplete secondary coverage,

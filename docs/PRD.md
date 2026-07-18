@@ -234,7 +234,7 @@ history. Their maintained conclusions live in
 | Superpowers | Dropped entirely (dependency, hook, skills); parts-bin candidate in gap-fill auditions only |
 | Behavioral-layer selection | Baseline-first rule (see Selection Rubric); the eval matrix is the distiller, not framework comparison |
 | Enforcement hooks | Not researched separately; auditioned only if the baseline shows E14-class failures |
-| Tool-skill swaps | Per-skill acceptance checks in `evals/`; community wins on equal coverage + fewer tokens |
+| Tool-skill swaps | Per-skill acceptance checks in `tests/evals/`; community wins on equal coverage + fewer tokens |
 | Skill cuts | Propose/veto; cut = delete (git history is the archive). Named: ms-learn, ms-learn-cli, tools/mslearn |
 | Obsidian access path | Official Obsidian CLI researched against memory-backend needs before any swap |
 | using-tmux | Community search + acceptance checks before keep/swap decision |
@@ -244,7 +244,7 @@ history. Their maintained conclusions live in
 
 | Decision | Choice |
 |---|---|
-| Docs vs noise | `docs/` holds living documents only; `evals/` is the permanent test suite; research prose is scaffolding — distilled into topical living docs and deleted at each spec iteration's exit (git/PRs are the archive, manifest cites SHAs) |
+| Docs vs noise | `docs/` holds living documents only; `tests/evals/` is the permanent test suite; research prose is scaffolding — distilled into topical living docs and deleted at each spec iteration's exit (git/PRs are the archive, manifest cites SHAs) |
 | Privacy guard | Employer names and sensitive terms live only in an untracked local `.privacy-denylist`; validation errors on any tracked markdown containing them |
 
 ### Memory format distillation (2026-07-12)
