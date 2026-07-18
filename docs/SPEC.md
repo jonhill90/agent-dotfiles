@@ -511,7 +511,7 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | M | Deliverable | Done when |
 |---|---|---|
 | P2-M1 | Mechanical layer: V5 verification, MCP projection to Codex + Copilot, status/doctor coverage | **Done 2026-07-18** (TDD, suite 59 tests; live on Jon's Mac) |
-| P2-M2 | Behavioral columns: E1–E15 on Codex×default and Copilot×default, twice consecutively; gap-fills auditioned baseline-first (no hook surface — instruction/skill fixes only) | results files committed |
+| P2-M2 | Behavioral columns: E1–E15 on Codex×default and Copilot×default, twice consecutively; gap-fills auditioned baseline-first (no hook surface — instruction/skill fixes only) | **Substantially done 2026-07-18** ([results](../tests/evals/results/2026-07-18-p2m2-codex-copilot-baseline.md)): Codex 13/15 green (deletion-gate sentence adopted via E11 audition); Copilot 9/15 headless. Blocking remainder: E14-Codex plugin shadowing (unstable), E11-Copilot gate, E13 + interactive-authoritative confirmation runs |
 | P2-M3 | First-class flip: SPEC/README list Codex + Copilot as release-blocking | P2-M2 passes; harness-engineering matrix updated |
 
 Phase 1 exit satisfies M6 (primary) and the required-pair M5 baseline. The

@@ -70,6 +70,15 @@ semantics and a non-MCP degradation path exists.
     projection is needed.
   - Behavioral eval columns (E14-class degraded mode — no hook surface)
     are still required before Codex/Copilot breakage blocks release.
+- Codex/Copilot behavioral findings (P2-M2 baseline, 2026-07-18):
+  - Codex spawns `zsh -l` shells: profile exports override per-session
+    env vars (temp-vault redirection fails), and vault writes need
+    `sandbox_workspace_write.writable_roots` to include the vault.
+  - Codex's curated `github` plugin shadows the managed `gh-cli` skill
+    and survives `plugin remove` via cache re-sync (E14 unstable; open).
+  - Copilot in print mode loads the global instructions but does not
+    reliably bind guardrails (E11 fails with the gate provably in
+    context); harness-native permission gates are the escalation path.
 - The bootstrap is portable across macOS and Linux for its shared core.
   Obsidian application integration is macOS-only and optional; memory itself
   uses direct files.
