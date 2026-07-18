@@ -33,6 +33,8 @@ def make_repo(root: Path) -> Path:
     )
     (repo / "settings" / "claude" / "settings.json").write_text("{}\n")
     (repo / "settings" / "pi" / "settings.json").write_text("{}\n")
+    (repo / "settings" / "copilot").mkdir(parents=True)
+    (repo / "settings" / "copilot" / "settings.json").write_text("{}\n")
     (repo / "settings" / "mcp").mkdir(parents=True)
     (repo / "settings" / "mcp" / "servers.json").write_text(
         json.dumps({"mcpServers": {}}) + "\n"
@@ -132,6 +134,18 @@ class SettingsMergeTests(SyncTestCase):
         prev = self.syncer.state["settings"][str(live)]
         self.assertEqual(prev["model"], "sonnet")
         self.assertEqual(prev["env"], sync.ABSENT)
+
+    def test_apply_merges_copilot_fragment_when_harness_present(self) -> None:
+        (self.repo / "settings" / "copilot" / "settings.json").write_text(
+            json.dumps({"model": "claude-sonnet-5"})
+        )
+        live = self.home / ".copilot" / "settings.json"
+        live.parent.mkdir(parents=True)
+        live.write_text(json.dumps({"model": "auto", "theme": "auto"}))
+        self.syncer.apply(no_apm=True)
+        merged = json.loads(live.read_text())
+        self.assertEqual(merged["model"], "claude-sonnet-5")
+        self.assertEqual(merged["theme"], "auto")
 
     def test_empty_fragment_is_noop(self) -> None:
         live = self.home / ".claude" / "settings.json"

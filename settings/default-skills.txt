@@ -1,7 +1,9 @@
 az-devops
 create-skill
+failing-test-first
 gh-cli
 linear
 memory-conventions
 obsidian
+safe-deletion
 using-tmux
