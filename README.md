@@ -23,7 +23,8 @@ Install a specific skill:
 npx skills add jonhill90/agent-dotfiles --skill primer
 ```
 
-First-class harnesses (end state): Claude Code, Codex, GitHub Copilot, Pi.
+First-class harnesses: Claude Code, Codex, GitHub Copilot, Pi — all four
+sync-managed and eval-verified; breakage on any of them blocks release.
 Other Agent Skills-compatible harnesses may work through the same installer.
 
 ## Repository Model
