@@ -189,10 +189,12 @@ Notes:
 - Declared in `settings/mcp/servers.json`: server name, transport,
   command/URL, required env vars. **No secrets in the repo** — env vars
   and OS keychain only; the wrapper's doctor command reports missing ones.
-- Projection: APM handles Claude Code (`.mcp.json`/settings scopes) and,
-  in Phase 2, Codex (`config.toml`) and Copilot. Pi gets none by design;
-  every MCP-backed capability must already satisfy the CLI-first rule
-  or be accepted as unavailable on Pi.
+- Projection (v1, implemented 2026-07-17): the wrapper merges the declared
+  set into Claude Code user scope (`~/.claude.json` `mcpServers`), tracking
+  previous values in `state.json` so `sync remove` restores them; unmanaged
+  servers are preserved. Phase 2 extends to Codex (`config.toml`) and
+  Copilot. Pi gets none by design; every MCP-backed capability must
+  already satisfy the CLI-first rule or be accepted as unavailable on Pi.
 - v1 declared set: the servers Jon actually uses today (context7,
   deepwiki, microsoft-learn). Anything else is per-machine local config,
   not dotfiles.
@@ -203,10 +205,14 @@ Notes:
   agents primitive to CC; other harnesses best-effort (Phase 2).
 - Settings are **wrapper-owned** (outside APM's primitive set — residual
   unknown 1 in apm-verification):
-  - `settings/claude/settings.json` is a merge *fragment*: permission
-    allowlists, model defaults, hook wiring. The wrapper deep-merges it
-    into `~/.claude/settings.json`, preserving unmanaged keys, and never
-    touches `settings.local.json`.
+  - `settings/claude/settings.json` is a merge *fragment*. Populated v1
+    content (2026-07-17): the managed plugin roster (`enabledPlugins`) and
+    portable workflow preferences (`alwaysThinkingEnabled`, `effortLevel`).
+    Permission allowlists and model selection stay machine-local
+    (`settings.local.json` / harness-owned keys) until a portable set is
+    curated — the fragment must never invent permission grants. The wrapper
+    deep-merges the fragment into `~/.claude/settings.json`, preserving
+    unmanaged keys, and never touches `settings.local.json`.
   - `settings/pi/settings.json` merged into `~/.pi/agent/settings.json`
     the same way (skill paths, extension entries, `defaultProjectTrust`).
   - Merge is idempotent and reversible: managed keys are tracked in a
@@ -352,7 +358,7 @@ Commands:
 
 - `sync apply` — full pipeline: preflight → `apm install -g` →
   `apm compile --global` → post-compile cleanup → Pi projection →
-  settings merges → state file update.
+  settings merges → MCP merge (§3.4) → state file update.
 - `sync status` — drift report: `apm audit` + wrapper-owned surfaces
   (settings keys, Pi files, root files vs marker) vs `state.json`.
 - `sync doctor` — environment checks: required CLIs present (apm, node,
@@ -374,7 +380,16 @@ Wrapper-owned jobs (the APM live-trial "wart list" verbatim):
    (§4); **verify item V4** (local-extension install mechanics) is
    deferred until then.
 3. **Settings merges** with state tracking (§3.5).
-4. **First-run adoption** of hand-authored root files (§3.2).
+4. **MCP projection** into Claude Code user scope with state tracking
+   (§3.4); doctor warns on env vars the declared servers reference but
+   the environment lacks.
+5. **First-run adoption** of hand-authored root files (§3.2).
+
+**Self-application guardrail:** this repo is maintained under the harness
+it defines (see PRD Vision). Instruction and overlay changes are never
+`sync apply`'d in the same session that authored them — apply after
+review, and evaluate behavior in a fresh session, so a bad edit cannot
+steer the session that is supposed to catch it.
 
 ## 8. New-Machine Bootstrap (`install.sh`)
 
@@ -484,4 +499,9 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 
 Phase 1 exit satisfies M6 (primary) and the required-pair M5 baseline. The
 full four-pair consecutive-pass matrix remains incomplete secondary coverage,
-and the results say so explicitly.
+and the results say so explicitly. The PRD's consolidation criterion (§9.3)
+is satisfied on Jon's Mac as of 2026-07-17: stale project-scoped
+basic-memory MCP configs and permission allows purged, Claude Code plugins
+managed through the `enabledPlugins` fragment, and the declared MCP set
+projected by the wrapper. Other machines consolidate on their next
+`sync apply`.
