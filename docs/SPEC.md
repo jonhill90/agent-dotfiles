@@ -635,6 +635,48 @@ run (P2-M5). Their manifest rows carry a **prior-bar** caveat naming the
 evidence they were adopted on; P2-M5 clears the caveat once the
 re-verification lands.
 
+## 10.2 Scenario Intake (added 2026-07-25)
+
+§4 and §4.1 govern how a *fix* earns adoption; both make a failing
+scenario the only door into a roster. Neither says how a *scenario*
+comes into existence, so the door has no described approach. This
+section supplies it.
+
+**Trigger.** A new scenario is written when a behavior the agent is
+expected to have is exercised by no existing scenario. Absence of
+coverage is the justification — not a component someone wants to
+install.
+
+**Numbering.** Next free `E<nn>`. E16 is permanently the live bootstrap
+acceptance (§10, `docs/evals.md`) and never a `scenarios/` fixture, so
+behavioral scenarios continue from E17.
+
+**Shape.** `tests/evals/scenarios/E<nn>-<slug>/` with `prompt.md`
+(setup plus the verbatim prompt) and `criteria.md` (one observable
+PASS line), matching E1–E15. Fixture files only where the scenario
+needs a rigged repository. Scoring stays transcript-and-filesystem
+evidence, never self-report.
+
+**Discrimination gate.** A scenario earns its place by discriminating.
+It must fail on at least one v1 pair at baseline, or separate a
+known-good run from a known-bad one on demand. A scenario that passes
+everywhere at baseline is retained as regression coverage and justifies
+no component — it has shown the behavior is already covered, which is
+itself a result worth recording.
+
+**Ordering gate.** The scenario is authored and baselined *before* any
+candidate fix is auditioned against it, and its baseline result is
+committed first. A scenario written after a candidate, to justify that
+candidate, is void: the deciding results file must postdate the
+baseline results file that established the failure. This is the rule
+that keeps §4's ladder from being climbed backwards — authoring a
+component and then reverse-engineering the scenario that admits it
+would satisfy every other gate in this document.
+
+**Retirement.** A scenario is removed only with a results file showing
+it no longer discriminates, and the manifest records the removal.
+Silent deletion of coverage is a regression.
+
 **Tool-skill track (acceptance checks):** loop evals do not cover tool
 skills. Each kept tool skill gets
 `tests/evals/acceptance/<skill>.md` — 3–5 concrete tasks the skill must let
@@ -680,6 +722,7 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | P2-M3 | First-class flip: SPEC/README list Codex + Copilot as release-blocking | **Done 2026-07-18**: all P2-M2 cells pass ×2; Codex and Copilot breakage now blocks release; harness-engineering matrix updated |
 | P2-M4 | Per-harness skill rosters (§4.1): sectioned `default-skills.txt`, Tier A scoping in `ensure_neutral_skills()`, Tier B Codex disable wiring, per-harness §6 budget check, `status`/`doctor` roster reporting | **Open.** Done when: sectioned roster parses with the flat file still valid (TDD); Claude Code no longer receives Copilot-scoped skills on a live apply; removal from a section removes the wrapper symlink and is reversible; per-harness E15 budget measured and under cap; E11 still PASS ×2 on Copilot and no regression on the other three columns |
 | P2-M5 | Evidence bar + counter-scenarios (§10.1): `tests/evals/counter/` established, counter files for `safe-deletion` and `failing-test-first`, both re-verified at the ×3 adoption bar with models pinned and recorded | **Open.** Done when: both counter files exist and pass ×2 on all four columns; both skills pass their originating scenario (E11, E06) ×3 consecutive on Copilot with the model pinned and named in the results row; manifest rows updated to cite counter files and drop the prior-bar caveat; any skill failing a counter-scenario is narrowed and re-auditioned before the row closes |
+| P2-M6 | Baseline E17 (§10.2): the delegation/verification scenario is authored but un-baselined, so it currently justifies nothing | **Open.** Done when: E17 has run on all four columns with models pinned and the matrix committed; the discrimination gate is settled either way — if it fails on at least one column it becomes admissible evidence and the §4 ladder runs from the sentence rung upward, and if it passes everywhere it is recorded as regression coverage and `dispatching-subagents` stays public opt-in with that result cited. No component is auditioned against E17 before its baseline results file is committed (§10.2 ordering gate) |
 
 Phase 1 exit satisfies M6 (primary) and the required-pair M5 baseline. The
 full four-pair consecutive-pass matrix remains incomplete secondary coverage,
