@@ -54,16 +54,16 @@ retired (SPEC §2).
 
 | Skill | Purpose |
 |---|---|
-| `using-tmux` | Operate persistent interactive terminal sessions safely |
+| `tmux` | Operate persistent interactive terminal sessions safely |
 | `create-skill` | Design and validate portable skills with progressive disclosure |
 
 Additional skills integrate with GitHub, Linear, and Obsidian.
 Install them selectively to avoid overlapping triggers and unnecessary
 context.
 
-Three skills are published here but excluded from the default APM package —
-`primer`, `closing-the-loop`, and `dispatching-subagents` — because no failing
-eval justified their static description cost. All three remain independently
+Four skills are published here but excluded from the default APM package —
+`primer`, `close-the-loop`, `dispatching-subagents`, and `sanity-check` —
+because no failing eval justified their static description cost. All three remain independently
 installable, and the reasoning for each is recorded in
 [docs/provenance-manifest.md](docs/provenance-manifest.md).
 

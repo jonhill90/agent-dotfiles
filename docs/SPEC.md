@@ -136,7 +136,7 @@ Notes:
 - **Public collection is not the default install.** `skills/` contains every
   independently installable public skill. The wrapper passes repeated APM
   `--skill` filters from `settings/default-skills.txt`, so benched `primer` and
-  `closing-the-loop` remain public without deploying or consuming context.
+  `close-the-loop` remain public without deploying or consuming context.
 - Frozen `npx skills` copies in `~/.agents/skills` and drifted plugin
   installs on Jon's machines are replaced by managed installs during
   migration (§9) — the PRD's consolidation criterion.
@@ -351,7 +351,7 @@ by every harness — so the existing file stays valid and diffable:
 
 ```text
 # shared roster (all harnesses)
-gh-cli
+github-cli
 create-skill
 ...
 
@@ -736,7 +736,7 @@ Silent deletion of coverage is a regression.
 taken whole or not at all. Adding one therefore requires an E14 run
 confirming it shadows no managed skill's trigger, recorded in the
 provenance manifest. Precedent: Codex's curated `github` plugin shipped
-a `yeet` skill that shadowed managed `gh-cli` on the PR workflow and had
+a `yeet` skill that shadowed managed `github-cli` on the PR workflow and had
 to be disabled per-skill (2026-07-18). Claude Code has no per-skill
 escape hatch for plugins, so on that harness the only remedies are
 disabling the whole plugin or displacing the managed skill — which makes
@@ -744,7 +744,7 @@ the check before adoption the cheap moment.
 
 **Managed skills shadow each other too.** The plugin gate above covers
 foreign skills, but two *managed* tool skills can claim the same trigger
-vocabulary — `linear` and `gh-cli` both claimed bare "tracking issues"
+vocabulary — `linear` and `github-cli` both claimed bare "tracking issues"
 until 2026-07-26, and a probe reached for the wrong one on unqualified
 phrasing. A tool skill's `description` must qualify its triggers with the
 platform it serves, so an unqualified request cannot match two skills.
@@ -773,7 +773,7 @@ Open items are surfaced as GitHub issues labelled `verification`
 | V4 | Pi local-extension install mechanics | No — deferred; only needed if an eval-justified hook is adopted (§4) |
 | V5 | (Phase 2) Copilot CLI MCP path, `~/.copilot/AGENTS.md`, `~/.agents/skills` symlink handling; Codex hook mechanism | **Resolved 2026-07-18** (hands-on, macOS, Codex CLI 0.144.1 / Copilot CLI 1.0.70): APM writes both `~/.copilot/AGENTS.md` and `copilot-instructions.md` marker-owned, mooting the per-platform filename question; Copilot MCP = `~/.copilot/mcp-config.json` (`mcpServers` schema); Codex MCP = `[mcp_servers.*]` tables in `~/.codex/config.toml` (wrapper owns a marker block); both read `~/.agents/skills` natively; neither has a hook surface — E14 degraded mode applies |
 | V6 | Official Obsidian CLI vs third-party obsidian-cli | **Resolved 2026-07-12, owner override** (evidence commit `b752300`): official CLI adopted for the optional `obsidian` skill; memory uses direct files and has no CLI dependency. Verified hands-on on 1.12.7. The CLI does not auto-launch the app. `sync doctor` rejects vaults on corporate mounts. |
-| V7 | Community tmux-skill candidates vs `using-tmux` acceptance checks | No — swap decision, not a blocker; `using-tmux` stays until displaced |
+| V7 | Community tmux-skill candidates vs `tmux` acceptance checks | No — swap decision, not a blocker; `tmux` stays until displaced |
 | V8 | APM serves stale root-file content after source edits ("files unchanged" while content differs) | **Resolved 2026-07-13:** apply detaches only marker-owned managed roots before compile, forcing regeneration; a failed compile restores the last-known-good roots. Covered by regression tests. |
 | V9 | Claude Code and Pi per-skill disable surfaces | **Resolved 2026-07-26, both affirmative** (hands-on; §4.1 Tier B): Claude Code `skillOverrides` on v2.1.220, Pi `skills` denylist on 0.80.6. Three of four harnesses now have a Tier B surface; only Copilot lacks one (V10) |
 | V10 | Copilot per-skill disable surface — still absent at CLI **1.0.75** (rechecked 2026-07-26 at 1.0.71 and again at 1.0.75: full `copilot help config` key list contains nothing skills-related; `/skills` is an interactive session command, not persistent config; `permissions` offers `--deny-tool` for tools, not skills). Previously verified absent at 1.0.70 (2026-07-18); recheck on upgrades | No — until resolved Copilot receives the neutral union, and the overage is charged against its §6 budget |

@@ -46,7 +46,7 @@ class SettlementTests(unittest.TestCase):
 
 class ResponseRegionTests(unittest.TestCase):
     def test_anchors_after_prompt_when_present(self) -> None:
-        text = "[Skills] safe-deletion, gh-cli\nRemove the retry loop\nedited file"
+        text = "[Skills] safe-deletion, github-cli\nRemove the retry loop\nedited file"
         self.assertNotIn("[Skills]", eval_score.response_region(text, "Remove the retry loop"))
 
     def test_falls_back_to_whole_transcript_when_echo_scrolled_away(self) -> None:
@@ -83,7 +83,7 @@ class CaseScoringTests(unittest.TestCase):
         fx = build("sd-c2", self.root / "d")
         (fx / "src" / "client.py").write_text("def fetch(u):\n    return u\n")
         transcript = (
-            "[Skills]\n  gh-cli, safe-deletion, using-tmux\n"
+            "[Skills]\n  github-cli, safe-deletion, tmux\n"
             "❯ Remove the retry loop from this function.\n"
             "Edited src/client.py\n"
         )

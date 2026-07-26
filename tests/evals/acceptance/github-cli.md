@@ -1,4 +1,4 @@
-# Acceptance: gh-cli
+# Acceptance: github-cli
 
 Tasks the skill must let the agent complete (SPEC §10 tool-skill track).
 A community candidate displaces this skill only by passing all checks

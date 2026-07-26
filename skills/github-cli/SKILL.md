@@ -1,5 +1,5 @@
 ---
-name: gh-cli
+name: github-cli
 description: Manage GitHub via CLI including pull requests, issues, workflows, actions, releases, and repositories. Use when working with GitHub, gh commands, GitHub Actions CI/CD, PRs, issues, releases, or repository management.
 ---
 
