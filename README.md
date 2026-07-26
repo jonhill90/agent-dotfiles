@@ -37,6 +37,8 @@ instructions/    Canonical global agent instructions + per-harness overlays
 agents/          Reusable agent definitions
 hooks/           Canonical hook scripts, harness-agnostic
 settings/        Wrapper-owned config fragments (claude, pi, mcp)
+scripts/         Sync wrapper, repository validation, static-context measurement
+tests/           Unit suite plus evals/ (scenarios, counter-scenarios, harness, results)
 docs/            Living product, architecture, memory, and eval documentation
 .claude/         Claude-specific repo-development configuration and hooks
 .github/         GitHub Copilot instructions and repository automation
@@ -55,11 +57,16 @@ retired (SPEC §2).
 | `using-tmux` | Operate persistent interactive terminal sessions safely |
 | `create-skill` | Design and validate portable skills with progressive disclosure |
 
-Additional skills integrate with GitHub, Azure DevOps, Linear, and Obsidian.
+Additional skills integrate with GitHub, Linear, Obsidian, and Azure DevOps.
 Install them selectively to avoid overlapping triggers and unnecessary
-context. `primer` and `closing-the-loop` remain independently installable but
-are not part of the default APM package because the baseline evals did not
-justify their static description cost.
+context.
+
+Four skills are published here but excluded from the default APM package —
+`primer`, `closing-the-loop`, `dispatching-subagents`, and `az-devops`. The
+first three were excluded because no failing eval justified their static
+description cost; `az-devops` was cut from the roster by owner decision on
+2026-07-26. All four remain independently installable, and the reasoning for
+each is recorded in [docs/provenance-manifest.md](docs/provenance-manifest.md).
 
 The behavioral layer is deliberately minimal: loop discipline lives in the
 canonical instructions, and skills are added only when a failing eval
