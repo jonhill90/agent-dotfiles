@@ -334,7 +334,8 @@ by M1.5 grows one justified skill at a time.
 evals justify it. A skill enters a harness's roster only when either
 
 - that harness failed a scenario the skill demonstrably fixes, with the
-  deciding results file recorded (§4.4); or
+  deciding results file recorded in the provenance manifest (§4, step
+  4); or
 - it is a tool/workflow skill from the standing roster cut, which is
   harness-independent by intent.
 
@@ -438,6 +439,11 @@ Everything procedural loads dynamically (progressive disclosure). The
 validator fails the build if canonical files exceed their line/token
 caps; the skill-description aggregate is checked against the declared
 dependency set in `apm.yml`.
+
+Once per-harness rosters land (§4.1, P2-M4), the skill-description
+aggregate is measured against each harness's *resolved* roster rather
+than the `apm.yml` union, and the total above is enforced per harness.
+Until then the union is the enforced basis.
 
 ## 7. Sync Wrapper (`scripts/sync.py`)
 
@@ -625,7 +631,9 @@ cite the counter file next to the deciding results file.
 were adopted 2026-07-18 under the prior bar (failed ×2, passed ×2, no
 counter-scenario). They are not unwound — both cleared real, reproduced
 failures. They are re-verified at the bar above on the next full matrix
-run (P2-M5), and their manifest rows say so until then.
+run (P2-M5). Their manifest rows carry a **prior-bar** caveat naming the
+evidence they were adopted on; P2-M5 clears the caveat once the
+re-verification lands.
 
 **Tool-skill track (acceptance checks):** loop evals do not cover tool
 skills. Each kept tool skill gets
