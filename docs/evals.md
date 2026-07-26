@@ -56,8 +56,12 @@ the full memory-index allowance and enforces these component limits:
 | Thickest total | 8,000 tokens |
 
 Live E15 must include instructions, the applicable overlay, aggregate deployed
-skill descriptions, and the actual memory index. Report component and total
-measurements, not only root-instruction file size.
+skill descriptions, **enabled plugin skills on Claude Code**, and the actual
+memory index. Report component and total measurements, not only
+root-instruction file size. Run `python3 scripts/measure_e15.py`, which reads
+the deployed tree and encodes the plugin counting rules (SPEC §6); measuring
+by hand under-counts plugins, which is how the 2026-07-26 matrix reported
+Claude Code 87 tokens light.
 
 ## New-machine acceptance (E16)
 
