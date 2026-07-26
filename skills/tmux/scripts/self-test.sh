@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# using-tmux self-test
+# tmux self-test
 # Deterministic smoke test for verifying tmux mechanics in a fresh session.
 # Uses only plain tmux commands — no helper scripts required.
 #
-# Usage: bash skills/using-tmux/scripts/self-test.sh
+# Usage: bash skills/tmux/scripts/self-test.sh
 
-SOCKET_DIR="${TMPDIR:-/tmp}/using-tmux-selftest-$$"
+SOCKET_DIR="${TMPDIR:-/tmp}/tmux-selftest-$$"
 mkdir -p "$SOCKET_DIR"
 SOCKET="$SOCKET_DIR/test.sock"
 SESSION="selftest"
@@ -32,7 +32,7 @@ check() {
   fi
 }
 
-echo "=== using-tmux self-test ==="
+echo "=== tmux self-test ==="
 echo ""
 
 # --- Check 1: Session and window creation ---

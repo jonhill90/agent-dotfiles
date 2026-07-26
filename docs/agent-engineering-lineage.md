@@ -92,7 +92,7 @@ persistent external state so progress survives between runs.
   which its own README describes as unmaintained example ingredients
   rather than a turnkey harness.
 
-This repository's `closing-the-loop` skill occupies this layer.
+This repository's `close-the-loop` skill occupies this layer.
 
 ## Layer 4 — Composition
 
@@ -171,7 +171,7 @@ context window as its memory
 - Layers 1–2 are covered by `instructions/global.instructions.md` and
   the token budget (SPEC §6) — the budget *is* a context-engineering
   control.
-- Layer 3 is covered by the `closing-the-loop` skill.
+- Layer 3 is covered by the `close-the-loop` skill.
 - Layer 4 is covered by `dispatching-subagents`, written as decision
   discipline rather than harness plumbing. Dispatch mechanisms differ
   per harness and move fast — Claude Code has subagents, Codex has

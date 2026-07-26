@@ -29,7 +29,7 @@ def make_repo(root: Path) -> Path:
     (repo / "settings" / "claude").mkdir(parents=True)
     (repo / "settings" / "pi").mkdir(parents=True)
     (repo / "settings" / "default-skills.txt").write_text(
-        "gh-cli\nmemory-conventions\n", encoding="utf-8"
+        "github-cli\nmemory-conventions\n", encoding="utf-8"
     )
     (repo / "settings" / "claude" / "settings.json").write_text("{}\n")
     (repo / "settings" / "pi" / "settings.json").write_text("{}\n")
@@ -67,11 +67,11 @@ class PiProjectionTests(SyncTestCase):
         self.assertTrue((self.home / ".agents" / "skills").is_dir())
 
     def test_apply_mirrors_claude_skills_into_empty_neutral_path(self) -> None:
-        src = self.home / ".claude" / "skills" / "gh-cli"
+        src = self.home / ".claude" / "skills" / "github-cli"
         src.mkdir(parents=True)
-        (src / "SKILL.md").write_text("---\nname: gh-cli\n---\nbody\n")
+        (src / "SKILL.md").write_text("---\nname: github-cli\n---\nbody\n")
         self.syncer.apply(no_apm=True)
-        mirrored = self.home / ".agents" / "skills" / "gh-cli"
+        mirrored = self.home / ".agents" / "skills" / "github-cli"
         self.assertTrue(mirrored.is_symlink() or mirrored.is_dir())
         self.assertTrue((mirrored / "SKILL.md").is_file())
 
@@ -450,7 +450,7 @@ class ApplyOrderTests(SyncTestCase):
                 "-g",
                 str(self.repo),
                 "--skill",
-                "gh-cli",
+                "github-cli",
                 "--skill",
                 "memory-conventions",
             ],
@@ -609,14 +609,14 @@ class SkillRosterScopingTests(SyncTestCase):
 
     SECTIONED = (
         "# shared roster (all harnesses)\n"
-        "gh-cli\n"
+        "github-cli\n"
         "memory-conventions\n"
         "\n"
         "[copilot]\n"
         "safe-deletion\n"
         "\n"
         "[codex]\n"
-        "using-tmux\n"
+        "tmux\n"
     )
 
     def write_roster(self, text: str) -> None:
@@ -625,9 +625,9 @@ class SkillRosterScopingTests(SyncTestCase):
         )
 
     def test_flat_roster_stays_valid_and_is_shared_by_every_harness(self) -> None:
-        self.write_roster("gh-cli\nmemory-conventions\n")
+        self.write_roster("github-cli\nmemory-conventions\n")
         shared = sync.load_default_skills(self.repo)
-        self.assertEqual(shared, ["gh-cli", "memory-conventions"])
+        self.assertEqual(shared, ["github-cli", "memory-conventions"])
         for harness in ("claude", "pi", "codex", "copilot"):
             self.assertEqual(
                 sync.load_default_skills(self.repo, harness), shared
@@ -637,33 +637,33 @@ class SkillRosterScopingTests(SyncTestCase):
         self.write_roster(self.SECTIONED)
         self.assertEqual(
             sync.load_default_skills(self.repo),
-            ["gh-cli", "memory-conventions"],
+            ["github-cli", "memory-conventions"],
         )
         self.assertEqual(
             sync.load_default_skills(self.repo, "copilot"),
-            ["gh-cli", "memory-conventions", "safe-deletion"],
+            ["github-cli", "memory-conventions", "safe-deletion"],
         )
         self.assertEqual(
             sync.load_default_skills(self.repo, "codex"),
-            ["gh-cli", "memory-conventions", "using-tmux"],
+            ["github-cli", "memory-conventions", "tmux"],
         )
         self.assertEqual(
             sync.load_default_skills(self.repo, "claude"),
-            ["gh-cli", "memory-conventions"],
+            ["github-cli", "memory-conventions"],
         )
 
     def test_union_covers_every_section_for_apm_install(self) -> None:
         self.write_roster(self.SECTIONED)
         self.assertEqual(
             sync.roster_union(self.repo),
-            ["gh-cli", "memory-conventions", "safe-deletion", "using-tmux"],
+            ["github-cli", "memory-conventions", "safe-deletion", "tmux"],
         )
 
     def test_neutral_union_excludes_claude_only_skills(self) -> None:
         self.write_roster(self.SECTIONED + "\n[claude]\nprimer\n")
         self.assertEqual(
             sync.neutral_union(self.repo),
-            ["gh-cli", "memory-conventions", "safe-deletion", "using-tmux"],
+            ["github-cli", "memory-conventions", "safe-deletion", "tmux"],
         )
 
     # -- Tier A mirroring ------------------------------------------------
@@ -678,34 +678,34 @@ class SkillRosterScopingTests(SyncTestCase):
     def test_mirrors_only_the_neutral_union(self) -> None:
         self.write_roster(self.SECTIONED + "\n[claude]\nprimer\n")
         self.seed_claude_skills(
-            "gh-cli", "memory-conventions", "safe-deletion", "using-tmux", "primer"
+            "github-cli", "memory-conventions", "safe-deletion", "tmux", "primer"
         )
         self.syncer.ensure_neutral_skills()
         neutral = self.home / ".agents" / "skills"
         self.assertEqual(
             sorted(p.name for p in neutral.iterdir()),
-            ["gh-cli", "memory-conventions", "safe-deletion", "using-tmux"],
+            ["github-cli", "memory-conventions", "safe-deletion", "tmux"],
         )
         self.assertFalse((neutral / "primer").exists())
 
     def test_removing_from_a_section_removes_the_wrapper_symlink(self) -> None:
         self.write_roster(self.SECTIONED)
         self.seed_claude_skills(
-            "gh-cli", "memory-conventions", "safe-deletion", "using-tmux"
+            "github-cli", "memory-conventions", "safe-deletion", "tmux"
         )
         self.syncer.ensure_neutral_skills()
         neutral = self.home / ".agents" / "skills"
         self.assertTrue((neutral / "safe-deletion").is_symlink())
 
         # drop the [copilot] section entirely
-        self.write_roster("gh-cli\nmemory-conventions\n\n[codex]\nusing-tmux\n")
+        self.write_roster("github-cli\nmemory-conventions\n\n[codex]\ntmux\n")
         self.syncer.ensure_neutral_skills()
         self.assertFalse((neutral / "safe-deletion").exists())
-        self.assertTrue((neutral / "using-tmux").is_symlink())
+        self.assertTrue((neutral / "tmux").is_symlink())
 
     def test_never_removes_a_link_the_wrapper_did_not_create(self) -> None:
-        self.write_roster("gh-cli\n")
-        self.seed_claude_skills("gh-cli", "hand-made")
+        self.write_roster("github-cli\n")
+        self.seed_claude_skills("github-cli", "hand-made")
         neutral = self.home / ".agents" / "skills"
         neutral.mkdir(parents=True, exist_ok=True)
         (neutral / "hand-made").symlink_to(self.home / ".claude" / "skills" / "hand-made")
@@ -718,13 +718,13 @@ class SkillRosterScopingTests(SyncTestCase):
     def test_removal_is_recorded_in_state_and_reversible(self) -> None:
         self.write_roster(self.SECTIONED)
         self.seed_claude_skills(
-            "gh-cli", "memory-conventions", "safe-deletion", "using-tmux"
+            "github-cli", "memory-conventions", "safe-deletion", "tmux"
         )
         self.syncer.ensure_neutral_skills()
         self.assertIn(
             "safe-deletion", self.syncer.state.get("neutral_skills", [])
         )
-        self.write_roster("gh-cli\nmemory-conventions\n\n[codex]\nusing-tmux\n")
+        self.write_roster("github-cli\nmemory-conventions\n\n[codex]\ntmux\n")
         self.syncer.ensure_neutral_skills()
         self.assertNotIn(
             "safe-deletion", self.syncer.state.get("neutral_skills", [])
@@ -743,23 +743,23 @@ class RosterReportingTests(SyncTestCase):
     def setUp(self) -> None:
         super().setUp()
         (self.repo / "settings" / "default-skills.txt").write_text(
-            "gh-cli\n\n[copilot]\nsafe-deletion\n", encoding="utf-8"
+            "github-cli\n\n[copilot]\nsafe-deletion\n", encoding="utf-8"
         )
 
     def test_resolved_rosters_are_reported(self) -> None:
         report = self.syncer.roster_report()
-        self.assertEqual(report["claude"], ["gh-cli"])
-        self.assertEqual(report["copilot"], ["gh-cli", "safe-deletion"])
-        self.assertEqual(report["pi"], ["gh-cli"])
+        self.assertEqual(report["claude"], ["github-cli"])
+        self.assertEqual(report["copilot"], ["github-cli", "safe-deletion"])
+        self.assertEqual(report["pi"], ["github-cli"])
 
     def test_doctor_flags_neutral_path_drift(self) -> None:
         claude = self.home / ".claude" / "skills"
         claude.mkdir(parents=True)
-        (claude / "gh-cli").mkdir()
+        (claude / "github-cli").mkdir()
         neutral = self.home / ".agents" / "skills"
         neutral.mkdir(parents=True)
         # a link the wrapper recorded, for a skill no longer in any roster
-        (neutral / "stale-skill").symlink_to(claude / "gh-cli")
+        (neutral / "stale-skill").symlink_to(claude / "github-cli")
         self.syncer.state["neutral_skills"] = ["stale-skill"]
         names = dict(self.syncer.doctor_checks({}))
         self.assertIn("neutral-roster-drift", names)
@@ -768,7 +768,7 @@ class RosterReportingTests(SyncTestCase):
     def test_doctor_passes_when_neutral_path_matches(self) -> None:
         claude = self.home / ".claude" / "skills"
         claude.mkdir(parents=True)
-        for name in ("gh-cli", "safe-deletion"):
+        for name in ("github-cli", "safe-deletion"):
             (claude / name).mkdir()
         self.syncer.ensure_neutral_skills()
         names = dict(self.syncer.doctor_checks({}))
@@ -782,11 +782,11 @@ class PreexistingNeutralLinkTests(SyncTestCase):
 
     def test_untracked_out_of_union_link_is_reported_not_deleted(self) -> None:
         (self.repo / "settings" / "default-skills.txt").write_text(
-            "gh-cli\n\n[claude]\nprimer\n", encoding="utf-8"
+            "github-cli\n\n[claude]\nprimer\n", encoding="utf-8"
         )
         claude = self.home / ".claude" / "skills"
         claude.mkdir(parents=True)
-        for name in ("gh-cli", "primer"):
+        for name in ("github-cli", "primer"):
             (claude / name).mkdir()
         neutral = self.home / ".agents" / "skills"
         neutral.mkdir(parents=True)

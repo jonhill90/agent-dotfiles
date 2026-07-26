@@ -1,4 +1,4 @@
-# Acceptance: using-tmux
+# Acceptance: tmux
 
 Tasks the skill must let the agent complete (SPEC §10 tool-skill track).
 The V7 community-candidate comparison runs against this list.
