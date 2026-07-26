@@ -85,6 +85,19 @@ replace the portable workflow.
 5. Run repository validation and relevant script tests.
 6. Review the diff for generated files, broken links, and source duplication.
 
+## Work Tracking
+
+- Linear is the system of record for open work: team `AI`, project
+  `agent-dotfiles`. Conventions and CLI edges: `docs/linear.md`.
+- Open work that is expected to happen gets an issue citing its
+  `docs/SPEC.md` section. The SPEC stays the contract; the issue tracks
+  it.
+- The CLI is canonical (`.linear.toml` pins the team). The claude.ai
+  Linear connector is scoped to a different workspace and cannot see
+  this team.
+- Branch with a type prefix (`docs/`, `feat/`, `chore/`) and land
+  through a PR; CI gates on `pull_request`.
+
 ## Required Verification
 
 Run before considering repository changes complete:
