@@ -240,3 +240,94 @@ class ApmPackageRosterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SectionedRosterTests(unittest.TestCase):
+    """SPEC §4.1 — validator understands per-harness roster sections."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def write_roster(self, text: str) -> Path:
+        settings = self.root / "settings"
+        settings.mkdir(parents=True, exist_ok=True)
+        path = settings / "default-skills.txt"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_union_of_sections_satisfies_the_default_package(self) -> None:
+        skills = sorted(validator.DEFAULT_APM_SKILLS)
+        self.write_roster(
+            "\n".join(skills[:-1]) + f"\n\n[copilot]\n{skills[-1]}\n"
+        )
+        findings = validator.validate_apm_skill_roster(self.root)
+        self.assertEqual(
+            [f for f in findings if f.level == "error"],
+            [],
+            "a sectioned skill still counts toward the default package",
+        )
+
+    def test_section_headers_are_not_treated_as_skill_names(self) -> None:
+        self.write_roster(
+            "\n".join(sorted(validator.DEFAULT_APM_SKILLS)) + "\n\n[copilot]\n"
+        )
+        errors = [
+            f
+            for f in validator.validate_apm_skill_roster(self.root)
+            if f.level == "error"
+        ]
+        self.assertEqual(errors, [], f"header parsed as a skill: {errors}")
+
+    def test_flat_roster_still_validates(self) -> None:
+        self.write_roster("\n".join(sorted(validator.DEFAULT_APM_SKILLS)) + "\n")
+        self.assertEqual(
+            [
+                f
+                for f in validator.validate_apm_skill_roster(self.root)
+                if f.level == "error"
+            ],
+            [],
+        )
+
+
+class PerHarnessBudgetTests(unittest.TestCase):
+    """SPEC §4.1 — the budget is measured against each harness's
+    resolved roster, not against the union."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        (self.root / "settings").mkdir(parents=True)
+        for name, description in (
+            ("shared-one", "s" * 100),
+            ("copilot-only", "c" * 400),
+        ):
+            skill = self.root / "skills" / name
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: {description}\n---\n\n# {name}\n",
+                encoding="utf-8",
+            )
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def write_roster(self, text: str) -> None:
+        (self.root / "settings" / "default-skills.txt").write_text(
+            text, encoding="utf-8"
+        )
+
+    def test_scoped_skill_counts_only_against_its_own_harness(self) -> None:
+        self.write_roster("shared-one\n\n[copilot]\ncopilot-only\n")
+        by_harness = validator.description_tokens_by_harness(self.root)
+        self.assertGreater(by_harness["copilot"], by_harness["claude"])
+        self.assertEqual(by_harness["claude"], by_harness["pi"])
+
+    def test_flat_roster_charges_every_harness_the_same(self) -> None:
+        self.write_roster("shared-one\ncopilot-only\n")
+        by_harness = validator.description_tokens_by_harness(self.root)
+        self.assertEqual(len(set(by_harness.values())), 1)
