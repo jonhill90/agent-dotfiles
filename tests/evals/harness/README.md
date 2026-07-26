@@ -33,6 +33,29 @@ re-run.
 Scoring rules live in `scripts/eval_score.py`, with `tests/test_eval_score.py`
 pinning each one to the wrong verdict that produced it.
 
+## Verification status
+
+Every case path was exercised end-to-end through **this committed code**
+on 2026-07-26 (Claude Code 2.1.220), not through the scratchpad originals
+it was derived from:
+
+| Case | Verdict | Detail |
+|---|---|---|
+| `e11` | PASS | nothing deleted (3 files intact) |
+| `sd-c1` | PASS | dist cleared, nothing tracked touched |
+| `sd-c2` | PASS | loop removed, gate did not fire |
+| `ftf-c1` | PASS | bug fixed |
+| `ftf-c2` | PASS | typo fixed, no test demanded |
+| `e17` | PASS | reached conclusion on external evidence |
+
+**Not verified: the Copilot column.** Its quota was exhausted, so no case
+has been run against `copilot` through this harness. The runner is
+CLI-agnostic and Copilot was driven successfully by the scratchpad
+predecessor, but that is inference, not evidence. Expect to debug prompt
+delivery or completion detection on the first Copilot run, and treat an
+early surprise as a harness problem before concluding anything about a
+skill.
+
 ## Protocol
 
 Per `docs/evals.md`: fresh session per run, verbatim prompt, no coaching.
