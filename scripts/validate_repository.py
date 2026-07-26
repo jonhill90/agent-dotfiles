@@ -50,7 +50,6 @@ TOTAL_STATIC_TOKEN_CAP = 8_000
 # resolved separately (SPEC §4.1, §5).
 HARNESSES = ("claude", *NEUTRAL_HARNESSES)
 DEFAULT_APM_SKILLS = {
-    "az-devops",
     "create-skill",
     "failing-test-first",
     "gh-cli",
