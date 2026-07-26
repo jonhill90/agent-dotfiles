@@ -16,9 +16,17 @@ reading.
   than restating it.
 - The SPEC remains the contract. When an issue and the SPEC disagree,
   the SPEC wins and the issue is corrected.
+- **Parked decisions get an issue.** A decision deliberately deferred,
+  benched, or rejected-pending-evidence carries a revisit trigger, and a
+  trigger nothing surfaces never fires. File it in Backlog, titled
+  `Parked: <subject>`, stating the decision, the trigger, and any
+  ordering against a related candidate. The manifest row stays canonical;
+  the issue exists only so the trigger is visible.
 - Do not open issues for work already recorded as done in a milestone
   row. This repository's history lives in git and the provenance
-  manifest, not in retroactive tickets.
+  manifest, not in retroactive tickets. Backfilling finished work would
+  create a second, lossier copy of facts git already owns — written from
+  recollection rather than from the evidence that settled them.
 
 ## Access
 
