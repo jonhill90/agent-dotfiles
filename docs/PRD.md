@@ -247,6 +247,28 @@ history. Their maintained conclusions live in
 | Docs vs noise | `docs/` holds living documents only; `tests/evals/` is the permanent test suite; research prose is scaffolding — distilled into topical living docs and deleted at each spec iteration's exit (git/PRs are the archive, manifest cites SHAs) |
 | Privacy guard | Employer names and sensitive terms live only in an untracked local `.privacy-denylist`; validation errors on any tracked markdown containing them |
 
+### Work tracking (2026-07-26)
+
+| Decision | Choice |
+|---|---|
+| Tracker | GitHub Issues on this repository. `gh` is already the canonical CLI and needs no credential a machine does not already have; conventions in `docs/work-tracking.md` |
+| Canonical vs tracked | `docs/SPEC.md` §11–§13 and the provenance manifest stay canonical. Issues cite sections rather than restating them; the SPEC wins on disagreement |
+| What earns an issue | Open work, and parked decisions whose revisit trigger would otherwise never fire. Not finished work — git and the manifest own history |
+| Rubric bypass, recorded | Neither this tracker nor the one it replaced was scored against `tests/evals/acceptance/`, though comparable check files exist for both. This decision is therefore weaker than the rows around it and is the one most open to revisiting on evidence |
+
+**Superseded:** Linear (workspace `jonhill90`, team `AI`), adopted
+2026-07-25 and replaced 2026-07-26. Deciding evidence, reproduced after
+both configuration defects were fixed: the CLI defaults to
+`--state ["unstarted"]` while the team's `ToDo` state is *typed*
+`backlog`, so the natural "what is open here?" query returns
+`No issues found` at exit 0 while issues are open — indistinguishable
+from querying a team that does not exist. Separately, the claude.ai
+Linear connector resolves to a different workspace and cannot see the
+team at all, which is structural rather than a misconfiguration: one
+connector slot, two workspaces. Earlier complaints about a broken
+`.linear.toml` are **not** part of the rationale; that was an operator
+error, fixed the same day, and the tracker worked afterwards.
+
 ### Memory format distillation (2026-07-12)
 
 Design inputs: Karpathy's llm-wiki gist and Google OKF v0.1. INMPARA
