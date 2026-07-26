@@ -739,6 +739,15 @@ escape hatch for plugins, so on that harness the only remedies are
 disabling the whole plugin or displacing the managed skill — which makes
 the check before adoption the cheap moment.
 
+**Managed skills shadow each other too.** The plugin gate above covers
+foreign skills, but two *managed* tool skills can claim the same trigger
+vocabulary — `linear` and `gh-cli` both claimed bare "tracking issues"
+until 2026-07-26, and a probe reached for the wrong one on unqualified
+phrasing. A tool skill's `description` must qualify its triggers with the
+platform it serves, so an unqualified request cannot match two skills.
+Assess this when a skill is added or when the repo's use of one changes;
+record the assessment in the manifest.
+
 **Tool-skill track (acceptance checks):** loop evals do not cover tool
 skills. Each kept tool skill gets
 `tests/evals/acceptance/<skill>.md` — 3–5 concrete tasks the skill must let
@@ -749,6 +758,9 @@ personal skill only by passing the same checks with equal-or-fewer
 tokens loaded. Swap decisions cite the check file in the manifest.
 
 ## 11. Verification Items (carry into implementation)
+
+Open items are surfaced as GitHub issues labelled `verification`
+(`docs/work-tracking.md`); the rows below stay canonical.
 
 | # | Item | Blocking? |
 |---|---|---|
@@ -776,6 +788,9 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | M6 | New-machine test | **Complete 2026-07-13.** Attempt 1 failed and produced bootstrap fixes. [Attempt 2](../tests/evals/results/2026-07-13-e16-attempt2-pass.md) supplied authenticated E14/E12 behavior. The [remote regression](../tests/evals/results/2026-07-13-e16-current-tree-regression.md) used a brand-new Linux user: bootstrap and doctor passed in 12 seconds, the then-38-test suite and no-PyYAML validation passed, stale-root regeneration passed, exactly seven default skills deployed, and corrected E15 measured ~1,793/8,000 tokens. A final last-known-good preservation test brought the branch suite to 39 and was run by Pi; production sync code was unchanged after the remote run. The remote account had no model credentials, so release acceptance explicitly combines its deployment evidence with attempt 2's unchanged behavioral assets. Research scaffolding was distilled into living topical docs and deleted; git history remains the archive. |
 
 ## 13. Milestones (Phase 2 — Codex + Copilot first-class)
+
+Open milestones are surfaced as GitHub issues labelled `milestone`
+(`docs/work-tracking.md`); the rows below stay canonical.
 
 | M | Deliverable | Done when |
 |---|---|---|

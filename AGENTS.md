@@ -87,16 +87,17 @@ replace the portable workflow.
 
 ## Work Tracking
 
-- Linear is the system of record for open work: team `AI`, project
-  `agent-dotfiles`. Conventions and CLI edges: `docs/linear.md`.
-- Open work that is expected to happen gets an issue citing its
-  `docs/SPEC.md` section. The SPEC stays the contract; the issue tracks
-  it.
-- The CLI is canonical (`.linear.toml` pins the team). The claude.ai
-  Linear connector is scoped to a different workspace and cannot see
-  this team.
-- Branch with a type prefix (`docs/`, `feat/`, `chore/`) and land
-  through a PR; CI gates on `pull_request`.
+- GitHub Issues on this repository is the tracking surface for open work —
+  `gh issue list`. Conventions and the label taxonomy:
+  `docs/work-tracking.md`. This repo does not track work in Linear or any
+  other tracker.
+- `docs/SPEC.md` §11–§13 and `docs/provenance-manifest.md` stay canonical.
+  An issue cites its section rather than restating it; when an issue and
+  the SPEC disagree, the SPEC wins and the issue is corrected.
+- Parked decisions get an issue naming the revisit trigger. Finished work
+  does not get one — history lives in git and the provenance manifest.
+- Close with `Fixes #N` in the PR body. Branch with a type prefix
+  (`docs/`, `feat/`, `chore/`); CI gates on `pull_request`.
 
 ## Required Verification
 

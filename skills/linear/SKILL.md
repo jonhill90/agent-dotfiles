@@ -1,6 +1,6 @@
 ---
 name: linear
-description: Manage Linear issues, teams, and projects via CLI including issue tracking, sprint workflows, branch creation, and PR generation. Use when working with Linear, tracking issues, starting work on tasks, creating PRs from Linear issues, or managing teams and projects.
+description: Manage Linear issues, teams, and projects via the Linear CLI. Use when the tracker is Linear specifically — reading or filing Linear issues, Linear sprint workflows, creating a branch or PR from a Linear issue, or managing Linear teams and projects. Not for GitHub Issues or other trackers.
 ---
 
 # Linear CLI
