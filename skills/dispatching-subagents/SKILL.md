@@ -9,10 +9,11 @@ Delegation is an orchestrator-workers decision, not a reflex. It costs
 roughly an order of magnitude more tokens than doing the work inline and
 it removes your ability to see what happened. Earn it.
 
-Portability: subagent spawning is not available on every harness. This
-skill is a decision procedure. Where no dispatch mechanism exists,
-execute the same plan sequentially in this context — the boundaries and
-verification rules are unchanged.
+Portability: dispatch mechanisms differ per harness and change often.
+This skill is the decision procedure, not the API. Use whatever
+mechanism the current harness provides; where none exists, execute the
+same plan sequentially in this context. The boundaries and verification
+rules below are unchanged either way.
 
 ## Decide first
 
