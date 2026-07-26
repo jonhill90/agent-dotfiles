@@ -773,3 +773,31 @@ class RosterReportingTests(SyncTestCase):
         self.syncer.ensure_neutral_skills()
         names = dict(self.syncer.doctor_checks({}))
         self.assertNotEqual(names["neutral-roster-drift"][0], False)
+
+
+class PreexistingNeutralLinkTests(SyncTestCase):
+    """Links from the pre-§4.1 wholesale mirroring are untracked, so they
+    cannot be auto-removed — doctor must surface them instead of leaving a
+    scoped skill silently readable on the shared path."""
+
+    def test_untracked_out_of_union_link_is_reported_not_deleted(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "gh-cli\n\n[claude]\nprimer\n", encoding="utf-8"
+        )
+        claude = self.home / ".claude" / "skills"
+        claude.mkdir(parents=True)
+        for name in ("gh-cli", "primer"):
+            (claude / name).mkdir()
+        neutral = self.home / ".agents" / "skills"
+        neutral.mkdir(parents=True)
+        # what the old wholesale mirror left behind
+        (neutral / "primer").symlink_to(claude / "primer")
+
+        self.syncer.ensure_neutral_skills()
+        self.assertTrue(
+            (neutral / "primer").exists(), "untracked links are never deleted"
+        )
+        names = dict(self.syncer.doctor_checks({}))
+        check = names["neutral-roster-drift"]
+        self.assertFalse(check[0])
+        self.assertIn("primer", check[1])

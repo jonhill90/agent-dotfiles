@@ -504,26 +504,51 @@ class Sync:
         }
 
     def neutral_drift(self) -> list[str]:
-        """Wrapper-managed links on the shared path that no roster wants."""
+        """Wrapper-managed links on the shared path that no roster wants.
+
+        Auto-removed by the next apply.
+        """
         wanted = set(neutral_union(self.repo))
         return sorted(set(self.state.get("neutral_skills", [])) - wanted)
+
+    def neutral_untracked(self) -> list[str]:
+        """Out-of-union links on the shared path this wrapper did not create.
+
+        Machines synced before §4.1 carry links from the old wholesale
+        mirroring, which are untracked and therefore never auto-removed. A
+        harness-scoped skill would stay readable on the shared path with no
+        signal, so report them for manual removal rather than deleting
+        something the wrapper does not own.
+        """
+        neutral = self.home / ".agents" / "skills"
+        if not neutral.is_dir():
+            return []
+        wanted = set(neutral_union(self.repo))
+        managed = set(self.state.get("neutral_skills", []))
+        return sorted(
+            entry.name
+            for entry in neutral.iterdir()
+            if entry.name not in wanted and entry.name not in managed
+        )
 
     def doctor_checks(self, env: dict) -> list[tuple[str, tuple[bool | None, str]]]:
         checks: list[tuple[str, tuple[bool | None, str]]] = []
         drift = self.neutral_drift()
+        untracked = self.neutral_untracked()
+        if drift or untracked:
+            parts = []
+            if drift:
+                parts.append(f"managed, removed on next apply: {', '.join(drift)}")
+            if untracked:
+                parts.append(
+                    f"untracked (pre-§4.1 mirror), remove manually: "
+                    f"{', '.join(untracked)}"
+                )
+            message = "~/.agents/skills — " + "; ".join(parts)
+        else:
+            message = "~/.agents/skills matches the neutral roster"
         checks.append(
-            (
-                "neutral-roster-drift",
-                (
-                    not drift,
-                    (
-                        f"~/.agents/skills has managed links no roster wants: "
-                        f"{', '.join(drift)} (run apply)"
-                        if drift
-                        else "~/.agents/skills matches the neutral roster"
-                    ),
-                ),
-            )
+            ("neutral-roster-drift", (not (drift or untracked), message))
         )
         checks.append(
             ("apm-cli", (shutil.which("apm") is not None, "apm on PATH"))
