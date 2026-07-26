@@ -1,11 +1,32 @@
 ---
-name: closing-the-loop
-description: Closed-loop planning discipline for non-trivial changes. Use when creating implementation plans, reviewing plan completeness, or preparing PRs that require structured planning evidence.
+name: close-the-loop
+description: Confirm you have everything needed to finish a change before starting it — what to implement, how it will be tested, and which rules govern it. Use before non-trivial work, when reviewing a plan for completeness, or when preparing a PR that needs planning evidence.
 ---
 
-# Closed-Loop Planning
+# Close the Loop
 
-Formalize implementation plans so every non-trivial change has a clear contract between planning and verification. The 9 required sections close the loop between "what we plan" and "what we enforce."
+A loop closes when the work is implemented, verified, and reported against
+the rules that govern it. Most failures are missing inputs, not missing
+effort: the test that was never specified, the constraint nobody read, the
+"done" that named no evidence.
+
+Run this before starting. It costs minutes and it is the difference between
+finishing and reopening.
+
+## The three questions
+
+1. **Do I have everything to implement it?** The change is specified to the
+   point another agent could execute it — files, order, and what must not
+   change.
+2. **Do I have everything to test it?** Every requirement names the check
+   that proves it, and every check names the command that runs it. A
+   requirement with no test is a requirement you cannot finish.
+3. **Do I know the rules that govern it?** Repository instructions, the
+   spec sections this touches, and the verification the project requires
+   before a change counts as complete. Read them before planning, not after
+   review.
+
+If any answer is no, the missing input is the first task — not the work.
 
 ## When to Use
 
@@ -13,6 +34,8 @@ Formalize implementation plans so every non-trivial change has a clear contract 
 - When creating or reviewing implementation plans in plan mode
 - When preparing PR bodies that need structured planning evidence
 - Skip for trivial changes (< 3 files, docs-only, single-line fixes)
+
+The sections below are how those three questions get answered on paper.
 
 ## Required Plan Sections
 

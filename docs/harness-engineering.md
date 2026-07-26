@@ -93,7 +93,7 @@ degradation path either way.
   - Codex spawns `zsh -l` shells: profile exports override per-session
     env vars (temp-vault redirection fails), and vault writes need
     `sandbox_workspace_write.writable_roots` to include the vault.
-  - Codex's curated `github` plugin shadows the managed `gh-cli` skill
+  - Codex's curated `github` plugin shadows the managed `github-cli` skill
     and survives `plugin remove` via cache re-sync (E14 unstable; open).
   - Copilot in print mode loads the global instructions but does not
     reliably bind guardrails (E11 fails with the gate provably in

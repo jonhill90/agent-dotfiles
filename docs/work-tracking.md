@@ -89,7 +89,7 @@ no gain. The Linear issues are closed, not deleted.
 | AI-260 | #56 | P2-M5 |
 | AI-261 | #57 | P2-M6 |
 | AI-263 | #58 | V10 |
-| AI-264 | #51 | Parked: using-tmux (V7) |
+| AI-264 | #51 | Parked: tmux (V7) |
 | AI-265 | #52 | Parked: typed relations |
 | AI-266 | #53 | Parked: Graphiti |
 | AI-267 | #54 | Parked: memory lint |

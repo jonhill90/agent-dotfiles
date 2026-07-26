@@ -52,12 +52,12 @@ HARNESSES = ("claude", *NEUTRAL_HARNESSES)
 DEFAULT_APM_SKILLS = {
     "create-skill",
     "failing-test-first",
-    "gh-cli",
+    "github-cli",
     "linear",
     "memory-conventions",
     "obsidian",
     "safe-deletion",
-    "using-tmux",
+    "tmux",
 }
 # Retired at M3: installer-owned projection (APM + scripts/sync.py)
 # replaced the committed symlink matrix. Their presence is now an error.

@@ -1,9 +1,9 @@
 ---
-name: using-tmux
+name: tmux
 description: Use tmux safely from an agent with explicit pane targeting, state inspection, verified input delivery, response polling, recovery, and multi-agent supervision. Use when an agent CLI, TUI, REPL, authentication flow, or other interactive command must retain terminal state across tool calls.
 ---
 
-# using-tmux
+# tmux
 
 Use tmux when a task needs a persistent terminal state across tool calls.
 
@@ -324,7 +324,7 @@ Run watcher in background while the agent is thinking/spinning. Kill it after co
 
 ```bash
 TARGET="workflow:agents.{bottom}"
-skills/using-tmux/scripts/supervisor-watch.sh -t "$TARGET" -T 300 -i 1 &
+skills/tmux/scripts/supervisor-watch.sh -t "$TARGET" -T 300 -i 1 &
 WATCH_PID=$!
 
 # Wait for completion status from watcher.
@@ -396,7 +396,7 @@ kill "$POLL_PID"
 ```bash
 TARGET="workflow:agents.{bottom}"
 while true; do
-  skills/using-tmux/scripts/supervisor-watch.sh -t "$TARGET" -T 300 -i 1
+  skills/tmux/scripts/supervisor-watch.sh -t "$TARGET" -T 300 -i 1
   STATUS=$?
   # handle STATUS (0=ready, 2=approval, 1=timeout) ...
   sleep 300
@@ -469,7 +469,7 @@ Pattern: one worktree per agent, one tmux session (or pane) per worktree.
 Run the self-test script to verify tmux mechanics work in your environment:
 
 ```bash
-bash skills/using-tmux/scripts/self-test.sh
+bash skills/tmux/scripts/self-test.sh
 ```
 
 See [scripts/self-test.sh](scripts/self-test.sh) for the full test procedure. It creates an isolated tmux socket, verifies pane targeting, send verification, cross-pane isolation, and wrong-target recovery, then cleans up.

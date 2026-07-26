@@ -27,8 +27,8 @@ class MeasureTests(unittest.TestCase):
         self.home = Path(self._tmp.name) / "home"
         (self.home / ".claude").mkdir(parents=True)
         (self.home / ".claude" / "CLAUDE.md").write_text("x" * 400, encoding="utf-8")
-        write_skill(self.home / ".claude" / "skills", "gh-cli", "m" * 100)
-        write_skill(self.home / ".agents" / "skills", "gh-cli", "m" * 100)
+        write_skill(self.home / ".claude" / "skills", "github-cli", "m" * 100)
+        write_skill(self.home / ".agents" / "skills", "github-cli", "m" * 100)
         # plugin tree mirrors the real layout:
         # plugins/cache/<marketplace>/<plugin>/<version>/skills/<name>/SKILL.md
         self.plugins = self.home / ".claude" / "plugins" / "cache" / "market"
