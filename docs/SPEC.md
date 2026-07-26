@@ -387,11 +387,31 @@ own disable surface:
   union, and a Copilot-only skill keeps costing Pi and Codex until V10
   resolves. This is the current `safe-deletion` case and it is a known,
   recorded cost — not a silent one.
-- **Claude Code / Pi:** unverified — V9.
+- **Claude Code:** `skillOverrides` in settings — a per-skill state map
+  (`on` / `name-only` / `user-invocable-only` / `off`). Verified
+  hands-on 2026-07-26 on v2.1.220: `{"az-devops": "off"}` removed it
+  from the model's skill list while the skill stayed on disk;
+  `name-only` kept it listed. Plugin skills are **not** covered — those
+  need `/plugin`.
+- **Pi:** a `skills` denylist in `~/.pi/agent/settings.json`, the file
+  the wrapper already merges (§3.5). Verified hands-on 2026-07-26 on
+  0.80.6: `"skills": ["-skills/az-devops/SKILL.md"]` dropped it from
+  Pi's loaded-skills banner, 9 → 8, with the skill still on disk.
+  `pi config` writes it through a TUI, but the wrapper can write the key
+  directly.
 
-*Tier C — not built.* A dedicated skills directory per harness. Only if
-V9/V10 both come back negative *and* the measured neutral-union overhead
-exceeds the §6 per-harness budget.
+*Tier C — not built.* A dedicated skills directory per harness. V9 came
+back affirmative for both Claude Code and Pi (2026-07-26), so Tier B now
+covers three of four harnesses and Tier C is further from justified, not
+closer. It remains reachable only if the measured neutral-union overhead
+exceeds the §6 per-harness budget on Copilot, the one column with no
+disable surface.
+
+**Budget lever (§6).** Claude Code's `name-only` state lists a skill
+without its description, so it cuts the description tokens a skill costs
+while keeping it invocable. That is a cheaper instrument than exclusion
+for a skill that is wanted but rarely triggered, and it applies to the
+per-harness aggregate §4.1 introduced.
 
 **Consequences.**
 
@@ -710,7 +730,7 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | V6 | Official Obsidian CLI vs third-party obsidian-cli | **Resolved 2026-07-12, owner override** (evidence commit `b752300`): official CLI adopted for the optional `obsidian` skill; memory uses direct files and has no CLI dependency. Verified hands-on on 1.12.7. The CLI does not auto-launch the app. `sync doctor` rejects vaults on corporate mounts. |
 | V7 | Community tmux-skill candidates vs `using-tmux` acceptance checks | No — swap decision, not a blocker; `using-tmux` stays until displaced |
 | V8 | APM serves stale root-file content after source edits ("files unchanged" while content differs) | **Resolved 2026-07-13:** apply detaches only marker-owned managed roots before compile, forcing regeneration; a failed compile restores the last-known-good roots. Covered by regression tests. |
-| V9 | Claude Code and Pi per-skill disable surfaces (a settings key or config entry that suppresses a deployed skill without deleting it) | No — Tier A (§4.1) delivers the Claude-vs-neutral split without it; V9 only widens Tier B |
+| V9 | Claude Code and Pi per-skill disable surfaces | **Resolved 2026-07-26, both affirmative** (hands-on; §4.1 Tier B): Claude Code `skillOverrides` on v2.1.220, Pi `skills` denylist on 0.80.6. Three of four harnesses now have a Tier B surface; only Copilot lacks one (V10) |
 | V10 | Copilot per-skill disable surface — still absent at CLI **1.0.75** (rechecked 2026-07-26 at 1.0.71 and again at 1.0.75: full `copilot help config` key list contains nothing skills-related; `/skills` is an interactive session command, not persistent config; `permissions` offers `--deny-tool` for tools, not skills). Previously verified absent at 1.0.70 (2026-07-18); recheck on upgrades | No — until resolved Copilot receives the neutral union, and the overage is charged against its §6 budget |
 
 ## 12. Milestones (Phase 1)
