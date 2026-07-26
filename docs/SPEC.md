@@ -391,13 +391,14 @@ own disable surface:
   recorded cost — not a silent one.
 - **Claude Code:** `skillOverrides` in settings — a per-skill state map
   (`on` / `name-only` / `user-invocable-only` / `off`). Verified
-  hands-on 2026-07-26 on v2.1.220: `{"az-devops": "off"}` removed it
+  hands-on 2026-07-26 on v2.1.220 (using `az-devops`, since deleted from
+  the repo): `{"az-devops": "off"}` removed it
   from the model's skill list while the skill stayed on disk;
   `name-only` kept it listed. Plugin skills are **not** covered — those
   need `/plugin`.
 - **Pi:** a `skills` denylist in `~/.pi/agent/settings.json`, the file
   the wrapper already merges (§3.5). Verified hands-on 2026-07-26 on
-  0.80.6: `"skills": ["-skills/az-devops/SKILL.md"]` dropped it from
+  0.80.6, same since-deleted skill: `"skills": ["-skills/az-devops/SKILL.md"]` dropped it from
   Pi's loaded-skills banner, 9 → 8, with the skill still on disk.
   `pi config` writes it through a TUI, but the wrapper can write the key
   directly.

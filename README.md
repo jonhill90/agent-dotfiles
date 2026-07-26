@@ -57,16 +57,15 @@ retired (SPEC §2).
 | `using-tmux` | Operate persistent interactive terminal sessions safely |
 | `create-skill` | Design and validate portable skills with progressive disclosure |
 
-Additional skills integrate with GitHub, Linear, Obsidian, and Azure DevOps.
+Additional skills integrate with GitHub, Linear, and Obsidian.
 Install them selectively to avoid overlapping triggers and unnecessary
 context.
 
-Four skills are published here but excluded from the default APM package —
-`primer`, `closing-the-loop`, `dispatching-subagents`, and `az-devops`. The
-first three were excluded because no failing eval justified their static
-description cost; `az-devops` was cut from the roster by owner decision on
-2026-07-26. All four remain independently installable, and the reasoning for
-each is recorded in [docs/provenance-manifest.md](docs/provenance-manifest.md).
+Three skills are published here but excluded from the default APM package —
+`primer`, `closing-the-loop`, and `dispatching-subagents` — because no failing
+eval justified their static description cost. All three remain independently
+installable, and the reasoning for each is recorded in
+[docs/provenance-manifest.md](docs/provenance-manifest.md).
 
 The behavioral layer is deliberately minimal: loop discipline lives in the
 canonical instructions, and skills are added only when a failing eval
