@@ -3,8 +3,8 @@
 Reference for the vocabulary around agent design: what each term means,
 who coined it and when, which vendor documents it, and which layer of
 the stack it governs. Recorded because the naming churns fast — four
-labels arrived between 2020 and July 2026 — while the practices under
-them mostly did not.
+labels accumulated through July 2026, two of them within seven weeks —
+while the practices under them mostly did not.
 
 This document is not a methodology. It exists so that a term appearing
 in a prompt, an article, or a PR can be resolved to a layer and a
@@ -32,15 +32,18 @@ Writing and organising the instructions themselves. Oldest of the four,
 universally documented, no longer contested.
 
 - Google: [Prompt Engineering whitepaper](https://www.kaggle.com/whitepaper-prompt-engineering)
-  (Lee Boonstra, September 2024, 69pp) — 12 techniques including ReAct.
+  (Lee Boonstra, September 2024) — techniques including ReAct.
 - OpenAI: [prompt engineering guide](https://developers.openai.com/api/docs/guides/prompt-engineering)
   and the per-model [GPT-5 prompting guide](https://cookbook.openai.com/examples/gpt-5/gpt-5_prompting_guide).
 - Microsoft: [prompt engineering techniques](https://learn.microsoft.com/en-us/azure/foundry/openai/concepts/prompt-engineering).
 
 ## Layer 2 — Context engineering
 
-Coined by **Dex Horthy** (HumanLayer), April 2025. Curating and
-maintaining the set of tokens present at inference — system prompt,
+Traced to **Dex Horthy**'s 12-factor-agents (HumanLayer, April 2025),
+popularised from June 2025 by Tobi Lütke and Andrej Karpathy, and
+formalised by Anthropic in September 2025. Horthy does not claim to have
+minted the phrase; treat "coined by" attributions with suspicion.
+Curating and maintaining the set of tokens present at inference — system prompt,
 tools, examples, history, retrieved data — as a finite resource those
 consumers compete for.
 
@@ -82,8 +85,12 @@ persistent external state so progress survives between runs.
   (2025-11-26), which describes the same discipline six months earlier
   under "harness": an initializer agent plus a coding agent that leaves
   artifacts for the next context window, framed as engineers working
-  shifts with no memory of the previous shift. Reference
-  implementation: [anthropics/cwc-long-running-agents](https://github.com/anthropics/cwc-long-running-agents).
+  shifts with no memory of the previous shift. Code examples:
+  [claude-quickstarts/autonomous-coding](https://github.com/anthropics/claude-quickstarts/tree/main/autonomous-coding),
+  linked from the post; related primitives in
+  [anthropics/cwc-long-running-agents](https://github.com/anthropics/cwc-long-running-agents),
+  which its own README describes as unmaintained example ingredients
+  rather than a turnkey harness.
 
 This repository's `closing-the-loop` skill occupies this layer.
 
@@ -105,7 +112,7 @@ by the orchestrator from the input. Documented by Anthropic in December
   multi-agent](https://claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them).
 - OpenAI: [A Practical Guide to Building Agents](https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf)
   — manager pattern (agents-as-tools) vs. handoffs.
-- Google: [ADK workflow agents](https://google.github.io/adk-docs/agents/workflow-agents/)
+- Google: [ADK workflow agents](https://adk.dev/agents/workflow-agents/)
   — Sequential, Parallel, and Loop as named API primitives.
 - Microsoft: [Agent Framework](https://learn.microsoft.com/en-us/agent-framework/overview/)
   — graph workflows with typed edges and checkpoint/resume.
@@ -133,10 +140,13 @@ Recorded so they are not re-litigated.
   industrial-diagram study, not industry adoption. Do not cite.
 - **"Microsoft, Stanford and Anthropic all adopted graph engineering."**
   Disparate projects retold as a coordinated shift.
-- **The structure is not new.** Workflow engines and DAG schedulers have
-  drawn these graphs for a decade; LangChain says so
-  [themselves](https://www.langchain.com/blog/3-years-of-graph-engineering-with-langgraph).
-  What changed is that nodes now behave non-deterministically.
+- **The structure is not new.** Representing agentic systems as graphs
+  predates the label: LangChain records having
+  [done it for three years](https://www.langchain.com/blog/3-years-of-graph-engineering-with-langgraph)
+  in LangGraph before the term appeared. Directed-graph execution is
+  older still in ordinary workflow engines and DAG schedulers — that
+  broader point is this document's, not LangChain's. What changed is
+  that nodes now behave non-deterministically.
 - **Multi-agent consensus is not verification.** Several agents on the
   same model reading the same flawed context produce agreement, not
   correctness — "organised nonsense at scale." Verification requires
@@ -146,10 +156,14 @@ Recorded so they are not re-litigated.
 
 ## Framing above the stack
 
-Andrej Karpathy has not written on any of the four terms. His
-contribution is the frame they sit inside: Software 3.0 — the context
-window is the program, the model is the interpreter, and the surrounding
-system starts to look like an operating system
+Andrej Karpathy's direct intervention on these terms is a one-line
+endorsement of context engineering over prompt engineering
+([June 2025](https://x.com/karpathy/status/1937902205765607626)) — widely
+credited with popularising the former, and cited by 12-factor-agents
+itself. His larger contribution is the frame they sit inside: Software
+3.0 — prompts are the program, the model is the interpreter, and the
+surrounding system starts to look like an operating system with the
+context window as its memory
 ([Latent Space writeup](https://www.latent.space/p/s3)).
 
 ## Relevance to this repository
@@ -158,11 +172,13 @@ system starts to look like an operating system
   the token budget (SPEC §6) — the budget *is* a context-engineering
   control.
 - Layer 3 is covered by the `closing-the-loop` skill.
-- Layer 4 is covered by `dispatching-subagents`, which is deliberately
-  written as decision discipline rather than harness plumbing: subagent
-  spawning is not portable across the v1 harness set, so the skill must
-  degrade to sequential self-execution (SPEC §4.1, harness-engineering
-  portability rule).
-- The awesome-list ecosystem around "harness engineering" (six
+- Layer 4 is covered by `dispatching-subagents`, written as decision
+  discipline rather than harness plumbing. Dispatch mechanisms differ
+  per harness and move fast — Claude Code has subagents, Codex has
+  `spawn_agent` and `[agents]` config, Copilot has its own — so the
+  skill states the decision and degrades to sequential execution
+  wherever no mechanism exists, rather than encoding any one API.
+- The *awesome-list ecosystem* around "harness engineering" (six
   near-identical repositories within weeks) is a hype signal, not a
-  source. Cite the primaries above instead.
+  source. The term itself has vendor standing — OpenAI publishes under
+  it — so judge the source, not the phrase. Cite the primaries above.
