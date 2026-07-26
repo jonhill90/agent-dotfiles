@@ -699,7 +699,7 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | V7 | Community tmux-skill candidates vs `using-tmux` acceptance checks | No — swap decision, not a blocker; `using-tmux` stays until displaced |
 | V8 | APM serves stale root-file content after source edits ("files unchanged" while content differs) | **Resolved 2026-07-13:** apply detaches only marker-owned managed roots before compile, forcing regeneration; a failed compile restores the last-known-good roots. Covered by regression tests. |
 | V9 | Claude Code and Pi per-skill disable surfaces (a settings key or config entry that suppresses a deployed skill without deleting it) | No — Tier A (§4.1) delivers the Claude-vs-neutral split without it; V9 only widens Tier B |
-| V10 | Copilot per-skill disable surface — absent as of CLI 1.0.70 (verified 2026-07-18); recheck on upgrades | No — until resolved Copilot receives the neutral union, and the overage is charged against its §6 budget |
+| V10 | Copilot per-skill disable surface — still absent at CLI **1.0.71** (rechecked 2026-07-26: full `copilot help config` key list contains nothing skills-related; `/skills` is an interactive session command, not persistent config; `permissions` offers `--deny-tool` for tools, not skills). Previously verified absent at 1.0.70 (2026-07-18); recheck on upgrades | No — until resolved Copilot receives the neutral union, and the overage is charged against its §6 budget |
 
 ## 12. Milestones (Phase 1)
 
