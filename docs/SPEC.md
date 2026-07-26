@@ -750,6 +750,9 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 
 ## 11. Verification Items (carry into implementation)
 
+Open items are surfaced as GitHub issues labelled `verification`
+(`docs/work-tracking.md`); the rows below stay canonical.
+
 | # | Item | Blocking? |
 |---|---|---|
 | V1 | APM follows `.apm/` symlinks for local-path install/pack | **Verified 2026-07-12** (APM 0.24.1, evidence commit `dff03d0`): in-package symlinks whose targets stay inside the package root are dereferenced and deploy to user skill paths. APM's `--skill` filter was re-verified on the clean 2026-07-13 remote run. |
@@ -776,6 +779,9 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | M6 | New-machine test | **Complete 2026-07-13.** Attempt 1 failed and produced bootstrap fixes. [Attempt 2](../tests/evals/results/2026-07-13-e16-attempt2-pass.md) supplied authenticated E14/E12 behavior. The [remote regression](../tests/evals/results/2026-07-13-e16-current-tree-regression.md) used a brand-new Linux user: bootstrap and doctor passed in 12 seconds, the then-38-test suite and no-PyYAML validation passed, stale-root regeneration passed, exactly seven default skills deployed, and corrected E15 measured ~1,793/8,000 tokens. A final last-known-good preservation test brought the branch suite to 39 and was run by Pi; production sync code was unchanged after the remote run. The remote account had no model credentials, so release acceptance explicitly combines its deployment evidence with attempt 2's unchanged behavioral assets. Research scaffolding was distilled into living topical docs and deleted; git history remains the archive. |
 
 ## 13. Milestones (Phase 2 — Codex + Copilot first-class)
+
+Open milestones are surfaced as GitHub issues labelled `milestone`
+(`docs/work-tracking.md`); the rows below stay canonical.
 
 | M | Deliverable | Done when |
 |---|---|---|
