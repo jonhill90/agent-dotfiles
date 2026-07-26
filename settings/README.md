@@ -30,4 +30,3 @@ Machine-local, set in the shell profile (secrets in an untracked
 | `AGENT_MEMORY_VAULT` | memory conventions, `sync doctor` | Personal memory vault path (never employer storage) |
 | `APM_COPILOT_COWORK_SKILLS_DIR` | `apm compile -g` | Pins the Cowork target when multiple OneDrive mounts exist |
 | `CONTEXT7_API_KEY` | context7 MCP server | Library documentation API |
-| `AZURE_DEVOPS_PAT` | az-devops skill (public opt-in; not in the default roster) | Azure DevOps personal access token |
