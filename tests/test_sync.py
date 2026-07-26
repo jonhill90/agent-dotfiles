@@ -602,3 +602,174 @@ class DoctorTests(SyncTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SkillRosterScopingTests(SyncTestCase):
+    """SPEC §4.1 — per-harness roster sections, Tier A neutral scoping."""
+
+    SECTIONED = (
+        "# shared roster (all harnesses)\n"
+        "gh-cli\n"
+        "memory-conventions\n"
+        "\n"
+        "[copilot]\n"
+        "safe-deletion\n"
+        "\n"
+        "[codex]\n"
+        "using-tmux\n"
+    )
+
+    def write_roster(self, text: str) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            text, encoding="utf-8"
+        )
+
+    def test_flat_roster_stays_valid_and_is_shared_by_every_harness(self) -> None:
+        self.write_roster("gh-cli\nmemory-conventions\n")
+        shared = sync.load_default_skills(self.repo)
+        self.assertEqual(shared, ["gh-cli", "memory-conventions"])
+        for harness in ("claude", "pi", "codex", "copilot"):
+            self.assertEqual(
+                sync.load_default_skills(self.repo, harness), shared
+            )
+
+    def test_named_harness_gets_shared_plus_its_section(self) -> None:
+        self.write_roster(self.SECTIONED)
+        self.assertEqual(
+            sync.load_default_skills(self.repo),
+            ["gh-cli", "memory-conventions"],
+        )
+        self.assertEqual(
+            sync.load_default_skills(self.repo, "copilot"),
+            ["gh-cli", "memory-conventions", "safe-deletion"],
+        )
+        self.assertEqual(
+            sync.load_default_skills(self.repo, "codex"),
+            ["gh-cli", "memory-conventions", "using-tmux"],
+        )
+        self.assertEqual(
+            sync.load_default_skills(self.repo, "claude"),
+            ["gh-cli", "memory-conventions"],
+        )
+
+    def test_union_covers_every_section_for_apm_install(self) -> None:
+        self.write_roster(self.SECTIONED)
+        self.assertEqual(
+            sync.roster_union(self.repo),
+            ["gh-cli", "memory-conventions", "safe-deletion", "using-tmux"],
+        )
+
+    def test_neutral_union_excludes_claude_only_skills(self) -> None:
+        self.write_roster(self.SECTIONED + "\n[claude]\nprimer\n")
+        self.assertEqual(
+            sync.neutral_union(self.repo),
+            ["gh-cli", "memory-conventions", "safe-deletion", "using-tmux"],
+        )
+
+    # -- Tier A mirroring ------------------------------------------------
+
+    def seed_claude_skills(self, *names: str) -> Path:
+        claude = self.home / ".claude" / "skills"
+        claude.mkdir(parents=True, exist_ok=True)
+        for name in names:
+            (claude / name).mkdir(exist_ok=True)
+        return claude
+
+    def test_mirrors_only_the_neutral_union(self) -> None:
+        self.write_roster(self.SECTIONED + "\n[claude]\nprimer\n")
+        self.seed_claude_skills(
+            "gh-cli", "memory-conventions", "safe-deletion", "using-tmux", "primer"
+        )
+        self.syncer.ensure_neutral_skills()
+        neutral = self.home / ".agents" / "skills"
+        self.assertEqual(
+            sorted(p.name for p in neutral.iterdir()),
+            ["gh-cli", "memory-conventions", "safe-deletion", "using-tmux"],
+        )
+        self.assertFalse((neutral / "primer").exists())
+
+    def test_removing_from_a_section_removes_the_wrapper_symlink(self) -> None:
+        self.write_roster(self.SECTIONED)
+        self.seed_claude_skills(
+            "gh-cli", "memory-conventions", "safe-deletion", "using-tmux"
+        )
+        self.syncer.ensure_neutral_skills()
+        neutral = self.home / ".agents" / "skills"
+        self.assertTrue((neutral / "safe-deletion").is_symlink())
+
+        # drop the [copilot] section entirely
+        self.write_roster("gh-cli\nmemory-conventions\n\n[codex]\nusing-tmux\n")
+        self.syncer.ensure_neutral_skills()
+        self.assertFalse((neutral / "safe-deletion").exists())
+        self.assertTrue((neutral / "using-tmux").is_symlink())
+
+    def test_never_removes_a_link_the_wrapper_did_not_create(self) -> None:
+        self.write_roster("gh-cli\n")
+        self.seed_claude_skills("gh-cli", "hand-made")
+        neutral = self.home / ".agents" / "skills"
+        neutral.mkdir(parents=True, exist_ok=True)
+        (neutral / "hand-made").symlink_to(self.home / ".claude" / "skills" / "hand-made")
+        self.syncer.ensure_neutral_skills()
+        self.assertTrue(
+            (neutral / "hand-made").exists(),
+            "unmanaged links must survive — removal is state-tracked",
+        )
+
+    def test_removal_is_recorded_in_state_and_reversible(self) -> None:
+        self.write_roster(self.SECTIONED)
+        self.seed_claude_skills(
+            "gh-cli", "memory-conventions", "safe-deletion", "using-tmux"
+        )
+        self.syncer.ensure_neutral_skills()
+        self.assertIn(
+            "safe-deletion", self.syncer.state.get("neutral_skills", [])
+        )
+        self.write_roster("gh-cli\nmemory-conventions\n\n[codex]\nusing-tmux\n")
+        self.syncer.ensure_neutral_skills()
+        self.assertNotIn(
+            "safe-deletion", self.syncer.state.get("neutral_skills", [])
+        )
+        # restoring the section restores the link
+        self.write_roster(self.SECTIONED)
+        self.syncer.ensure_neutral_skills()
+        self.assertTrue(
+            (self.home / ".agents" / "skills" / "safe-deletion").is_symlink()
+        )
+
+
+class RosterReportingTests(SyncTestCase):
+    """SPEC §4.1 — status reports resolved rosters; doctor flags drift."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "gh-cli\n\n[copilot]\nsafe-deletion\n", encoding="utf-8"
+        )
+
+    def test_resolved_rosters_are_reported(self) -> None:
+        report = self.syncer.roster_report()
+        self.assertEqual(report["claude"], ["gh-cli"])
+        self.assertEqual(report["copilot"], ["gh-cli", "safe-deletion"])
+        self.assertEqual(report["pi"], ["gh-cli"])
+
+    def test_doctor_flags_neutral_path_drift(self) -> None:
+        claude = self.home / ".claude" / "skills"
+        claude.mkdir(parents=True)
+        (claude / "gh-cli").mkdir()
+        neutral = self.home / ".agents" / "skills"
+        neutral.mkdir(parents=True)
+        # a link the wrapper recorded, for a skill no longer in any roster
+        (neutral / "stale-skill").symlink_to(claude / "gh-cli")
+        self.syncer.state["neutral_skills"] = ["stale-skill"]
+        names = dict(self.syncer.doctor_checks({}))
+        self.assertIn("neutral-roster-drift", names)
+        self.assertFalse(names["neutral-roster-drift"][0])
+
+    def test_doctor_passes_when_neutral_path_matches(self) -> None:
+        claude = self.home / ".claude" / "skills"
+        claude.mkdir(parents=True)
+        for name in ("gh-cli", "safe-deletion"):
+            (claude / name).mkdir()
+        self.syncer.ensure_neutral_skills()
+        names = dict(self.syncer.doctor_checks({}))
+        self.assertNotEqual(names["neutral-roster-drift"][0], False)

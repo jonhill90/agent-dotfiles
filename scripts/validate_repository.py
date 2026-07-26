@@ -11,6 +11,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+# One parser for the roster format, shared with the sync wrapper so the
+# two cannot drift on what a section means (SPEC §4.1).
+from sync import (  # noqa: E402
+    NEUTRAL_HARNESSES,
+    load_default_skills,
+    load_skill_roster,
+    roster_union,
+)
+
 try:
     import yaml
 except ImportError:  # fresh machines lack PyYAML; use the fallback parser
@@ -36,6 +46,9 @@ OVERLAY_TOKEN_CAP = 1_500
 DESCRIPTION_TOKEN_CAP = 2_000
 MEMORY_INDEX_TOKEN_RESERVE = 1_500
 TOTAL_STATIC_TOKEN_CAP = 8_000
+# Claude Code plus the neutral trio — every harness whose roster is
+# resolved separately (SPEC §4.1, §5).
+HARNESSES = ("claude", *NEUTRAL_HARNESSES)
 DEFAULT_APM_SKILLS = {
     "az-devops",
     "create-skill",
@@ -235,16 +248,46 @@ def validate_projections(root: Path) -> list[Finding]:
     return findings
 
 
+def description_tokens_by_harness(root: Path) -> dict[str, float]:
+    """Static description cost per harness, against its resolved roster.
+
+    A skill scoped to one harness is charged to that harness only — the
+    point of per-harness rosters (SPEC §4.1). With a flat roster every
+    harness resolves to the same set and the numbers are identical.
+    """
+    roster = root / "settings" / "default-skills.txt"
+    if not roster.is_file():
+        names_by_harness = {
+            harness: [d.name for d in discover_skill_dirs(root, None)]
+            for harness in HARNESSES
+        }
+    else:
+        names_by_harness = {
+            harness: load_default_skills(root, harness) for harness in HARNESSES
+        }
+    totals: dict[str, float] = {}
+    for harness, names in names_by_harness.items():
+        description_bytes = 0
+        for name in sorted(set(names)):
+            try:
+                frontmatter, _ = parse_skill(root / "skills" / name / "SKILL.md")
+            except PARSE_ERRORS:
+                continue
+            description = frontmatter.get("description")
+            if isinstance(description, str):
+                description_bytes += len(description.encode("utf-8"))
+        totals[harness] = token_estimate_bytes(description_bytes)
+    return totals
+
+
 def validate_apm_skill_roster(root: Path) -> list[Finding]:
     """Keep public skills distinct from the personal default package."""
     roster = root / "settings" / "default-skills.txt"
     if not roster.is_file():
         return [Finding("error", roster, "default skill roster missing")]
-    actual = {
-        line.strip()
-        for line in roster.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    }
+    # Per-harness sections (SPEC §4.1): the default package is the union
+    # across every section, since APM installs the union.
+    actual = set(roster_union(root))
     findings: list[Finding] = []
     missing = sorted(DEFAULT_APM_SKILLS - actual)
     unexpected = sorted(actual - DEFAULT_APM_SKILLS)
@@ -367,38 +410,20 @@ def validate_static_context(root: Path) -> list[Finding]:
                     )
                 )
 
-    description_bytes = 0
-    roster = root / "settings" / "default-skills.txt"
-    description_skill_dirs = (
-        [
-            root / "skills" / name
-            for name in sorted(
-                line.strip()
-                for line in roster.read_text(encoding="utf-8").splitlines()
-                if line.strip() and not line.lstrip().startswith("#")
+    by_harness = description_tokens_by_harness(root)
+    for harness, tokens in sorted(by_harness.items()):
+        if tokens > DESCRIPTION_TOKEN_CAP:
+            findings.append(
+                Finding(
+                    "error",
+                    root / "skills",
+                    f"{harness}: installed-skill descriptions use "
+                    f"~{tokens:.0f} tokens; cap is {DESCRIPTION_TOKEN_CAP}",
+                )
             )
-        ]
-        if roster.is_file()
-        else discover_skill_dirs(root, None)
-    )
-    for skill_dir in description_skill_dirs:
-        try:
-            frontmatter, _ = parse_skill(skill_dir / "SKILL.md")
-        except PARSE_ERRORS:
-            continue
-        description = frontmatter.get("description")
-        if isinstance(description, str):
-            description_bytes += len(description.encode("utf-8"))
-    description_tokens = token_estimate_bytes(description_bytes)
-    if description_tokens > DESCRIPTION_TOKEN_CAP:
-        findings.append(
-            Finding(
-                "error",
-                root / "skills",
-                f"installed-skill descriptions use ~{description_tokens:.0f} "
-                f"tokens; cap is {DESCRIPTION_TOKEN_CAP}",
-            )
-        )
+    # The thickest harness sets the aggregate (SPEC §6 measures the worst
+    # case), but each harness is now charged only for its own roster.
+    description_tokens = max(by_harness.values(), default=0.0)
 
     total_tokens = (
         instruction_tokens
