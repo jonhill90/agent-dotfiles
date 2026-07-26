@@ -1,8 +1,8 @@
 create-skill
 failing-test-first
-gh-cli
+github-cli
 linear
 memory-conventions
 obsidian
 safe-deletion
-using-tmux
+tmux

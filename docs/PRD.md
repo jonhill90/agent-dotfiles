@@ -237,7 +237,7 @@ history. Their maintained conclusions live in
 | Tool-skill swaps | Per-skill acceptance checks in `tests/evals/`; community wins on equal coverage + fewer tokens |
 | Skill cuts | Propose/veto; cut = delete (git history is the archive). Named: ms-learn, ms-learn-cli, tools/mslearn |
 | Obsidian access path | Official Obsidian CLI researched against memory-backend needs before any swap |
-| using-tmux | Community search + acceptance checks before keep/swap decision |
+| tmux | Community search + acceptance checks before keep/swap decision |
 | Machine migration | Superpowers 5.1.0 stays installed until baseline day (its removal is step 1 of the baseline protocol) |
 
 ### Repository governance (2026-07-12)
