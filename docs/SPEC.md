@@ -667,10 +667,15 @@ the ×2 bar gives no protection — it reproduces the same wrong answer
 twice. The 2026-07-26 pass produced four runner defects, three of which
 read as the skill misbehaving and would have narrowed `safe-deletion`
 to fix bugs in the harness ([results](../tests/evals/results/2026-07-26-p2m5-counter-pass1.md)).
-Two rules follow: persist every transcript before its session is torn
-down, and score agent behaviour only in the transcript region after the
+Four rules follow. Persist every transcript before its session is torn
+down. Score agent behaviour only in the transcript region after the
 prompt — a harness that prints its installed-skill roster at startup
-otherwise matches the skill's own name and fails itself. Adoption rows in the provenance manifest
+otherwise matches the skill's own name and fails itself. Treat a
+**missing transcript as `INVALID`, never as `FAIL`**: a session that
+died mid-run is not evidence either way. And run **one orchestrator at
+a time** — two concurrent runs share tmux session names and fixture
+directories and silently overwrite each other's results
+([pass 2](../tests/evals/results/2026-07-26-p2m5-counter-pass2.md)). Adoption rows in the provenance manifest
 cite the counter file next to the deciding results file.
 
 **Retroactive application.** `safe-deletion` and `failing-test-first`
