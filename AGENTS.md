@@ -87,8 +87,10 @@ replace the portable workflow.
 
 ## Work Tracking
 
-- GitHub Issues on this repository is the tracking surface for open work.
-  Conventions and the label taxonomy: `docs/work-tracking.md`.
+- GitHub Issues on this repository is the tracking surface for open work —
+  `gh issue list`. Conventions and the label taxonomy:
+  `docs/work-tracking.md`. This repo does not track work in Linear or any
+  other tracker.
 - `docs/SPEC.md` §11–§13 and `docs/provenance-manifest.md` stay canonical.
   An issue cites its section rather than restating it; when an issue and
   the SPEC disagree, the SPEC wins and the issue is corrected.
