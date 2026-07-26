@@ -61,6 +61,20 @@ These cost time if rediscovered:
 - `linear project create` fails opaquely on some flag combinations —
   dumping a raw JSON error and creating nothing. Create with `-n` and
   `-t` only, then set lead, status, and description in the UI.
+- **Writes report success whether or not they applied.** Two ways this
+  bites: passing `--no-color` to `issue update` swallows the change, and
+  an unknown state name (`Backlog`, which team `AI` does not define) is
+  silently ignored. Both print the issue URL and exit 0. **Always
+  re-read after a write:**
+
+  ```bash
+  linear issue update AI-XX -s "Done"
+  linear issue list --team AI --project "agent-dotfiles" \
+    --all-states -A --sort priority --no-pager | grep AI-XX
+  ```
+
+  This is the same evidence rule the repo applies everywhere else: the
+  command's exit status is not the result.
 
 ## Flow
 
@@ -73,21 +87,22 @@ These cost time if rediscovered:
 2. **Branch** with the repository's type prefix — `docs/`, `feat/`,
    `chore/` — or the Linear-generated branch name.
 3. **PR** per the normal flow; CI gates on `pull_request`.
-4. **States:** Backlog (captured, not scheduled) → Todo → In Progress →
-   Done.
+4. **States:** `ToDo` → `In Progress` → `Done` (plus `Canceled`).
+   **Team `AI` has no Backlog state.** Setting one silently no-ops — see
+   below. Work that is captured but deliberately not actionable carries
+   the `parked` label instead of a state.
 
-## Closing issues from PRs — unverified
+## Closing issues from PRs — verified 2026-07-26
 
-Linear closes issues from PR bodies via magic words (`Fixes AI-XX`;
-`Refs AI-XX` links without closing), but that requires the Linear
-workspace to have the GitHub integration connected to this repository.
-**That connection has not been verified for `jonhill90/agent-dotfiles`.**
+The GitHub integration **is** connected. PRs #45 and #46 auto-attached
+to AI-259 and AI-260 without any manual step, so `Refs AI-XX` in a PR
+body links the PR to the issue and `Fixes AI-XX` closes it on merge.
 
-Until someone confirms it in Linear → Settings → Integrations → GitHub,
-treat magic words as best-effort and close issues explicitly:
+State still has to be set explicitly when a PR does not carry a magic
+word:
 
 ```bash
-linear issue update AI-XX -s "Done"
+linear issue update AI-XX -s "Done"     # then verify — see below
 ```
 
 ## Numbering gotcha
