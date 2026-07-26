@@ -1,7 +1,9 @@
 # Technical Spec: agent-dotfiles
 
-- **Status:** Implemented v1.3 — 2026-07-18 (Phase 2 mechanical layer
-  landed; Codex/Copilot behavioral columns pending, §13)
+- **Status:** Implemented v1.4 — 2026-07-26. Codex and Copilot are
+  first-class (P2-M3); per-harness roster scoping landed (P2-M4, §4.1);
+  V9 resolved affirmatively for Claude Code and Pi. Open: P2-M5 and
+  P2-M6, both blocked on Copilot quota (§13).
 - **Owner:** Jon Hill
 - **Inputs:** [PRD](PRD.md), [harness engineering](harness-engineering.md),
   [memory](memory.md), and [behavioral evals](evals.md). Dated research is
