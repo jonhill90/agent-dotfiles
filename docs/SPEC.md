@@ -453,6 +453,7 @@ enforced by `scripts/validate_repository.py`; verified live by E15.
 | Session-start injection (baseline: none; reserved for an eval-justified fix) | ≤ 500 (baseline measured 0) |
 | Memory index (vault `agent/index.md`) | ≤ 1,500 |
 | Installed-skill descriptions (aggregate frontmatter in system prompt) | ≤ 2,000 |
+| Enabled Claude Code plugin skills (live-only, see below) | counted in the description aggregate |
 | **Total static, thickest harness** | **≤ 8,000** |
 
 Everything procedural loads dynamically (progressive disclosure). The
@@ -464,6 +465,19 @@ Once per-harness rosters land (§4.1, P2-M4), the skill-description
 aggregate is measured against each harness's *resolved* roster rather
 than the `apm.yml` union, and the total above is enforced per harness.
 Until then the union is the enforced basis.
+
+**Plugin skills are in the budget and cannot be measured repo-side.**
+Enabled Claude Code plugins contribute description tokens but are not
+vendored here, so `validate_repository.py` cannot see them — a plugin
+can grow the static footprint with no repo-side check noticing. Live
+E15 therefore runs `scripts/measure_e15.py`, which reads the deployed
+tree. Three counting traps it encodes, each found on a live machine
+2026-07-26: only `plugins/cache/` is installed content (`marketplaces/`
+is the catalogue of everything *available* and double-counts anything
+installed); a plugin may ship `commands/*.md` instead of
+`skills/*/SKILL.md`, which Claude Code merges into skills and which
+therefore cost tokens; and a cached-but-disabled plugin costs nothing.
+Only Claude Code loads plugin skills — the neutral trio are not charged.
 
 ## 7. Sync Wrapper (`scripts/sync.py`)
 
@@ -708,6 +722,17 @@ would satisfy every other gate in this document.
 **Retirement.** A scenario is removed only with a results file showing
 it no longer discriminates, and the manifest records the removal.
 Silent deletion of coverage is a regression.
+
+**Plugin adoption gate.** `skillOverrides` does not reach plugin skills
+(§4.1), so the unit of control is the plugin, not the skill: a plugin is
+taken whole or not at all. Adding one therefore requires an E14 run
+confirming it shadows no managed skill's trigger, recorded in the
+provenance manifest. Precedent: Codex's curated `github` plugin shipped
+a `yeet` skill that shadowed managed `gh-cli` on the PR workflow and had
+to be disabled per-skill (2026-07-18). Claude Code has no per-skill
+escape hatch for plugins, so on that harness the only remedies are
+disabling the whole plugin or displacing the managed skill — which makes
+the check before adoption the cheap moment.
 
 **Tool-skill track (acceptance checks):** loop evals do not cover tool
 skills. Each kept tool skill gets
