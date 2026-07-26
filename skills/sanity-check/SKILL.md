@@ -127,7 +127,7 @@ Recorded in `docs/provenance-manifest.md`; the results files are under
 - **The trigger probe.** Two phrasings of a skill-trigger question landed on
   the right answer; a third landed on the wrong one. Repetition agreed with
   itself, and only a reviewer asking a different question found it. This is
-  rule 7's evidence.
+  the evidence for *vary the question, not the reviewer count*.
 - **Five false verdicts in one day, none from a skill**
   ([pass 1](../../tests/evals/results/2026-07-26-p2m5-counter-pass1.md),
   [pass 2](../../tests/evals/results/2026-07-26-p2m5-counter-pass2.md)).
