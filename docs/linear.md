@@ -38,8 +38,20 @@ brew install schpet/tap/linear      # or: deno install -A -g -n linear jsr:@schp
 export LINEAR_API_KEY=lin_api_...   # Linear → Settings → API → Personal API keys
 ```
 
-`.linear.toml` pins the team for this repository and is committed. The
-`linear` skill in `skills/linear/` documents general CLI usage.
+`.linear.toml` pins the workspace and team for this repository and is
+committed:
+
+```toml
+workspace = "jonhill90"
+team_id = "AI"
+```
+
+Both keys are required. `team_id` takes the team **key**, not a UUID.
+Without `workspace`, most commands still work but `linear team autolinks`
+fails with "workspace is not set via command line, configuration file, or
+environment" — and passing `-w` does not satisfy it, in any position.
+
+The `linear` skill in `skills/linear/` documents general CLI usage.
 
 **The claude.ai Linear MCP connector is scoped to a different workspace
 and cannot see team `AI`.** Do not reach for it here — it will return an
@@ -56,6 +68,10 @@ These cost time if rediscovered:
 - `linear issue list` requires an explicit `--sort` (or
   `LINEAR_ISSUE_SORT`); without it the command errors instead of
   defaulting.
+- **`issue list` filters to *your assigned* issues by default.** `-A`
+  (`--all-assignees`) is load-bearing: without it this project reports 2
+  issues, with it 10. Unassigned work silently reads as "no issues
+  found", which looks identical to an empty project.
 - `--no-color` is not accepted by `issue list` and prints usage instead
   of listing.
 - `linear project create` fails opaquely on some flag combinations —
@@ -104,6 +120,19 @@ word:
 ```bash
 linear issue update AI-XX -s "Done"     # then verify — see below
 ```
+
+## Autolinks
+
+`AI-` is registered as a GitHub autolink on this repository
+(`AI-<num>` → `https://linear.app/jonhill90/issue/AI-<num>`), so issue
+references in commit messages and PR bodies render as links. Registered
+with:
+
+```bash
+linear team autolinks     # requires the workspace key above
+```
+
+Verify with `gh api repos/jonhill90/agent-dotfiles/autolinks`.
 
 ## Numbering gotcha
 
