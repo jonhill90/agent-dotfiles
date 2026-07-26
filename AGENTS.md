@@ -60,6 +60,11 @@ is retired; validation errors if any reappear.
 - Put deterministic, repeated operations in tested scripts.
 - Do not add a README inside a skill directory.
 - Avoid harness-specific preprocessing syntax in portable skills.
+- Classify each skill as *model-invoked* (a reusable discipline the agent
+  should reach on its own) or *user-invoked* (a workflow reached
+  deliberately). Express the classification in `description` trigger
+  wording, not in frontmatter fields — the portable field set stays
+  `name` and `description`.
 
 Harness-specific extensions require an explicit compatibility note and must not
 replace the portable workflow.
