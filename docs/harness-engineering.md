@@ -29,16 +29,35 @@ directories; `.apm/` is only the package view.
 | User skills | `~/.claude/skills` | `~/.agents/skills` | `~/.agents/skills` |
 | Global instructions | APM-generated `CLAUDE.md` | wrapper-generated `AGENTS.md` | APM-generated AGENTS-family file |
 | Hooks | rich native lifecycle | extension events | no v1 dependency |
-| MCP | wrapper → `~/.claude.json` | deliberately absent | wrapper → `config.toml` block / `mcp-config.json` |
+| MCP | wrapper → `~/.claude.json` | none shipped (0.80.6) | wrapper → `config.toml` block / `mcp-config.json` |
 | Long-term memory | shared vault plus native session memory | shared vault | shared vault (conventions skill) |
+| Per-skill disable | `skillOverrides` (v2.1.220) | `skills` denylist in `~/.pi/agent/settings.json` (0.80.6) | Codex `[[skills.config]]`; **Copilot: none** (V10) |
 | Release status | v1 behavioral target | v1 behavioral target | **first-class since 2026-07-18** (P2-M3): breakage blocks release |
 
-Pi's lack of MCP is a useful portability constraint: a first-class capability
-must have a CLI or direct-file path. MCP can improve a capable harness, but it
-cannot be the only way to use a capability. This is also the standing answer
-to alternatives-to-MCP research: prefer native CLIs, direct files, and
-harness-native APIs; add MCP only when those do not provide the needed
-semantics and a non-MCP degradation path exists.
+Pi ships no MCP support as of 0.80.6 — verified by grepping its distributed
+`dist/` for `modelcontextprotocol`, `mcpServers`, and `MCP server`, which
+returns nothing. That is **absent by default, not absent by design**: Pi
+installs extensions (`pi install npm:…`), so a third-party bridge could add
+it. The earlier wording here claimed the stronger fact.
+
+The constraint that follows has two halves, and they are not equally
+supported:
+
+- **Degradation (evidence-backed, keep).** A capability must not be
+  unusable when its transport fails. `basic-memory` was dropped for exactly
+  this — an MCP server failure mid-session with no CLI fallback — and on
+  2026-07-26 a misconfigured MCP connector resolved to the wrong workspace
+  and returned success, which a CLI would have refused.
+- **Primacy (over-fit, treat with care).** "CLI must be the canonical path"
+  was generalised from one harness's missing feature. It excludes the web
+  tier entirely, where a CLI-backed skill is inert and MCP is the only
+  transport — so as a universal rule it inverts the portability goal that
+  motivated it. It holds for the declared v1 harness set, all four of which
+  are terminal; it is not a general law.
+
+Prefer native CLIs, direct files, and harness-native APIs for the first-class
+set; add MCP when those lack the needed semantics, and require a documented
+degradation path either way.
 
 ## Verified facts and boundaries
 
