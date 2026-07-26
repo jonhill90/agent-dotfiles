@@ -38,8 +38,20 @@ brew install schpet/tap/linear      # or: deno install -A -g -n linear jsr:@schp
 export LINEAR_API_KEY=lin_api_...   # Linear → Settings → API → Personal API keys
 ```
 
-`.linear.toml` pins the team for this repository and is committed. The
-`linear` skill in `skills/linear/` documents general CLI usage.
+`.linear.toml` pins the workspace and team for this repository and is
+committed:
+
+```toml
+workspace = "jonhill90"
+team_id = "AI"
+```
+
+Both keys are required. `team_id` takes the team **key**, not a UUID.
+Without `workspace`, most commands still work but `linear team autolinks`
+fails with "workspace is not set via command line, configuration file, or
+environment" — and passing `-w` does not satisfy it, in any position.
+
+The `linear` skill in `skills/linear/` documents general CLI usage.
 
 **The claude.ai Linear MCP connector is scoped to a different workspace
 and cannot see team `AI`.** Do not reach for it here — it will return an
@@ -56,11 +68,29 @@ These cost time if rediscovered:
 - `linear issue list` requires an explicit `--sort` (or
   `LINEAR_ISSUE_SORT`); without it the command errors instead of
   defaulting.
+- **`issue list` filters to *your assigned* issues by default.** `-A`
+  (`--all-assignees`) is load-bearing: without it this project reports 2
+  issues, with it 10. Unassigned work silently reads as "no issues
+  found", which looks identical to an empty project.
 - `--no-color` is not accepted by `issue list` and prints usage instead
   of listing.
 - `linear project create` fails opaquely on some flag combinations —
   dumping a raw JSON error and creating nothing. Create with `-n` and
   `-t` only, then set lead, status, and description in the UI.
+- **Writes report success whether or not they applied.** Two ways this
+  bites: passing `--no-color` to `issue update` swallows the change, and
+  an unknown state name (`Backlog`, which team `AI` does not define) is
+  silently ignored. Both print the issue URL and exit 0. **Always
+  re-read after a write:**
+
+  ```bash
+  linear issue update AI-XX -s "Done"
+  linear issue list --team AI --project "agent-dotfiles" \
+    --all-states -A --sort priority --no-pager | grep AI-XX
+  ```
+
+  This is the same evidence rule the repo applies everywhere else: the
+  command's exit status is not the result.
 
 ## Flow
 
@@ -73,22 +103,36 @@ These cost time if rediscovered:
 2. **Branch** with the repository's type prefix — `docs/`, `feat/`,
    `chore/` — or the Linear-generated branch name.
 3. **PR** per the normal flow; CI gates on `pull_request`.
-4. **States:** Backlog (captured, not scheduled) → Todo → In Progress →
-   Done.
+4. **States:** `ToDo` → `In Progress` → `Done` (plus `Canceled`).
+   **Team `AI` has no Backlog state.** Setting one silently no-ops — see
+   below. Work that is captured but deliberately not actionable carries
+   the `parked` label instead of a state.
 
-## Closing issues from PRs — unverified
+## Closing issues from PRs — verified 2026-07-26
 
-Linear closes issues from PR bodies via magic words (`Fixes AI-XX`;
-`Refs AI-XX` links without closing), but that requires the Linear
-workspace to have the GitHub integration connected to this repository.
-**That connection has not been verified for `jonhill90/agent-dotfiles`.**
+The GitHub integration **is** connected. PRs #45 and #46 auto-attached
+to AI-259 and AI-260 without any manual step, so `Refs AI-XX` in a PR
+body links the PR to the issue and `Fixes AI-XX` closes it on merge.
 
-Until someone confirms it in Linear → Settings → Integrations → GitHub,
-treat magic words as best-effort and close issues explicitly:
+State still has to be set explicitly when a PR does not carry a magic
+word:
 
 ```bash
-linear issue update AI-XX -s "Done"
+linear issue update AI-XX -s "Done"     # then verify — see below
 ```
+
+## Autolinks
+
+`AI-` is registered as a GitHub autolink on this repository
+(`AI-<num>` → `https://linear.app/jonhill90/issue/AI-<num>`), so issue
+references in commit messages and PR bodies render as links. Registered
+with:
+
+```bash
+linear team autolinks     # requires the workspace key above
+```
+
+Verify with `gh api repos/jonhill90/agent-dotfiles/autolinks`.
 
 ## Numbering gotcha
 
