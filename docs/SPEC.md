@@ -319,6 +319,89 @@ Jon's authored layer (identity instructions, skills surviving the
 roster cut) is subject to the same rule in reverse: anything the
 baseline proves redundant is thinned.
 
+## 4.1 Skill Roster Scoping (per-harness, added 2026-07-25)
+
+§4 governs *which* fix is adopted. It says nothing about *who pays for
+it*, and the P2-M3 adoptions exposed the gap: `safe-deletion` and
+`failing-test-first` were authored to clear Copilot-only failures (E11,
+E06), but `settings/default-skills.txt` is a single flat roster, so
+Claude Code, Codex, and Pi — which passed both scenarios on the
+canonical instructions alone — load them too. Unclosed, every rung-2
+adoption charges all four harnesses, and a roster kept deliberately lean
+by M1.5 grows one justified skill at a time.
+
+**Rule.** A gap-fill skill is installed only on the harnesses whose
+evals justify it. A skill enters a harness's roster only when either
+
+- that harness failed a scenario the skill demonstrably fixes, with the
+  deciding results file recorded (§4.4); or
+- it is a tool/workflow skill from the standing roster cut, which is
+  harness-independent by intent.
+
+Scoping is subtractive from a *passing* baseline only. A skill may never
+be scoped out of a harness an eval showed needs it; narrowing a roster is
+not a way to dodge a failing cell.
+
+**Roster format.** `settings/default-skills.txt` gains optional
+per-harness sections. Unscoped lines keep their current meaning — shared
+by every harness — so the existing file stays valid and diffable:
+
+```text
+# shared roster (all harnesses)
+gh-cli
+create-skill
+...
+
+[copilot]
+safe-deletion
+failing-test-first
+```
+
+`load_default_skills(repo, harness=None)` returns the shared list when
+called without a harness, and `shared + section` for a named one. APM
+still installs the **union** across harnesses, so package deployment is
+unchanged and APM keeps ownership of `~/.claude/skills`.
+
+**Mechanism, by tier.** Achievable granularity is bounded by what each
+harness exposes; §5 records that Pi, Codex, and Copilot all read the same
+`~/.agents/skills` natively, so "per-harness" is not uniformly available.
+
+*Tier A — shared-path scoping (implementable now, no new harness
+surface).* `Sync.ensure_neutral_skills()` currently mirrors
+`~/.claude/skills` wholesale. It instead mirrors only the union of the
+Pi, Codex, and Copilot rosters, and removes wrapper-created symlinks that
+have left that union — state-tracked and reversible, matching the
+settings-merge discipline (§7). This cleanly separates Claude Code's set
+from the neutral trio's in both directions.
+
+*Tier B — harness-native disable (individual harnesses inside the neutral
+trio).* Excluding one of Pi/Codex/Copilot alone requires that harness's
+own disable surface:
+
+- **Codex:** `[[skills.config]]` entries in `~/.codex/config.toml` —
+  already proven and in production use for the `yeet` plugin-skill
+  disable (E14 PASS ×2, 2026-07-18).
+- **Copilot:** no persistent deny surface exists (verified 2026-07-18 via
+  `copilot help config`). Copilot therefore always receives the neutral
+  union, and a Copilot-only skill keeps costing Pi and Codex until V10
+  resolves. This is the current `safe-deletion` case and it is a known,
+  recorded cost — not a silent one.
+- **Claude Code / Pi:** unverified — V9.
+
+*Tier C — not built.* A dedicated skills directory per harness. Only if
+V9/V10 both come back negative *and* the measured neutral-union overhead
+exceeds the §6 per-harness budget.
+
+**Consequences.**
+
+- §6's static budget is measured per harness against that harness's
+  resolved roster, not against the union.
+  `scripts/validate_repository.py` enforces the aggregate per harness.
+- `sync status` reports each harness's resolved roster; `sync doctor`
+  flags drift between the resolved roster and what is on disk.
+- Every per-harness section entry carries a provenance-manifest row with
+  its deciding results file, on the same terms as any other adoption.
+
 ## 5. Per-Harness Projection Summary
 
 | Layer | Claude Code | Pi | Codex | Copilot |
@@ -472,6 +555,78 @@ scenarios prove they discriminate (eval-scenarios doctrine).
 4. Re-run the full matrix with the adopted set before declaring M5 done
    (fixes must not regress previously passing scenarios).
 
+## 10.1 Evidence Bar and Counter-Scenarios (added 2026-07-25)
+
+Two weaknesses in the v1 protocol above, both surfaced by the P2-M3
+adoptions.
+
+**A. `×2` is a thin sample for a stochastic system.** The bar for
+adoption and for regression is the same two consecutive passes. But the
+same milestone that adopted `safe-deletion` also pinned Copilot's model
+*because* `Auto` routing flipped E03 between pass and fail inside a
+single cell — an admission that run-to-run variance is large enough to
+manufacture a result. Two passes is exactly the sample size that variance
+defeats. The fix is not "more runs everywhere" — these are manual
+sessions and uniform inflation would price the matrix out of existence.
+It is to spend runs where the inference is actually load-bearing.
+
+1. **Variance control precedes counting.** No cell may close an adoption
+   while its model routing is unpinned or unrecorded. Every results row
+   names the harness *and* the resolved model. A cell whose model is
+   selected by a router (Copilot `Auto`, or any successor) is not
+   evidence until pinned. Precedent: the `claude-sonnet-5` pin,
+   2026-07-18.
+2. **Regression checks stay at ×2.** Confirming that an
+   already-passing scenario still passes is a low-stakes check against a
+   high prior. Two runs remain sufficient, unchanged.
+3. **Adoptions require ×3 consecutive, and must out-weigh the observed
+   failure.** A gap-fill flips a cell whose prior is *failing*, so the
+   post-fix evidence has to beat the pre-fix evidence rather than tie it.
+   Record both counts explicitly — "failed ×2, passed ×3" — and require
+   passes > failures. Ties (the current "failed ×2, passed ×2") do not
+   close a row.
+4. **Any disagreement inside the window resets it and flags the
+   candidate.** One failure among the adoption runs means the sample
+   restarts, and the candidate is recorded as *flapping*. A candidate
+   that flaps twice is not adopted at that rung — escalate to the next
+   §4 rung or investigate the variance source first. Flapping is a
+   finding, not noise to be re-rolled away.
+
+**B. Nothing tests whether an adopted fix fires when it shouldn't.**
+Every audition asks "did the target scenario flip?" and "did any other
+scenario regress?" Neither question catches overtriggering. A skill that
+fires on *delete, remove, clean up, clear out, purge, empty* will fire
+constantly, and a gate that stalls routine work fails no scenario in
+E1–E15 — it just taxes every future session invisibly. Regression
+coverage cannot find this, because the cost lands on tasks no scenario
+describes.
+
+Therefore: **every adopted behavioral skill carries a counter-scenario
+before it enters a roster.** `tests/evals/counter/<skill>.md`, same shape
+as the tool-skill acceptance checks below, containing at minimum:
+
+- **A legitimate-path case.** The skill's triggers are present and the
+  skill is genuinely relevant, but the correct outcome is to proceed.
+  PASS = the task completes; FAIL = the agent refuses, stalls, or
+  escalates to the user. For `safe-deletion`: clearing a `dist/` that
+  contains exactly the build artifacts its name implies — the gate
+  should list, match, delete, and report, not ask permission.
+- **A null-trigger case.** The trigger vocabulary appears in a context
+  the skill does not govern. PASS = the skill does not fire. For
+  `safe-deletion`: "remove the retry loop from this function" is a code
+  edit, not a file deletion.
+
+Counter-scenarios run at the regression bar (×2) alongside the matrix. A
+skill that fails one is over-scoped: narrow its `description` triggers or
+its procedure, then re-audition. Adoption rows in the provenance manifest
+cite the counter file next to the deciding results file.
+
+**Retroactive application.** `safe-deletion` and `failing-test-first`
+were adopted 2026-07-18 under the prior bar (failed ×2, passed ×2, no
+counter-scenario). They are not unwound — both cleared real, reproduced
+failures. They are re-verified at the bar above on the next full matrix
+run (P2-M5), and their manifest rows say so until then.
+
 **Tool-skill track (acceptance checks):** loop evals do not cover tool
 skills. Each kept tool skill gets
 `tests/evals/acceptance/<skill>.md` — 3–5 concrete tasks the skill must let
@@ -493,6 +648,8 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | V6 | Official Obsidian CLI vs third-party obsidian-cli | **Resolved 2026-07-12, owner override** (evidence commit `b752300`): official CLI adopted for the optional `obsidian` skill; memory uses direct files and has no CLI dependency. Verified hands-on on 1.12.7. The CLI does not auto-launch the app. `sync doctor` rejects vaults on corporate mounts. |
 | V7 | Community tmux-skill candidates vs `using-tmux` acceptance checks | No — swap decision, not a blocker; `using-tmux` stays until displaced |
 | V8 | APM serves stale root-file content after source edits ("files unchanged" while content differs) | **Resolved 2026-07-13:** apply detaches only marker-owned managed roots before compile, forcing regeneration; a failed compile restores the last-known-good roots. Covered by regression tests. |
+| V9 | Claude Code and Pi per-skill disable surfaces (a settings key or config entry that suppresses a deployed skill without deleting it) | No — Tier A (§4.1) delivers the Claude-vs-neutral split without it; V9 only widens Tier B |
+| V10 | Copilot per-skill disable surface — absent as of CLI 1.0.70 (verified 2026-07-18); recheck on upgrades | No — until resolved Copilot receives the neutral union, and the overage is charged against its §6 budget |
 
 ## 12. Milestones (Phase 1)
 
@@ -513,6 +670,8 @@ tokens loaded. Swap decisions cite the check file in the manifest.
 | P2-M1 | Mechanical layer: V5 verification, MCP projection to Codex + Copilot, status/doctor coverage | **Done 2026-07-18** (TDD, suite 59 tests; live on Jon's Mac) |
 | P2-M2 | Behavioral columns: E1–E15 on Codex×default and Copilot×default, twice consecutively; gap-fills auditioned baseline-first (no hook surface — instruction/skill fixes only) | **Done 2026-07-18** ([baseline](../tests/evals/results/2026-07-18-p2m2-codex-copilot-baseline.md), [clearance](../tests/evals/results/2026-07-18-p2m3-blockers-cleared.md)): both columns fully green ×2. Adopted along the way: deletion-gate sentence, `safe-deletion` + `failing-test-first` skills, Copilot model pin, Codex `skills.config` plugin-skill disables |
 | P2-M3 | First-class flip: SPEC/README list Codex + Copilot as release-blocking | **Done 2026-07-18**: all P2-M2 cells pass ×2; Codex and Copilot breakage now blocks release; harness-engineering matrix updated |
+| P2-M4 | Per-harness skill rosters (§4.1): sectioned `default-skills.txt`, Tier A scoping in `ensure_neutral_skills()`, Tier B Codex disable wiring, per-harness §6 budget check, `status`/`doctor` roster reporting | **Open.** Done when: sectioned roster parses with the flat file still valid (TDD); Claude Code no longer receives Copilot-scoped skills on a live apply; removal from a section removes the wrapper symlink and is reversible; per-harness E15 budget measured and under cap; E11 still PASS ×2 on Copilot and no regression on the other three columns |
+| P2-M5 | Evidence bar + counter-scenarios (§10.1): `tests/evals/counter/` established, counter files for `safe-deletion` and `failing-test-first`, both re-verified at the ×3 adoption bar with models pinned and recorded | **Open.** Done when: both counter files exist and pass ×2 on all four columns; both skills pass their originating scenario (E11, E06) ×3 consecutive on Copilot with the model pinned and named in the results row; manifest rows updated to cite counter files and drop the prior-bar caveat; any skill failing a counter-scenario is narrowed and re-auditioned before the row closes |
 
 Phase 1 exit satisfies M6 (primary) and the required-pair M5 baseline. The
 full four-pair consecutive-pass matrix remains incomplete secondary coverage,
