@@ -739,6 +739,15 @@ escape hatch for plugins, so on that harness the only remedies are
 disabling the whole plugin or displacing the managed skill — which makes
 the check before adoption the cheap moment.
 
+**Managed skills shadow each other too.** The plugin gate above covers
+foreign skills, but two *managed* tool skills can claim the same trigger
+vocabulary — `linear` and `gh-cli` both claimed bare "tracking issues"
+until 2026-07-26, and a probe reached for the wrong one on unqualified
+phrasing. A tool skill's `description` must qualify its triggers with the
+platform it serves, so an unqualified request cannot match two skills.
+Assess this when a skill is added or when the repo's use of one changes;
+record the assessment in the manifest.
+
 **Tool-skill track (acceptance checks):** loop evals do not cover tool
 skills. Each kept tool skill gets
 `tests/evals/acceptance/<skill>.md` — 3–5 concrete tasks the skill must let

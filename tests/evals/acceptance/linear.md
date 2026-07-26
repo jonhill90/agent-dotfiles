@@ -12,3 +12,7 @@ Tasks the skill must let the agent complete (SPEC §10 tool-skill track).
 
 PASS: all five; issue identifiers and team routing correct (no
 cross-team leakage).
+
+**Not exercisable in this repository.** agent-dotfiles tracks work in
+GitHub Issues (`docs/work-tracking.md`); run these checks against a repo
+that actually uses Linear.

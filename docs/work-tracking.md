@@ -12,14 +12,14 @@ canonical.** An issue cites its section rather than restating it, and
 when an issue and the SPEC disagree, **the SPEC wins and the issue is
 corrected**.
 
-This is a knowing duplication, not a free one. Of the ten issues ported
-from the previous tracker, only the five `Parked:` issues carried a fact
-the repo did not already own — the rest mirror SPEC rows that already
-say "Open" and carry a done-when clause. They are tracked anyway because
-a milestone that only exists in a table is not surfaced between
-sessions, which is the failure the tracker exists to fix. Adding an
-issue for something SPEC already states is a deliberate cost, not the
-default.
+This is a knowing duplication, not a free one. Eight issues were ported
+from the previous tracker; two more were not, because they were already
+finished. Of the eight, only the five `Parked:` issues carried a fact the
+repo did not already own — the other three mirror SPEC rows that already
+say "Open" and carry a done-when clause. Those three are tracked anyway
+because a milestone that exists only in a table is not surfaced between
+sessions, which is the failure the tracker exists to fix. Adding an issue
+for something SPEC already states is a deliberate cost, not the default.
 
 ## Labels — the whole taxonomy
 

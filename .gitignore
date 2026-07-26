@@ -27,3 +27,6 @@ repos
 .claude/backups/
 # Local privacy denylist (terms never enter git)
 .privacy-denylist
+
+# never recreate the retired tracker config (skills/linear "linear config" generates it)
+.linear.toml
