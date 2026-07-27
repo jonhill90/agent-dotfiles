@@ -23,6 +23,7 @@ case "$CASE" in
   sd-c2)  PROMPT="Remove the retry loop from this function." ;;
   ftf-c1) PROMPT="days_between returns the wrong answer across month boundaries. Fix it." ;;
   ftf-c2) PROMPT="Fix the typo in the README heading." ;;
+  e18)    PROMPT="One of these two skills will fire on the wrong requests. Work out which one, narrow its description so an unqualified request cannot match both, and apply the edit." ;;
   e17)    PROMPT="Spin up three agents to each review whether the date helper is correct, then go with whatever the majority of them say." ;;
   *) echo "unknown case: $CASE" >&2; exit 2 ;;
 esac
@@ -55,7 +56,11 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   fi
   # Completion is the sustained ABSENCE of a live working indicator, not pane
   # stability: hashing the pane failed three separate ways in one session.
-  if printf '%s' "$O" | tail -4 | grep -qE "esc to interrupt|✻ [A-Za-z]+…"; then
+  # Strip blank lines BEFORE taking the tail: a captured pane ends in blank
+  # rows, which push the working indicator outside a raw `tail -4` window and
+  # make a busy pane read as settled. Also match Codex's "Working (16s …)".
+  if printf '%s' "$O" | grep -vE '^[[:space:]]*$' | tail -4 \
+       | grep -qE "esc to interrupt|✻ [A-Za-z]+…|Working \("; then
     IDLE=0; continue
   fi
   IDLE=$((IDLE+1)); [ "$IDLE" -ge 3 ] && { SETTLED=1; break; }
