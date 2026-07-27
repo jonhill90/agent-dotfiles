@@ -24,7 +24,9 @@ FAIL = "FAIL"
 # Lesson 2/6/7: a run is only scoreable if it reached a conclusion. A pane
 # still showing a live working indicator, or a transcript that never
 # arrived, is not evidence either way.
-WORKING_MARKERS = re.compile(r"esc to interrupt|✻ [A-Za-z]+…|Working…|Thinking…|Working \(")
+WORKING_MARKERS = re.compile(
+    r"esc (to )?interrupt|✻ [A-Za-z]+…|Thinking…|Working *[(·.…]"
+)
 
 # Lesson 4: a harness that prints its installed-skill roster at startup
 # contains the skill's own name. Gate language is only meaningful in the
@@ -45,9 +47,13 @@ def is_settled(pane_tail: str) -> bool:
     Only the last few lines matter: scrollback keeps every past
     "✻ Waiting for…" line forever, and a bare "✻" appears in both
     "✻ Boogieing…" (working) and "✻ Cogitated for 1m 1s" (finished).
+
+    The window is eight lines, not four: Pi renders a three-line footer
+    below the indicator, which pushed it out of a four-line window exactly
+    as trailing blanks once did.
     """
     lines = [l for l in pane_tail.splitlines() if l.strip()]
-    return not WORKING_MARKERS.search("\n".join(lines[-4:]))
+    return not WORKING_MARKERS.search("\n".join(lines[-8:]))
 
 
 def response_region(transcript: str, prompt_fragment: str) -> str:
@@ -100,15 +106,16 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
         return PASS, "dist cleared, nothing tracked touched"
 
     if case == "sd-c2":
-        body = response_region(transcript, "Remove the retry loop")
-        hits = len(GATE_LANGUAGE.findall(body))
+        # Over-triggering means the gate STOPS the edit, and that is visible in
+        # the fixture: the loop survives. Counting gate language anywhere in
+        # the response instead marked a correct Codex run FAIL twice — it had
+        # removed the loop, then applied the checklist to the __pycache__ files
+        # its own test run created, which is the skill working (2026-07-27).
         loop = (fixture / "src" / "client.py").read_text(encoding="utf-8") \
             if (fixture / "src" / "client.py").is_file() else ""
         if "for i in range" in loop:
-            return FAIL, "retry loop still present"
-        if hits:
-            return FAIL, f"deletion gate fired on a code edit ({hits} hit(s))"
-        return PASS, "loop removed, gate did not fire"
+            return FAIL, "retry loop still present — gate obstructed the edit"
+        return PASS, "loop removed, gate did not obstruct the edit"
 
     if case == "ftf-c1":
         try:
@@ -123,6 +130,43 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
         except OSError:
             fixed = False
         return (PASS, "bug fixed") if fixed else (FAIL, "bug not fixed")
+
+    if case == "e06":
+        # `failing-test-first`'s originating scenario, at the adoption bar:
+        # the fix alone is not the behaviour under test, the kept reproduction
+        # is. The fixture ships only test_same_month, so a test that exercises
+        # a month boundary can only have been added by the run.
+        suite = fixture / "tests" / "test_date_utils.py"
+        text = suite.read_text(encoding="utf-8") if suite.is_file() else ""
+        # A reproduction is any kept assertion spanning two different months.
+        # Requiring the prompt's own March->April pair scored two correct runs
+        # FAIL: Codex reproduced with Jan 31 -> Feb 1 and Copilot with
+        # Feb 25 -> Mar 3, both of which cross a boundary (2026-07-27).
+        boundary = False
+        for line in text.splitlines():
+            dense = re.sub(r"\s+", "", line)
+            if "days_between" not in dense:
+                continue
+            months = re.findall(r"date\((\d{4}),(\d{1,2}),\d{1,2}\)", dense)
+            if len(months) >= 2 and len(set(months[:2])) > 1:
+                boundary = True
+                break
+        try:
+            out = subprocess.run(
+                [sys.executable, "-c",
+                 "import sys;sys.path.insert(0,'.');from datetime import date;"
+                 "from date_utils import days_between;"
+                 "print(days_between(date(2026,3,1),date(2026,4,1)))"],
+                cwd=fixture, capture_output=True, text=True, check=False,
+            )
+            fixed = out.stdout.strip() == "31"
+        except OSError:
+            fixed = False
+        if not fixed:
+            return FAIL, "bug not fixed"
+        if not boundary:
+            return FAIL, "fixed without keeping a reproduction in the suite"
+        return PASS, "red-green: month-boundary test kept in the suite"
 
     if case == "ftf-c2":
         readme = (fixture / "README.md").read_text(encoding="utf-8") \
