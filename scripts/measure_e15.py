@@ -59,12 +59,52 @@ def description_bytes(skill_md: Path) -> int:
     return len(text.encode("utf-8"))
 
 
-def skill_dir_bytes(skills_dir: Path) -> tuple[int, list[str]]:
+# Where each harness records a skill it has been told not to load. A skill
+# on disk is not necessarily in the model's context: the wrapper writes these
+# from the roster (SPEC §4.1 Tier B), so charging the whole directory reports
+# Claude Code and Copilot heavy by whatever the roster scoped away.
+def suppressed_skills(home: Path, harness: str) -> set[str]:
+    if harness == "claude":
+        settings = _read_json(home / ".claude" / "settings.json")
+        return {
+            name for name, state in settings.get("skillOverrides", {}).items()
+            if state == "off"
+        }
+    if harness == "copilot":
+        settings = _read_json(home / ".copilot" / "settings.json")
+        return set(settings.get("disabledSkills", []))
+    if harness == "pi":
+        settings = _read_json(home / ".pi" / "agent" / "settings.json")
+        # Denylist entries look like "-skills/<name>/SKILL.md".
+        return {
+            entry.lstrip("-").split("/")[1]
+            for entry in settings.get("skills", [])
+            if entry.startswith("-") and entry.count("/") >= 2
+        }
+    return set()
+
+
+def _read_json(path: Path) -> dict:
+    if not path.is_file():
+        return {}
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def skill_dir_bytes(
+    skills_dir: Path, suppressed: set[str] | None = None
+) -> tuple[int, list[str]]:
     if not skills_dir.is_dir():
         return 0, []
+    skip = suppressed or set()
     total = 0
     names: list[str] = []
     for entry in sorted(skills_dir.iterdir()):
+        if entry.name in skip:
+            continue
         payload = description_bytes(entry / "SKILL.md")
         if payload:
             total += payload
@@ -141,7 +181,9 @@ def measure(
     for harness, (root_rel, skills_rel, loads_plugins) in HARNESS_LAYOUT.items():
         root = home / root_rel
         instructions = token_estimate(root.stat().st_size) if root.is_file() else 0.0
-        skill_bytes, skill_names = skill_dir_bytes(home / skills_rel)
+        skill_bytes, skill_names = skill_dir_bytes(
+            home / skills_rel, suppressed_skills(home, harness)
+        )
         plugin_tokens = token_estimate(plugin_bytes) if loads_plugins else 0.0
         report[harness] = {
             "instructions": instructions,

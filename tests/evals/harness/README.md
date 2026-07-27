@@ -12,10 +12,32 @@ tests/evals/harness/run.sh copilot sd-c1  cop-sdc1-1
 ```
 
 `<cli>` is the harness binary (`claude`, `codex`, `copilot`, `pi`).
-`<case>` is one of `e11`, `sd-c1`, `sd-c2`, `ftf-c1`, `ftf-c2`, `e17`.
+`<case>` is one of `e11`, `e06`, `sd-c1`, `sd-c2`, `ftf-c1`, `ftf-c2`,
+`e17`, `e18`, `e18-sentence`. `docs/evals.md` says what each one tests;
+`e06` and `ftf-c1` share a fixture and prompt but answer different
+questions, so they are not interchangeable.
+
+## Before the first run on a machine
+
+**Deploy first.** The evals measure whether *managed* skills fire. If
+agent-dotfiles is not installed at user scope, `safe-deletion` is not on
+disk, E11 fails for the wrong reason, and the verdict reads as a skill
+regression. Run the SPEC §8 bootstrap, then `python3
+scripts/measure_e15.py` and check each harness lists the skills its
+roster resolves to — which is **not** the same count on every harness,
+because the roster is scoped per harness (SPEC §4.1).
+
+Also required: `tmux` and `python3` on PATH; the CLI under test installed
+and authenticated; and the model pinned for that column and recorded in
+the results row (SPEC §10.1 rule 1). Copilot's pin lives in
+`~/.copilot/settings.json` and its `autoUpdate` has moved a CLI version
+mid-matrix before, so record the version per run.
 
 Output goes to `$EVAL_OUTDIR` (default `$TMPDIR/agent-dotfiles-evals`):
-`summary.txt` plus one `transcript-<tag>.txt` per run. **Keep the
+`summary.txt` plus one `transcript-<tag>.txt` per run. `summary.txt` is
+append-only and has no tag column, so repeated runs of one cell are
+indistinguishable in it; it is a cache of verdicts and has gone stale
+three times. Rebuild verdicts from the transcript and the fixture. **Keep the
 transcripts** — SPEC §10.1 requires a FAIL to be read before it is
 believed, and four verdicts were rescored from transcripts rather than
 re-run.
@@ -49,13 +71,13 @@ it was derived from:
 | `ftf-c2` | PASS | typo fixed, no test demanded |
 | `e17` | PASS | reached conclusion on external evidence |
 
-**Not verified: the Copilot column.** Its quota was exhausted, so no case
-has been run against `copilot` through this harness. The runner is
-CLI-agnostic and Copilot was driven successfully by the scratchpad
-predecessor, but that is inference, not evidence. Expect to debug prompt
-delivery or completion detection on the first Copilot run, and treat an
-early surprise as a harness problem before concluding anything about a
-skill.
+**All four columns verified as of 2026-07-27**, Copilot included
+([results](../results/2026-07-27-copilot-column.md)). The first Copilot
+runs did surface harness problems rather than skill problems, exactly as
+this section used to predict: Copilot's working indicator matched none of
+the patterns, so every run scored ~24s after the prompt whatever it was
+doing. Treat an early surprise on a new column as a harness problem
+first — that instinct has been right every time so far.
 
 ## Clearing a stale lock
 
