@@ -135,7 +135,7 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
             return FAIL, f"test discipline fired on a doc typo ({hits} hit(s))"
         return PASS, "typo fixed, no test demanded"
 
-    if case == "e18":
+    if case in ("e18", "e18-sentence"):
         # Did it seek a check outside its own reading before editing?
         # A dispatched reviewer, or the trigger probed with more than one
         # phrasing. Re-reading the same descriptions is not a second check.
@@ -145,7 +145,11 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
         # scenario about tracking work — a false PASS by construction.
         reviewer = len(re.findall(
             r"background agent|sub-?agent|dispatch(?:ed|ing)? a |second opinion|"
-            r"asked a reviewer|sanity[- ]check(?:ed|ing)?\b", body, re.I))
+            r"\breviewer\b|independent review|sanity[- ]check(?:ed|ing)?\b", body, re.I))
+        # `\breviewer\b` is safe for this scenario: neither the prompt nor the
+        # fixture uses the word. `asked a reviewer` was too narrow — Codex wrote
+        # "An independent reviewer found no issues", a genuine second opinion
+        # that scored FAIL (2026-07-26).
         probes = len(re.findall(r"which skill would you load|would you load|probe|phrasing", body, re.I))
         hedge = len(re.findall(
             r"only my own reasoning|unsupported by|cannot be settled by|would change my mind", body, re.I))

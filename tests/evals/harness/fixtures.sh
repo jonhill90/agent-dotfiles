@@ -90,7 +90,7 @@ X
   fi
   printf 'pytest\n' > "$DEST/requirements.txt"
   ;;
-e18)
+e18|e18-sentence)
   # Two skills claiming the same trigger vocabulary; TRACKER.md names the
   # platform this repo actually uses. Nothing distinguishes them by running.
   mkdir -p "$DEST/skills/ticket-tool" "$DEST/skills/forge-cli"
@@ -115,6 +115,18 @@ description: Manage Forge via CLI including pull requests, issues and releases. 
 
 Run `forge` to manage Forge Issues.
 X
+  # Sentence-rung candidate (SPEC §4, cheapest rung). Delivered as a project
+  # AGENTS.md — all four harnesses read one — so the audition tests whether an
+  # instruction binds at all, before any skill is considered.
+  if [ "$CASE" = "e18-sentence" ]; then
+    cat > "$DEST/AGENTS.md" <<'X'
+# Repository policy
+
+When a conclusion rests only on your own reasoning and no command can settle
+it, get a second opinion before acting — dispatch a reviewer given a lens it
+can fail on, or test the question a different way. Say which you did.
+X
+  fi
   ;;
 ftf-c2)
   printf '# Instalation Guide\n\nRun the installer.\n' > "$DEST/README.md"
