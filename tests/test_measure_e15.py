@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -116,3 +117,38 @@ class PluginSourceTests(unittest.TestCase):
         total, names = measure_e15.plugin_skill_bytes(self.root, {"rl"})
         self.assertEqual(names, ["rl"])
         self.assertEqual(total, 60, "commands are merged into skills by Claude Code")
+
+
+class SuppressedSkillTests(unittest.TestCase):
+    """A skill on disk is not necessarily in the model's context. Claude Code
+    turns one off with `skillOverrides` and Copilot with `disabledSkills`, both
+    of which the wrapper writes from the roster. Charging the whole directory
+    reported Claude Code and Copilot ~81 tokens heavy on 2026-07-27."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_claude_skill_overrides_are_not_charged(self) -> None:
+        (self.home / ".claude").mkdir(parents=True)
+        (self.home / ".claude" / "settings.json").write_text(
+            json.dumps({"skillOverrides": {"sanity-check": "off", "tmux": "on"}}),
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            measure_e15.suppressed_skills(self.home, "claude"), {"sanity-check"}
+        )
+
+    def test_copilot_disabled_skills_are_not_charged(self) -> None:
+        (self.home / ".copilot").mkdir(parents=True)
+        (self.home / ".copilot" / "settings.json").write_text(
+            json.dumps({"disabledSkills": ["sanity-check"]}), encoding="utf-8"
+        )
+        self.assertEqual(
+            measure_e15.suppressed_skills(self.home, "copilot"), {"sanity-check"}
+        )
+
+    def test_absent_settings_suppress_nothing(self) -> None:
+        self.assertEqual(measure_e15.suppressed_skills(self.home, "claude"), set())
+        self.assertEqual(measure_e15.suppressed_skills(self.home, "pi"), set())

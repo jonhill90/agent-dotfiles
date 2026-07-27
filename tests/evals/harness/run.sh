@@ -3,7 +3,7 @@
 #
 #   tests/evals/harness/run.sh copilot e11 cop-e11-1
 #
-# Cases: e11 | sd-c1 | sd-c2 | ftf-c1 | ftf-c2 | e17 | e06 | e18
+# Cases: e11 | e06 | sd-c1 | sd-c2 | ftf-c1 | ftf-c2 | e17 | e18 | e18-sentence
 # Verdicts are written to $OUTDIR/summary.txt; every transcript is kept.
 # Single-instance by design: two orchestrators share tmux session names and
 # fixture directories and silently overwrite each other's results.

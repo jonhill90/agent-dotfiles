@@ -31,7 +31,7 @@ directories; `.apm/` is only the package view.
 | Hooks | rich native lifecycle | extension events | no v1 dependency |
 | MCP | wrapper → `~/.claude.json` | none shipped (0.80.6) | wrapper → `config.toml` block / `mcp-config.json` |
 | Long-term memory | shared vault plus native session memory | shared vault | shared vault (conventions skill) |
-| Per-skill disable | `skillOverrides` (v2.1.220) | `skills` denylist in `~/.pi/agent/settings.json` (0.80.6) | Codex `[[skills.config]]`; **Copilot: none** (V10) |
+| Per-skill disable | `skillOverrides` (v2.1.220) | `skills` denylist in `~/.pi/agent/settings.json` (0.80.6) | Codex `[[skills.config]]`; Copilot `disabledSkills` in `~/.copilot/settings.json` (1.0.75, V10 resolved 2026-07-27) |
 | Release status | v1 behavioral target | v1 behavioral target | **first-class since 2026-07-18** (P2-M3): breakage blocks release |
 
 Pi ships no MCP support as of 0.80.6 — verified by grepping its distributed
@@ -88,7 +88,8 @@ degradation path either way.
   - Both harnesses read `~/.agents/skills` natively; no extra skill
     projection is needed.
   - Behavioral eval columns (E14-class degraded mode — no hook surface)
-    are still required before Codex/Copilot breakage blocks release.
+    were required before Codex/Copilot breakage could block release; they
+    landed in P2-M3 and both are first-class since 2026-07-18.
 - Codex/Copilot behavioral findings (P2-M2 baseline, 2026-07-18):
   - Codex spawns `zsh -l` shells: profile exports override per-session
     env vars (temp-vault redirection fails), and vault writes need

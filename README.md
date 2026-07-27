@@ -36,7 +36,8 @@ skills/          Portable Agent Skills source
 instructions/    Canonical global agent instructions + per-harness overlays
 agents/          Reusable agent definitions
 hooks/           Canonical hook scripts, harness-agnostic
-settings/        Wrapper-owned config fragments (claude, pi, mcp)
+settings/        Wrapper-owned config fragments (claude, copilot, pi, mcp)
+                 plus default-skills.txt, the per-harness skill roster
 scripts/         Sync wrapper, repository validation, static-context measurement
 tests/           Unit suite plus evals/ (scenarios, counter-scenarios, harness, results)
 docs/            Living product, architecture, memory, and eval documentation
@@ -52,19 +53,37 @@ retired (SPEC §2).
 
 ## Core Workflow Skills
 
-| Skill | Purpose |
-|---|---|
-| `tmux` | Operate persistent interactive terminal sessions safely |
-| `create-skill` | Design and validate portable skills with progressive disclosure |
+The default roster is `settings/default-skills.txt`. It is **scoped per
+harness**, not one flat list: a skill can ship to some harnesses and be
+disabled on others. Where the roster scopes a skill away from a harness,
+the wrapper writes that exclusion into the harness's own settings, so the
+roster is enforced rather than merely declared. That is implemented for
+Claude Code (`skillOverrides`) and Copilot (`disabledSkills`) — the two
+harnesses the current roster excludes anything from. Codex and Pi have
+equivalent levers recorded in SPEC §4.1, but nothing derives them from the
+roster yet, because their resolved rosters are the full union.
 
-Additional skills integrate with GitHub, Linear, and Obsidian.
-Install them selectively to avoid overlapping triggers and unnecessary
-context.
+| Skill | Purpose | Deployed to |
+|---|---|---|
+| `create-skill` | Design and validate portable skills with progressive disclosure | all four |
+| `failing-test-first` | Reproduce a bug with a failing test before fixing it | all four |
+| `github-cli` | Pull requests, issues, workflows, releases via `gh` | all four |
+| `linear` | Linear issues and projects via the Linear CLI | all four |
+| `memory-conventions` | Read and write durable memory in the Obsidian vault | all four |
+| `obsidian` | Notes, vaults and daily notes via the Obsidian CLI | all four |
+| `safe-deletion` | Verify contents match their described purpose before deleting | all four |
+| `tmux` | Operate persistent interactive terminal sessions safely | all four |
+| `sanity-check` | Check reasoning with a second mind before acting on it | **Codex, Pi only** |
 
-Four skills are published here but excluded from the default APM package —
-`primer`, `close-the-loop`, `dispatching-subagents`, and `sanity-check` —
-because no failing eval justified their static description cost. All three remain independently
-installable, and the reasoning for each is recorded in
+`sanity-check` is the first skill to use per-harness scoping. The cheaper
+rung — one sentence in the canonical instructions — binds on Claude Code
+and does not on Codex or Pi, so the skill ships only where the instruction
+failed (SPEC §4 ladder; [E18 results](tests/evals/results/2026-07-26-e18-sentence-rung.md)).
+
+Three further skills are published here but excluded from the default
+package — `primer`, `close-the-loop`, and `dispatching-subagents` —
+because no failing eval justified their static description cost. All three
+remain independently installable, and the reasoning for each is recorded in
 [docs/provenance-manifest.md](docs/provenance-manifest.md).
 
 The behavioral layer is deliberately minimal: loop discipline lives in the
