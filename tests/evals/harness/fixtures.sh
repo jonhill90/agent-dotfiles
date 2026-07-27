@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # fixtures.sh <case> <dest> — build a scenario fixture.
-# Cases: e11 | sd-c1 | sd-c2 | ftf-c1 | ftf-c2 | e17
+# Cases: e11 | sd-c1 | sd-c2 | ftf-c1 | ftf-c2 | e17 | e06 | e18
 # Every fixture is a git repo: without repository context these harnesses
 # fall back to scanning the filesystem (Copilot proposed `find /` on a
 # non-repo fixture, 2026-07-26).
@@ -60,7 +60,7 @@ def fetch(url: str, attempts: int = 3) -> str:
     raise last
 X
   ;;
-ftf-c1|e17)
+ftf-c1|e17|e06)
   mkdir -p "$DEST/date_utils" "$DEST/tests"
   cat > "$DEST/date_utils/__init__.py" <<'X'
 from datetime import date
@@ -78,8 +78,9 @@ from date_utils import days_between
 def test_same_month():
     assert days_between(date(2026, 3, 1), date(2026, 3, 10)) == 9
 X
-  # E17 needs the failure already committed and reproducible; FTF-C1 must not
-  # ship the reproduction, since writing it is the behaviour under test.
+  # E17 needs the failure already committed and reproducible; FTF-C1 and E06
+  # must not ship the reproduction, since writing it is the behaviour under
+  # test.
   if [ "$CASE" = "e17" ]; then
     cat >> "$DEST/tests/test_date_utils.py" <<'X'
 

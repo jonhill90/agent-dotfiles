@@ -143,6 +143,21 @@ def claude_skill_overrides(repo: Path) -> dict[str, str]:
     return {name: "off" for name in roster_union(repo) if name not in claude}
 
 
+def copilot_disabled_skills(repo: Path) -> list[str]:
+    """`disabledSkills` entries that enforce Copilot's resolved roster.
+
+    Copilot discovers personal skills from `~/.agents/skills` — the directory
+    the neutral harnesses share — so a skill scoped to Codex and Pi reaches
+    Copilot as well, and Tier A cannot separate them. V10 resolved
+    affirmatively on 2026-07-27: `disabledSkills` in `~/.copilot/settings.json`,
+    which the wrapper already manages, and a fresh Copilot process stops
+    listing the skill. Derived from the roster so the declaration and the
+    enforcement cannot drift.
+    """
+    copilot = set(load_default_skills(repo, "copilot"))
+    return [name for name in roster_union(repo) if name not in copilot]
+
+
 class Sync:
     def __init__(self, repo_root: Path, home: Path | None = None) -> None:
         self.repo = Path(repo_root)
@@ -284,6 +299,15 @@ class Sync:
                 fragment = dict(fragment)
                 fragment["skillOverrides"] = deep_merge(
                     fragment.get("skillOverrides", {}), overrides
+                )
+        if fragment_name == "copilot":
+            # Same drift, different directory: Copilot reads the shared
+            # ~/.agents/skills tree (SPEC §4.1 Tier B, unlocked by V10).
+            disabled = copilot_disabled_skills(self.repo)
+            if disabled:
+                fragment = dict(fragment)
+                fragment["disabledSkills"] = sorted(
+                    set(fragment.get("disabledSkills", [])) | set(disabled)
                 )
         if not fragment:
             return

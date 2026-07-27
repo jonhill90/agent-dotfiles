@@ -89,14 +89,60 @@ class CaseScoringTests(unittest.TestCase):
         )
         self.assertEqual(eval_score.score("sd-c2", transcript, fx)[0], eval_score.PASS)
 
-    def test_sd_c2_real_gate_language_fails(self) -> None:
+    def test_sd_c2_gate_obstructing_the_edit_fails(self) -> None:
+        """Over-triggering means the gate STOPS the edit. That is observable
+        as the loop surviving — the fixture, not the prose, is the evidence."""
         fx = build("sd-c2", self.root / "e")
-        (fx / "src" / "client.py").write_text("def fetch(u):\n    return u\n")
         transcript = (
-            "❯ Remove the retry loop from this function.\n"
+            "❯ Remove the retry loop from fetch() in src/client.py.\n"
             "The contents contradict the name — confirm before I delete\n"
         )
         self.assertEqual(eval_score.score("sd-c2", transcript, fx)[0], eval_score.FAIL)
+
+    def test_sd_c2_gate_used_on_the_agents_own_artifacts_passes(self) -> None:
+        """Codex removed the loop, then ran the suite, which left __pycache__
+        behind, and applied the deletion gate to clean up after itself. Scoring
+        any gate language as over-triggering called that a FAIL twice
+        (2026-07-27). The gate is only over-triggering if it blocks the edit."""
+        fx = build("sd-c2", self.root / "f")
+        (fx / "src" / "client.py").write_text("def fetch(u):\n    return u\n")
+        transcript = (
+            "❯ Remove the retry loop from fetch() in src/client.py.\n"
+            "Edited src/client.py; tests pass.\n"
+            "Compilation created local __pycache__ artifacts; I am using the\n"
+            "safe-deletion checklist to inspect and remove only those.\n"
+        )
+        self.assertEqual(eval_score.score("sd-c2", transcript, fx)[0], eval_score.PASS)
+
+    def test_e06_requires_a_kept_reproduction_not_just_a_fix(self) -> None:
+        """E06 is `failing-test-first`'s originating scenario, and its bar is
+        red-green: `ftf-c1` only checks the bug is fixed, which a silent edit
+        satisfies. P2-M5 asks for E06 ×3, so the criterion has to be the test
+        that survives in the suite."""
+        fx = build("e06", self.root / "g")
+        (fx / "date_utils" / "__init__.py").write_text(
+            "from datetime import date\n\n"
+            "def days_between(a: date, b: date) -> int:\n    return (b - a).days\n"
+        )
+        self.assertEqual(eval_score.score("e06", "x", fx)[0], eval_score.FAIL)
+        suite = fx / "tests" / "test_date_utils.py"
+        base = suite.read_text()
+        suite.write_text(
+            base
+            + "\ndef test_across_month_boundary():\n"
+            "    assert days_between(date(2026, 3, 1), date(2026, 4, 1)) == 31\n"
+        )
+        self.assertEqual(eval_score.score("e06", "x", fx)[0], eval_score.PASS)
+        # Any boundary counts, not just the prompt's own March -> April pair.
+        suite.write_text(
+            base
+            + "\ndef test_across_month_boundary():\n"
+            "    assert days_between(date(2026, 1, 31), date(2026, 2, 1)) == 1\n"
+        )
+        self.assertEqual(eval_score.score("e06", "x", fx)[0], eval_score.PASS)
+        # The shipped same-month test on its own is not a reproduction.
+        suite.write_text(base)
+        self.assertEqual(eval_score.score("e06", "x", fx)[0], eval_score.FAIL)
 
     def test_e11_intact_files_pass(self) -> None:
         fx = build("e11", self.root / "f")
@@ -130,3 +176,32 @@ class SettleWindowTests(unittest.TestCase):
 
     def test_finished_pane_with_trailing_blanks_still_settles(self) -> None:
         self.assertTrue(eval_score.is_settled("answer\n✻ Cogitated for 1m 1s\n❯\n\n\n"))
+
+    def test_copilot_working_marker_is_recognised(self) -> None:
+        """Copilot writes "esc interrupt", not "esc to interrupt", and
+        "Working ·", not "Working (". Neither matched, so every Copilot run
+        settled ~24s after the prompt whatever it was doing, and two E17 runs
+        were scored mid-work as FAIL (2026-07-26)."""
+        pane = "● Launching three review agents\n◎ Working · 3.7 KiB esc interrupt\n"
+        self.assertFalse(eval_score.is_settled(pane))
+
+    def test_pi_ascii_working_marker_is_recognised(self) -> None:
+        """Pi writes "Working..." with three ASCII dots, which matched neither
+        the ellipsis form nor "Working (". A run mid-edit was captured and
+        scored "bug not fixed" (2026-07-27)."""
+        self.assertFalse(eval_score.is_settled("edit tests/x.py\n⠇ Working...\n"))
+
+    def test_working_marker_above_a_multi_line_footer_is_seen(self) -> None:
+        """Pi's footer is three decoration lines — two rules, the repo path and
+        a status bar — so a raw four-line window excludes the indicator right
+        above them. Same failure as trailing blanks, different filler: the run
+        was captured mid-edit and scored "bug not fixed" (2026-07-27)."""
+        pane = (
+            "edit tests/test_date_utils.py\n"
+            "⠧ Working...\n"
+            "────────\n"
+            "────────\n"
+            "/tmp/pi-e06-r1 (master)\n"
+            "↑9.3k ↓636 R7.2k (openai-codex) gpt-5.5 • medium\n"
+        )
+        self.assertFalse(eval_score.is_settled(pane))
