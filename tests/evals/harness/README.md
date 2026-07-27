@@ -25,6 +25,7 @@ re-run.
 | Guard | Defect it prevents |
 |---|---|
 | `mkdir` lock, one orchestrator | two runs sharing session names and fixtures, overwriting each other |
+| completion = sustained absence of a working indicator, blank lines stripped first | a pane still working reading as settled |
 | completion = sustained absence of a live working indicator | scoring a run that had not finished |
 | unsettled or empty transcript ⇒ `INVALID` | a killed session reading as a skill FAIL |
 | declines CLI self-update prompts | a run that upgrades the machine instead of executing |
@@ -55,6 +56,22 @@ predecessor, but that is inference, not evidence. Expect to debug prompt
 delivery or completion detection on the first Copilot run, and treat an
 early surprise as a harness problem before concluding anything about a
 skill.
+
+## Clearing a stale lock
+
+`$EVAL_OUTDIR/.orchestrator.lock` survives a hard-killed run and every later
+run then refuses with `REFUSED: orchestrator lock held`. Before removing it,
+prove the orchestrator is gone — **not merely that no run is mid-flight**:
+
+```bash
+pgrep -fl 'harness/run.sh|<your batch script>'   # must be empty
+tmux -S "${TMPDIR:-/tmp}/tmux-agent-sockets/eval.sock" ls   # no server
+rmdir "${EVAL_OUTDIR:-${TMPDIR:-/tmp}/agent-dotfiles-evals}/.orchestrator.lock"
+```
+
+Checking only for `run.sh` children reports zero while a batch sits *between*
+its runs. Clearing on that basis started a second orchestrator on the same
+cell and left a 0-byte transcript beside an edited fixture (2026-07-26).
 
 ## Protocol
 
