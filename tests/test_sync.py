@@ -826,3 +826,28 @@ class ClaudeSkillOverrideTests(SyncTestCase):
             "github-cli\n\n[claude]\nprimer\n", encoding="utf-8"
         )
         self.assertEqual(sync.claude_skill_overrides(self.repo), {})
+
+
+class CopilotDisabledSkillsTests(SyncTestCase):
+    """Copilot reads the shared ~/.agents/skills directory, so a skill scoped
+    to Codex and Pi reaches Copilot too. V10 resolved affirmatively on
+    2026-07-27 — `disabledSkills` in ~/.copilot/settings.json, verified live —
+    and it is derived from the roster for the same reason Claude Code's is."""
+
+    def test_skills_excluded_from_copilot_are_disabled(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n\n[codex]\nsanity-check\n\n[pi]\nsanity-check\n", encoding="utf-8"
+        )
+        self.assertEqual(sync.copilot_disabled_skills(self.repo), ["sanity-check"])
+
+    def test_flat_roster_disables_nothing(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\nmemory-conventions\n", encoding="utf-8"
+        )
+        self.assertEqual(sync.copilot_disabled_skills(self.repo), [])
+
+    def test_copilot_scoped_skills_are_not_disabled(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n\n[copilot]\nsanity-check\n", encoding="utf-8"
+        )
+        self.assertEqual(sync.copilot_disabled_skills(self.repo), [])
