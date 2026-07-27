@@ -9,7 +9,9 @@ other managed layers. Product requirements live in `docs/PRD.md`; the
 technical design in `docs/SPEC.md`.
 
 This file is the shared repository policy. `CLAUDE.md` and
-`.github/copilot-instructions.md` point here for harness compatibility.
+`.github/copilot-instructions.md` are committed **symlinks** to it, so each
+harness reads its own filename and there is one source. Edit this file; the
+other two follow with no sync step.
 
 ## Product Boundaries
 
@@ -37,10 +39,12 @@ instructions/
   overlays/              # per-harness additions, wrapper-projected
 agents/
 hooks/                   # canonical hook scripts, harness-agnostic
-settings/                # wrapper-owned config fragments (claude, pi, mcp)
+settings/                # wrapper-owned config fragments (claude, copilot, pi, mcp)
+  default-skills.txt     # per-harness skill roster (SPEC §4.1); sync writes
+                         # the exclusions for Claude Code and Copilot
 docs/
 scripts/
-tests/                   # unittest suite + evals/ (scenarios, results)
+tests/                   # unittest suite + evals/ (scenarios, harness, results)
 ```
 
 Projection is installer-owned (`apm install -g` + `scripts/sync.py apply`).

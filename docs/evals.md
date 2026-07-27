@@ -23,6 +23,62 @@ file. One component owns each loop stage; overlapping components do not remain
 installed “just in case.” Tool skills use the concrete checks in
 `tests/evals/acceptance/` instead of loop scenarios.
 
+## Running one
+
+`tests/evals/harness/run.sh <cli> <case> <tag>` drives one interactive run
+end to end: it builds a fresh git-backed fixture, launches the CLI under
+tmux, sends the prompt uncoached, waits for the run to settle, keeps the
+transcript, and scores it.
+
+```bash
+tests/evals/harness/run.sh copilot e11 cop-e11-1
+```
+
+| Case | Scenario |
+|---|---|
+| `e11` | `safe-deletion` originating scenario — a misleadingly named directory |
+| `e06` | `failing-test-first` originating scenario, at the red-green bar |
+| `sd-c1` / `sd-c2` | `safe-deletion` counter-scenarios: legitimate path, null trigger |
+| `ftf-c1` / `ftf-c2` | `failing-test-first` counter-scenarios: legitimate path, null trigger |
+| `e17` | delegation: three reviewers and a majority vote, with a test that settles it |
+| `e18` / `e18-sentence` | second opinion, baseline and sentence rung |
+
+`ftf-c1` checks only that the bug is fixed; `e06` checks the reproduction
+survives in the suite. They share a fixture and a prompt and answer
+different questions — do not substitute one for the other.
+
+It is **single-instance by design**: two orchestrators share tmux session
+names and fixture directories and silently overwrite each other's results.
+Before clearing the lock, check for the orchestrator script itself, not just
+its children — a batch between runs has no live child.
+
+## Scoring is code, and every rule is a scar
+
+`scripts/eval_score.py` holds the criteria. Where a rule exists because a
+verdict was wrong, the comment names that verdict — about half the branches
+carry such a scar, and the rest encode the criterion plainly.
+
+**Every false verdict so far came from the harness; none came from a
+skill.** They cluster in three places: reading a pane (an indicator that
+did not match the harness's spelling, an answered dialog still matching
+from scrollback, a footer pushing the live line out of the window), a
+matcher too narrow or too broad for what an agent actually wrote, and the
+environment (two orchestrators on one cell, a package manager breaking a
+runtime mid-session). Several pointed at a *worse* verdict than the truth
+and would have narrowed a working skill had they been believed.
+
+Each results file itemizes the defects that batch produced. Do not trust
+the running totals in their headers — they were renumbered across files
+and do not reconcile; the per-file lists are the record.
+
+Two habits follow, and they are not optional:
+
+- **Rebuild verdicts from transcripts and fixture state, never from
+  `summary.txt`.** A summary is a cache and inherits the staleness of what
+  it caches; it has gone stale three times.
+- **A verdict whose evidence is missing is not a verdict.** An empty
+  transcript and a `FAIL` cannot both be true of one run.
+
 ## Protocol
 
 - Start a fresh session in the named harness/model pair and run the scenario
@@ -62,6 +118,12 @@ root-instruction file size. Run `python3 scripts/measure_e15.py`, which reads
 the deployed tree and encodes the plugin counting rules (SPEC §6); measuring
 by hand under-counts plugins, which is how the 2026-07-26 matrix reported
 Claude Code 87 tokens light.
+
+A skill on disk is not necessarily in the model's context. Claude Code and
+Copilot are both sent the union and then told which entries to drop
+(`skillOverrides`, `disabledSkills`), so the script subtracts what each
+harness has been told not to load. Counting the directory instead reported
+both harnesses 81 tokens heavy on 2026-07-27.
 
 ## New-machine acceptance (E16)
 
