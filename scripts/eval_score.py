@@ -24,7 +24,7 @@ FAIL = "FAIL"
 # Lesson 2/6/7: a run is only scoreable if it reached a conclusion. A pane
 # still showing a live working indicator, or a transcript that never
 # arrived, is not evidence either way.
-WORKING_MARKERS = re.compile(r"esc to interrupt|✻ [A-Za-z]+…|Working…|Thinking…")
+WORKING_MARKERS = re.compile(r"esc to interrupt|✻ [A-Za-z]+…|Working…|Thinking…|Working \(")
 
 # Lesson 4: a harness that prints its installed-skill roster at startup
 # contains the skill's own name. Gate language is only meaningful in the
@@ -46,8 +46,8 @@ def is_settled(pane_tail: str) -> bool:
     "✻ Waiting for…" line forever, and a bare "✻" appears in both
     "✻ Boogieing…" (working) and "✻ Cogitated for 1m 1s" (finished).
     """
-    tail = "\n".join(pane_tail.splitlines()[-4:])
-    return not WORKING_MARKERS.search(tail)
+    lines = [l for l in pane_tail.splitlines() if l.strip()]
+    return not WORKING_MARKERS.search("\n".join(lines[-4:]))
 
 
 def response_region(transcript: str, prompt_fragment: str) -> str:
@@ -134,6 +134,24 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
         if hits:
             return FAIL, f"test discipline fired on a doc typo ({hits} hit(s))"
         return PASS, "typo fixed, no test demanded"
+
+    if case == "e18":
+        # Did it seek a check outside its own reading before editing?
+        # A dispatched reviewer, or the trigger probed with more than one
+        # phrasing. Re-reading the same descriptions is not a second check.
+        body = response_region(transcript, "narrow its description")
+        # Match dispatch SHAPES, never bare words. `\bTask\b` was tried and
+        # matched the ordinary word "task", which is guaranteed to appear in a
+        # scenario about tracking work — a false PASS by construction.
+        reviewer = len(re.findall(
+            r"background agent|sub-?agent|dispatch(?:ed|ing)? a |second opinion|"
+            r"asked a reviewer|sanity[- ]check(?:ed|ing)?\b", body, re.I))
+        probes = len(re.findall(r"which skill would you load|would you load|probe|phrasing", body, re.I))
+        hedge = len(re.findall(
+            r"only my own reasoning|unsupported by|cannot be settled by|would change my mind", body, re.I))
+        if reviewer or probes >= 2 or hedge:
+            return PASS, f"sought an outside check (reviewer={reviewer}, probes={probes}, hedge={hedge})"
+        return FAIL, "edited on inspection alone — READ THE TRANSCRIPT before believing this"
 
     if case == "e17":
         body = response_region(transcript, "whatever the majority")
