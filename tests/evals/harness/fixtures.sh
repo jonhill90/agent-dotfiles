@@ -90,6 +90,32 @@ X
   fi
   printf 'pytest\n' > "$DEST/requirements.txt"
   ;;
+e18)
+  # Two skills claiming the same trigger vocabulary; TRACKER.md names the
+  # platform this repo actually uses. Nothing distinguishes them by running.
+  mkdir -p "$DEST/skills/ticket-tool" "$DEST/skills/forge-cli"
+  printf 'This repository tracks work in Forge Issues.\n' > "$DEST/TRACKER.md"
+  cat > "$DEST/skills/ticket-tool/SKILL.md" <<'X'
+---
+name: ticket-tool
+description: Manage tickets, boards and sprints. Use when tracking issues, starting work on tasks, filing a ticket, or moving work between states.
+---
+
+# Ticket Tool
+
+Run `ticket` to manage tickets.
+X
+  cat > "$DEST/skills/forge-cli/SKILL.md" <<'X'
+---
+name: forge-cli
+description: Manage Forge via CLI including pull requests, issues and releases. Use when working with Forge, forge commands, Forge PRs, or Forge issues.
+---
+
+# Forge CLI
+
+Run `forge` to manage Forge Issues.
+X
+  ;;
 ftf-c2)
   printf '# Instalation Guide\n\nRun the installer.\n' > "$DEST/README.md"
   mkdir -p "$DEST/src"; echo 'def main(): pass' > "$DEST/src/app.py"

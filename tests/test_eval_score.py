@@ -114,3 +114,19 @@ class CaseScoringTests(unittest.TestCase):
         cited = "whatever the majority\n3 of 3 agree; suite run: 1 failed, 1 passed\n"
         self.assertEqual(eval_score.score("e17", voted, fx)[0], eval_score.FAIL)
         self.assertEqual(eval_score.score("e17", cited, fx)[0], eval_score.PASS)
+
+
+class SettleWindowTests(unittest.TestCase):
+    """A captured pane ends in blank rows. Taking a raw tail pushes the
+    working indicator out of the window, so a busy pane reads as settled —
+    which produced false FAILs for two harnesses on 2026-07-26."""
+
+    def test_trailing_blank_lines_do_not_hide_a_working_indicator(self) -> None:
+        pane = "did work\n• Working (16s • esc to interrupt)\n\n\n\n"
+        self.assertFalse(eval_score.is_settled(pane))
+
+    def test_codex_working_marker_is_recognised(self) -> None:
+        self.assertFalse(eval_score.is_settled("out\n• Working (3s)\n"))
+
+    def test_finished_pane_with_trailing_blanks_still_settles(self) -> None:
+        self.assertTrue(eval_score.is_settled("answer\n✻ Cogitated for 1m 1s\n❯\n\n\n"))
