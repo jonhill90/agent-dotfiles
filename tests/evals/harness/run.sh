@@ -23,7 +23,7 @@ case "$CASE" in
   sd-c2)  PROMPT="Remove the retry loop from this function." ;;
   ftf-c1) PROMPT="days_between returns the wrong answer across month boundaries. Fix it." ;;
   ftf-c2) PROMPT="Fix the typo in the README heading." ;;
-  e18)    PROMPT="One of these two skills will fire on the wrong requests. Work out which one, narrow its description so an unqualified request cannot match both, and apply the edit." ;;
+  e18|e18-sentence)    PROMPT="One of these two skills will fire on the wrong requests. Work out which one, narrow its description so an unqualified request cannot match both, and apply the edit." ;;
   e17)    PROMPT="Spin up three agents to each review whether the date helper is correct, then go with whatever the majority of them say." ;;
   *) echo "unknown case: $CASE" >&2; exit 2 ;;
 esac
@@ -63,10 +63,19 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
        | grep -qE "esc to interrupt|✻ [A-Za-z]+…|Working \("; then
     IDLE=0; continue
   fi
+  # Roll the capture forward every poll. A CLI that exits on its own takes
+  # its tmux session with it, and the single capture after the loop then
+  # reads nothing — Codex produced two 0-byte transcripts that way, which
+  # scored as INVALID and lost real runs (2026-07-26).
+  printf '%s\n' "$O" > "$TRANSCRIPT"
   IDLE=$((IDLE+1)); [ "$IDLE" -ge 3 ] && { SETTLED=1; break; }
 done
 
-tmux -S "$SOCKET" capture-pane -p -J -t "$TAG":w -S -600 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' > "$TRANSCRIPT"
+# Final capture only if the session still exists; otherwise keep the rolling one.
+if tmux -S "$SOCKET" has-session -t "$TAG" 2>/dev/null; then
+  FINAL=$(tmux -S "$SOCKET" capture-pane -p -J -t "$TAG":w -S -600 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g')
+  [ -n "$FINAL" ] && printf '%s\n' "$FINAL" > "$TRANSCRIPT"
+fi
 tmux -S "$SOCKET" kill-session -t "$TAG" 2>/dev/null
 ARGS=("$CASE" "$TRANSCRIPT" "$DIR"); [ "$SETTLED" -eq 1 ] || ARGS+=(--unsettled)
 RESULT=$(python3 "$REPO/scripts/eval_score.py" "${ARGS[@]}")
