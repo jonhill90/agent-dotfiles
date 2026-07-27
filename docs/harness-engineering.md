@@ -99,6 +99,12 @@ degradation path either way.
     reliably bind guardrails (E11 fails with the gate provably in
     context); small focused skills bind where instructions do not
     (`safe-deletion`, `failing-test-first` — both eval-adopted).
+  - **Confirmed across three harnesses 2026-07-26** by the E18 ladder: an
+    instruction sentence bound on Claude Code (PASS ×2), flapped on Codex,
+    and failed on Pi, which read the policy nine times in one run and edited
+    on its own reasoning anyway. Instruction-binding is per-harness, not
+    universal, and the per-harness roster (§4.1) is how the difference is
+    paid for.
   - Copilot's `Auto` model routing changes the effective model per run
     and breaks behavioral consistency; the managed settings fragment
     pins the model.

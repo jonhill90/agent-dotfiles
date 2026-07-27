@@ -57,6 +57,7 @@ DEFAULT_APM_SKILLS = {
     "memory-conventions",
     "obsidian",
     "safe-deletion",
+    "sanity-check",
     "tmux",
 }
 # Retired at M3: installer-owned projection (APM + scripts/sync.py)
