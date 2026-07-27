@@ -130,6 +130,19 @@ def neutral_union(repo: Path) -> list[str]:
     return sorted(names)
 
 
+def claude_skill_overrides(repo: Path) -> dict[str, str]:
+    """`skillOverrides` entries that enforce Claude Code's resolved roster.
+
+    APM installs the union into `~/.claude/skills` and keeps ownership of it
+    (SPEC §4.1), so a skill scoped away from Claude Code still reaches the
+    model's list. V9 resolved the Tier B lever — `skillOverrides` with a value
+    of `off` — and this derives it from the roster so the declaration and the
+    enforcement cannot drift.
+    """
+    claude = set(load_default_skills(repo, "claude"))
+    return {name: "off" for name in roster_union(repo) if name not in claude}
+
+
 class Sync:
     def __init__(self, repo_root: Path, home: Path | None = None) -> None:
         self.repo = Path(repo_root)
@@ -262,6 +275,16 @@ class Sync:
         if not fragment_file.is_file():
             return
         fragment = json.loads(fragment_file.read_text(encoding="utf-8"))
+        if fragment_name == "claude":
+            # Enforce Claude Code's resolved roster. APM installs the union
+            # into ~/.claude/skills, so scoping is only declared until this
+            # writes it (SPEC §4.1 Tier B, unlocked by V9).
+            overrides = claude_skill_overrides(self.repo)
+            if overrides:
+                fragment = dict(fragment)
+                fragment["skillOverrides"] = deep_merge(
+                    fragment.get("skillOverrides", {}), overrides
+                )
         if not fragment:
             return
 

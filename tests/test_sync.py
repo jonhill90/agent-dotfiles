@@ -801,3 +801,28 @@ class PreexistingNeutralLinkTests(SyncTestCase):
         check = names["neutral-roster-drift"]
         self.assertFalse(check[0])
         self.assertIn("primer", check[1])
+
+
+class ClaudeSkillOverrideTests(SyncTestCase):
+    """APM installs the union into ~/.claude/skills, so a skill scoped away
+    from Claude Code still reaches it. V9 resolved the Tier B lever
+    (`skillOverrides`); the wrapper derives it from the roster so the two
+    cannot drift."""
+
+    def test_skills_excluded_from_claude_are_turned_off(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n\n[codex]\nsanity-check\n\n[pi]\nsanity-check\n", encoding="utf-8"
+        )
+        self.assertEqual(sync.claude_skill_overrides(self.repo), {"sanity-check": "off"})
+
+    def test_flat_roster_produces_no_overrides(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\nmemory-conventions\n", encoding="utf-8"
+        )
+        self.assertEqual(sync.claude_skill_overrides(self.repo), {})
+
+    def test_claude_scoped_skills_are_not_turned_off(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n\n[claude]\nprimer\n", encoding="utf-8"
+        )
+        self.assertEqual(sync.claude_skill_overrides(self.repo), {})
