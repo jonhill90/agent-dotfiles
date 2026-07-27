@@ -28,7 +28,10 @@ verify → complete.
   document the tradeoff explicitly. Run the relevant checks before any
   success claim, and paste their actual output in the completion
   report — a claim without the command's output does not count as
-  verified.
+  verified. When a conclusion rests only on your own reasoning and no
+  command can settle it, get a second opinion before acting — dispatch a
+  reviewer given a lens it can fail on, or test the question a different
+  way. Say which you did.
 - **Complete.** Report outcomes faithfully: failures with their output,
   skipped steps named as skipped. Leave a handoff a cold session could
   resume from.

@@ -6,3 +6,12 @@ memory-conventions
 obsidian
 safe-deletion
 tmux
+
+# Scoped: the second-opinion sentence binds on Claude Code but flaps on
+# Codex and fails on Pi (E18, 2026-07-26). The skill ships only where
+# instructions do not bind.
+[codex]
+sanity-check
+
+[pi]
+sanity-check
