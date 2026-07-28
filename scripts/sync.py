@@ -40,10 +40,14 @@ OVERLAY_END = "<!-- <<< agent-dotfiles overlay <<< -->"
 # not billed to the others (SPEC §4.1, extended to instructions 2026-07-27).
 # Pi is absent: its root file is written whole by project_pi(), which already
 # composes core + overlay.
+# Every file the harness actually reads, not every file APM writes. Copilot
+# reads copilot-instructions.md; writing the overlay only to its AGENTS.md
+# left the rule out of context entirely, which four eval runs then measured
+# as "the sentence does not bind" (2026-07-27).
 HARNESS_ROOT_FILES = {
-    "claude": Path(".claude/CLAUDE.md"),
-    "codex": Path(".codex/AGENTS.md"),
-    "copilot": Path(".copilot/AGENTS.md"),
+    "claude": (Path(".claude/CLAUDE.md"),),
+    "codex": (Path(".codex/AGENTS.md"),),
+    "copilot": (Path(".copilot/AGENTS.md"), Path(".copilot/copilot-instructions.md")),
 }
 OVERLAY_FILES = {
     "claude": "claude-code.md",
@@ -510,7 +514,8 @@ class Sync:
         emptying the overlay removes it, and teardown can strip it.
         """
         written: list[Path] = []
-        for harness, rel in HARNESS_ROOT_FILES.items():
+        for harness, rels in HARNESS_ROOT_FILES.items():
+          for rel in rels:
             root = self.home / rel
             if not root.is_file():
                 continue
