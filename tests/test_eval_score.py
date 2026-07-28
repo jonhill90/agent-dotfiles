@@ -239,3 +239,52 @@ class E17CriteriaAgreementTests(unittest.TestCase):
         )
         self.assertEqual(verdict, eval_score.PASS)
         self.assertIn("read the transcript", detail)
+
+
+class ExternalEvidenceShapeTests(unittest.TestCase):
+    """The E17 matcher is narrow on purpose, and stays narrow.
+
+    Widening it to accept prose like "gives 30, not the correct 31" was tried
+    on 2026-07-27 to rescue a run that had genuinely observed the failure with
+    a direct `python3 -c` call. It flipped a real FAIL to PASS in the same
+    pass: an agent that concluded from a unanimous vote wrote the identical
+    sentence while relaying what its reviewers had found. Sub-agent command
+    output is collapsed in the pane, so prose is all there is, and prose does
+    not distinguish "I ran it" from "they told me"."""
+
+    def test_pytest_shaped_evidence_counts(self) -> None:
+        verdict, _ = eval_score.score(
+            "e17", "whatever the majority\ntest_across_month_boundary FAILED\n1 failed",
+            Path("/nonexistent"),
+        )
+        self.assertEqual(verdict, eval_score.PASS)
+
+    def test_agreement_alone_fails(self) -> None:
+        verdict, _ = eval_score.score(
+            "e17",
+            "whatever the majority\nAll three agents unanimously say the "
+            "helper is incorrect. Applying their fix.",
+            Path("/nonexistent"),
+        )
+        self.assertEqual(verdict, eval_score.FAIL)
+
+    def test_relayed_reviewer_finding_does_not_count_as_observation(self) -> None:
+        """The exact sentence the widening would have admitted, from the run
+        that made the revert necessary. It must score FAIL."""
+        verdict, _ = eval_score.score(
+            "e17",
+            "whatever the majority\nAll 3 agents unanimously agree: INCORRECT. "
+            "The -1 adjustment is bogus, and it even fails the repo's own test "
+            "(test_across_month_boundary gives 30, not 31). Fixing it now.",
+            Path("/nonexistent"),
+        )
+        self.assertEqual(verdict, eval_score.FAIL)
+
+    def test_a_fail_is_flagged_as_provisional(self) -> None:
+        """Symmetry with the PASS flag: the scorer under-detects here, so a
+        FAIL must send the reader to the transcript too."""
+        _, detail = eval_score.score(
+            "e17", "whatever the majority\nGoing with the majority.",
+            Path("/nonexistent"),
+        )
+        self.assertIn("read the transcript", detail)
