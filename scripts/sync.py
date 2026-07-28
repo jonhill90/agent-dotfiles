@@ -29,6 +29,8 @@ NEUTRAL_HARNESSES = ("pi", "codex", "copilot")
 ABSENT = "__ABSENT__"
 CODEX_MCP_BEGIN = "# >>> agent-dotfiles mcp (managed; do not edit) >>>"
 CODEX_MCP_END = "# <<< agent-dotfiles mcp <<<"
+CODEX_SKILLS_BEGIN = "# >>> agent-dotfiles skills (managed; do not edit) >>>"
+CODEX_SKILLS_END = "# <<< agent-dotfiles skills <<<"
 
 # Harnesses whose root files the dotfiles intentionally manage.
 MANAGED_ROOT_FILES = (
@@ -156,6 +158,32 @@ def copilot_disabled_skills(repo: Path) -> list[str]:
     """
     copilot = set(load_default_skills(repo, "copilot"))
     return [name for name in roster_union(repo) if name not in copilot]
+
+
+def codex_disabled_skills(repo: Path) -> list[str]:
+    """Skill names Codex's resolved roster excludes.
+
+    Codex reads the shared `~/.agents/skills` tree, so Tier A cannot separate
+    it from Copilot and Pi. Its Tier B lever is `[[skills.config]]` with
+    `enabled = false`. Personal skills are keyed by bare name; plugin skills
+    are namespaced (`github:yeet`), which is why the managed block is written
+    between markers and the user's own entries are left alone.
+    """
+    codex = set(load_default_skills(repo, "codex"))
+    return [name for name in roster_union(repo) if name not in codex]
+
+
+def pi_disabled_skills(repo: Path) -> list[str]:
+    """Denylist entries enforcing Pi's resolved roster.
+
+    Pi's `skills` key takes paths, and a leading `-` removes one.
+    """
+    pi = set(load_default_skills(repo, "pi"))
+    return [
+        f"-skills/{name}/SKILL.md"
+        for name in roster_union(repo)
+        if name not in pi
+    ]
 
 
 class Sync:
@@ -300,6 +328,15 @@ class Sync:
                 fragment["skillOverrides"] = deep_merge(
                     fragment.get("skillOverrides", {}), overrides
                 )
+        if fragment_name == "pi":
+            # Pi reads the shared ~/.agents/skills tree too (SPEC §4.1 Tier B,
+            # verified under V9). Entries are paths, not names.
+            denied = pi_disabled_skills(self.repo)
+            if denied:
+                fragment = dict(fragment)
+                fragment["skills"] = sorted(
+                    set(fragment.get("skills", [])) | set(denied)
+                )
         if fragment_name == "copilot":
             # Same drift, different directory: Copilot reads the shared
             # ~/.agents/skills tree (SPEC §4.1 Tier B, unlocked by V10).
@@ -415,6 +452,43 @@ class Sync:
         if new != text:
             config.write_text(new, encoding="utf-8")
 
+    @staticmethod
+    def _strip_codex_skills_block(text: str) -> str:
+        pattern = re.compile(
+            r"\n*" + re.escape(CODEX_SKILLS_BEGIN) + r".*?"
+            + re.escape(CODEX_SKILLS_END) + r"\n?",
+            re.S,
+        )
+        return pattern.sub("", text)
+
+    def merge_codex_skills(self) -> None:
+        """Enforce Codex's resolved roster as a managed `[[skills.config]]`
+        block in ~/.codex/config.toml (SPEC §4.1 Tier B).
+
+        Marker-delimited because the same table holds the user's own plugin
+        disables; stripping and rewriting only the managed span leaves those
+        untouched and makes the block reversible on teardown.
+        """
+        config = self.home / ".codex" / "config.toml"
+        if not config.parent.is_dir():
+            return
+        text = config.read_text(encoding="utf-8") if config.is_file() else ""
+        base = self._strip_codex_skills_block(text)
+
+        lines: list[str] = []
+        for name in codex_disabled_skills(self.repo):
+            lines.extend(["[[skills.config]]", f'name = "{name}"',
+                          "enabled = false", ""])
+        if lines:
+            block = "\n".join([CODEX_SKILLS_BEGIN, *lines[:-1], CODEX_SKILLS_END])
+            new = (base.rstrip("\n") + "\n\n" + block + "\n").lstrip("\n")
+            self.state["codex_skills"] = str(config)
+        else:
+            new = base
+            self.state["codex_skills"] = None
+        if new != text:
+            config.write_text(new, encoding="utf-8")
+
     # -- commands ---------------------------------------------------------
 
     def apply(self, no_apm: bool = False) -> int:
@@ -462,6 +536,7 @@ class Sync:
                 "copilot", self.home / ".copilot" / "settings.json"
             )
         self.merge_mcp()
+        self.merge_codex_skills()
         self.merge_codex_mcp()
         self.merge_copilot_mcp()
         self.state["repo"] = str(self.repo)
@@ -731,6 +806,15 @@ class Sync:
                 encoding="utf-8",
             )
         self.state["codex_mcp"] = None
+
+        codex_skills = self.state.get("codex_skills")
+        if codex_skills and Path(codex_skills).is_file():
+            path = Path(codex_skills)
+            path.write_text(
+                self._strip_codex_skills_block(path.read_text(encoding="utf-8")),
+                encoding="utf-8",
+            )
+        self.state["codex_skills"] = None
 
         if not no_apm and self.state.get("repo"):
             subprocess.run(

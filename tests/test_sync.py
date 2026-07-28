@@ -851,3 +851,73 @@ class CopilotDisabledSkillsTests(SyncTestCase):
             "github-cli\n\n[copilot]\nsanity-check\n", encoding="utf-8"
         )
         self.assertEqual(sync.copilot_disabled_skills(self.repo), [])
+
+
+class CodexSkillDisableTests(SyncTestCase):
+    """Codex's Tier B lever is `[[skills.config]]` with `enabled = false` in
+    ~/.codex/config.toml, keyed by the bare skill name for personal skills
+    (plugin skills are namespaced, e.g. `github:yeet`). Verified live on
+    2026-07-27: a fresh `codex exec` stopped listing the disabled skill."""
+
+    def test_excluded_skills_render_as_disabled_entries(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n\n[pi]\nsanity-check\n", encoding="utf-8"
+        )
+        self.assertEqual(sync.codex_disabled_skills(self.repo), ["sanity-check"])
+
+    def test_codex_scoped_skills_are_not_disabled(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n\n[codex]\nsanity-check\n", encoding="utf-8"
+        )
+        self.assertEqual(sync.codex_disabled_skills(self.repo), [])
+
+    def test_block_is_written_and_leaves_foreign_entries_alone(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n\n[pi]\nsanity-check\n", encoding="utf-8"
+        )
+        codex = self.home / ".codex"
+        codex.mkdir(parents=True, exist_ok=True)
+        config = codex / "config.toml"
+        config.write_text(
+            '[[skills.config]]\nname = "github:yeet"\nenabled = false\n',
+            encoding="utf-8",
+        )
+        sync.Sync(self.repo, self.home).merge_codex_skills()
+        text = config.read_text(encoding="utf-8")
+        self.assertIn('name = "sanity-check"', text)
+        self.assertIn('name = "github:yeet"', text)  # user's own entry survives
+        self.assertIn(sync.CODEX_SKILLS_BEGIN, text)
+
+    def test_block_is_removed_when_nothing_is_excluded(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n\n[pi]\nsanity-check\n", encoding="utf-8"
+        )
+        codex = self.home / ".codex"
+        codex.mkdir(parents=True, exist_ok=True)
+        s = sync.Sync(self.repo, self.home)
+        s.merge_codex_skills()
+        self.assertIn("sanity-check", (codex / "config.toml").read_text(encoding="utf-8"))
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\nsanity-check\n", encoding="utf-8"
+        )
+        sync.Sync(self.repo, self.home).merge_codex_skills()
+        self.assertNotIn("sanity-check", (codex / "config.toml").read_text(encoding="utf-8"))
+
+
+class PiSkillDenylistTests(SyncTestCase):
+    """Pi's Tier B lever is a `skills` denylist in ~/.pi/agent/settings.json,
+    whose entries are paths: `-skills/<name>/SKILL.md`."""
+
+    def test_excluded_skills_become_denylist_paths(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n\n[codex]\nsanity-check\n", encoding="utf-8"
+        )
+        self.assertEqual(
+            sync.pi_disabled_skills(self.repo), ["-skills/sanity-check/SKILL.md"]
+        )
+
+    def test_pi_scoped_skills_are_not_denied(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n\n[pi]\nsanity-check\n", encoding="utf-8"
+        )
+        self.assertEqual(sync.pi_disabled_skills(self.repo), [])
