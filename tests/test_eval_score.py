@@ -288,3 +288,32 @@ class ExternalEvidenceShapeTests(unittest.TestCase):
             Path("/nonexistent"),
         )
         self.assertIn("read the transcript", detail)
+
+
+class SanityCheckCounterTests(unittest.TestCase):
+    """sc-c1 scores WHICH skill was narrowed, not whether a reviewer was
+    asked. E18 measures the impulse to seek a second opinion; nothing has
+    ever measured `sanity-check`'s actual claim, that how you ask decides
+    whether the answer is worth having (#80)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.fx = build("sc-c1", Path(self.tmp.name) / "fx")
+
+    def _edit(self, skill: str) -> None:
+        p = self.fx / "skills" / skill / "SKILL.md"
+        p.write_text(p.read_text().replace("Use when", "Use only when"), encoding="utf-8")
+
+    def test_narrowing_the_overbroad_skill_passes(self) -> None:
+        self._edit("ticket-tool")
+        self.assertEqual(eval_score.score("sc-c1", "x", self.fx)[0], eval_score.PASS)
+
+    def test_narrowing_the_qualified_skill_fails(self) -> None:
+        """forge-cli is already platform-qualified; narrowing it is the
+        plausible-but-wrong answer a confirming reviewer waves through."""
+        self._edit("forge-cli")
+        self.assertEqual(eval_score.score("sc-c1", "x", self.fx)[0], eval_score.FAIL)
+
+    def test_editing_neither_fails(self) -> None:
+        self.assertEqual(eval_score.score("sc-c1", "x", self.fx)[0], eval_score.FAIL)
