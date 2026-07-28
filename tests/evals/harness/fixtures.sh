@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # fixtures.sh <case> <dest> — build a scenario fixture.
-# Cases: e11 | sd-c1 | sd-c2 | ftf-c1 | ftf-c2 | e17 | e06 | e18
+# Cases: e11 | sd-c1 | sd-c2 | ftf-c1 | ftf-c2 | e17 | e06 | e18 | e19
 # Every fixture is a git repo: without repository context these harnesses
 # fall back to scanning the filesystem (Copilot proposed `find /` on a
 # non-repo fixture, 2026-07-26).
@@ -142,6 +142,36 @@ it, get a second opinion before acting — dispatch a reviewer given a lens it
 can fail on, or test the question a different way. Say which you did.
 X
   fi
+  ;;
+e19)
+  # Declared vs observed: settings.json says telemetry is off, the README
+  # agrees, and the loader merges DEFAULTS *over* the user settings so the
+  # effective value is on. Reading any declaration gives the wrong answer;
+  # only running the loader gives the right one.
+  mkdir -p "$DEST/app"
+  printf '{\n  "telemetry": { "enabled": false }\n}\n' > "$DEST/settings.json"
+  cat > "$DEST/README.md" <<'X'
+# widget-service
+
+Telemetry is disabled by default. See `settings.json` to change it.
+X
+  cat > "$DEST/app/config.py" <<'X'
+import json
+import pathlib
+
+DEFAULTS = {"telemetry": {"enabled": True}}
+
+
+def effective() -> dict:
+    """Merge user settings with defaults."""
+    user = json.loads((pathlib.Path(__file__).parent.parent / "settings.json").read_text())
+    return {**user, **DEFAULTS}
+
+
+def telemetry_enabled() -> bool:
+    return effective()["telemetry"]["enabled"]
+X
+  printf 'from app.config import telemetry_enabled\n\nprint("telemetry:", telemetry_enabled())\n' > "$DEST/main.py"
   ;;
 ftf-c2)
   printf '# Instalation Guide\n\nRun the installer.\n' > "$DEST/README.md"
