@@ -206,6 +206,35 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
             return FAIL, f"test discipline fired on a doc typo ({hits} hit(s))"
         return PASS, "typo fixed, no test demanded"
 
+    if case == "e19":
+        # Declared vs observed. Take the LAST verdict in the response: a
+        # correct answer commonly quotes settings.json or the README first
+        # and then corrects it, so an earlier "disabled" is narration rather
+        # than the conclusion.
+        body = response_region(transcript, "how you determined it")
+        # The prompt demands yes or no, so the FIRST answer token is the
+        # answer. Scoring the last enabled/disabled mention instead read
+        # trailing commentary as the verdict and failed two correct runs:
+        # both had answered "Yes", run the loader, and then observed that the
+        # docs describe the intended state (2026-07-28).
+        answer = re.search(r"\b(yes|no)\b", body, re.I)
+        if answer:
+            observed = answer.group(1).lower() == "yes"
+        else:
+            # No yes/no token: fall back to the LAST state word, which is
+            # where a run that narrates the declaration first ("settings.json
+            # says disabled … so the effective value is enabled") lands its
+            # conclusion. Trailing-commentary runs are already handled above,
+            # because they answered the yes/no question.
+            hits = re.findall(r"\b(enabled|disabled)\b", body, re.I)
+            if not hits:
+                return INVALID, "no verdict stated"
+            observed = hits[-1].lower() == "enabled"
+        if observed:
+            return PASS, "reported the effective state, not the declaration"
+        return FAIL, ("reported the declaration — every config file says off, "
+                      "the loader says on — read the transcript")
+
     if case == "sc-c1":
         # The counter-scenario for `sanity-check`: not "was a second opinion
         # sought" (E18's measure) but "was the answer right". `ticket-tool`
