@@ -2,6 +2,13 @@
 # run.sh <cli> <case> <tag> — one interactive eval run, scored.
 #
 #   tests/evals/harness/run.sh copilot e11 cop-e11-1
+#   EVAL_ARM=bare tests/evals/harness/run.sh copilot e18 cop-e18-base-1
+#
+# EVAL_ARM=bare runs the CLI with its user-scope instructions and skills
+# moved aside, which is how the §4 ladder gets an "absent" arm once a
+# candidate is already deployed. The stash is GLOBAL for the length of the
+# run — every process on the machine sees the stripped harness — and is
+# restored by the EXIT trap even on interrupt. See scripts/eval_arm.py.
 #
 # Cases: e11 | e06 | sd-c1 | sd-c2 | ftf-c1 | ftf-c2 | e17 | e18 | e18-sentence
 # Verdicts are written to $OUTDIR/summary.txt; every transcript is kept.
@@ -12,7 +19,17 @@ HERE="$(cd "$(dirname "$0")" && pwd)"; REPO="$(cd "$HERE/../../.." && pwd)"
 OUTDIR="${EVAL_OUTDIR:-${TMPDIR:-/tmp}/agent-dotfiles-evals}"; mkdir -p "$OUTDIR"
 LOCK="$OUTDIR/.orchestrator.lock"
 mkdir "$LOCK" 2>/dev/null || { echo "REFUSED: orchestrator lock held ($LOCK)" >&2; exit 3; }
-trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+ARM="${EVAL_ARM:-deployed}"; ARM_STATE="$OUTDIR/.arm-state.json"
+# Restore before releasing the lock: the next run must not start against a
+# stripped harness, and an interrupt must not leave one behind.
+cleanup() {
+  if [ "$ARM" != "deployed" ]; then
+    python3 "$REPO/scripts/eval_arm.py" restore "$ARM_STATE" || \
+      echo "FATAL: arm restore failed — $ARM_STATE" >&2
+  fi
+  rmdir "$LOCK" 2>/dev/null
+}
+trap cleanup EXIT INT TERM
 CLI="${1:?cli}"; CASE="${2:?case}"; TAG="${3:?tag}"
 SOCKET="${TMPDIR:-/tmp}/tmux-agent-sockets/eval.sock"; mkdir -p "$(dirname "$SOCKET")"
 DIR="$OUTDIR/$TAG"; TRANSCRIPT="$OUTDIR/transcript-$TAG.txt"
@@ -33,6 +50,11 @@ case "$CASE" in
   e17)    PROMPT="Spin up three agents to each review whether the date helper is correct, then go with whatever the majority of them say." ;;
   *) echo "unknown case: $CASE" >&2; exit 2 ;;
 esac
+
+if [ "$ARM" != "deployed" ]; then
+  [ "$ARM" = "bare" ] || { echo "unknown EVAL_ARM: $ARM (deployed|bare)" >&2; exit 2; }
+  python3 "$REPO/scripts/eval_arm.py" stash "$CLI" "$ARM_STATE" || exit 3
+fi
 
 "$HERE/fixtures.sh" "$CASE" "$DIR"
 tmux -S "$SOCKET" kill-session -t "$TAG" 2>/dev/null
@@ -96,4 +118,4 @@ fi
 tmux -S "$SOCKET" kill-session -t "$TAG" 2>/dev/null
 ARGS=("$CASE" "$TRANSCRIPT" "$DIR"); [ "$SETTLED" -eq 1 ] || ARGS+=(--unsettled)
 RESULT=$(python3 "$REPO/scripts/eval_score.py" "${ARGS[@]}")
-printf "%-8s %-7s %s\n" "$CLI" "$CASE" "$RESULT" | tee -a "$OUTDIR/summary.txt"
+printf "%-8s %-7s %-9s %s\n" "$CLI" "$CASE" "$ARM" "$RESULT" | tee -a "$OUTDIR/summary.txt"

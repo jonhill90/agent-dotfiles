@@ -52,6 +52,38 @@ names and fixture directories and silently overwrite each other's results.
 Before clearing the lock, check for the orchestrator script itself, not just
 its children — a batch between runs has no live child.
 
+## Running the absent arm
+
+The §4 ladder compares a run with a candidate present against an
+otherwise identical run with it absent. Once a candidate ships, the absent
+arm stops being reachable: the second-opinion sentence is in every
+harness's user-scope instructions and `sanity-check` is on the shared
+skills path, so a normal run carries both.
+
+`EVAL_ARM=bare` produces it, by moving that harness's instruction files
+and skills path aside for the length of one run:
+
+```bash
+EVAL_ARM=bare tests/evals/harness/run.sh copilot e18 cop-e18-base-1
+```
+
+The mechanism is deliberately blunt — it uses no harness's
+instruction-disable key. Those differ per harness, one of them was
+inferred from a CLI bundle rather than documented, and a lever that
+silently stopped working would produce a contaminated arm that still
+looked clean. **A missing file cannot silently fail to be missing.**
+
+The cost is that the stash is **global**: while it is open, every process
+on the machine sees the stripped harness. Hence one run per stash, restore
+on the exit trap including interrupts, checksums verified on the way back,
+files renamed and never deleted, and a refusal to nest. If a run dies
+badly, `python3 scripts/eval_arm.py check <state>` says so and
+`restore <state>` finishes the job.
+
+Record the arm in the results row. `bare` removes *all* personal
+instructions, not only the candidate, so two `bare` arms compare cleanly
+with each other but not with a run made against a deployed configuration.
+
 ## Which artifact wins
 
 A scenario has two descriptions of what passing means: its `criteria.md`
