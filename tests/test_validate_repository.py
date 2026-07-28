@@ -378,3 +378,41 @@ class RosterCreditTests(unittest.TestCase):
             "**will be** re-verified once a scenario exists |\n"
         )
         self.assertEqual(validator.validate_roster_credit(self.root), [])
+
+
+class SkillLengthTests(unittest.TestCase):
+    """AGENTS.md caps SKILL.md at 500 lines and nothing enforced it, so
+    skills/tmux reached 493 unnoticed (#82). A cap nothing checks is a
+    convention."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.skill = Path(self.tmp.name) / "demo"
+        self.skill.mkdir()
+
+    def _write(self, lines: int) -> Path:
+        body = "---\nname: demo\ndescription: x\n---\n" + "\n".join(
+            f"line {i}" for i in range(lines)
+        )
+        path = self.skill / "SKILL.md"
+        path.write_text(body + "\n", encoding="utf-8")
+        return path
+
+    def test_over_the_cap_is_an_error(self) -> None:
+        self._write(520)
+        findings = validator.validate_skill_length(self.skill)
+        self.assertTrue(findings)
+        self.assertEqual(findings[0].level, "error")
+
+    def test_approaching_the_cap_warns_early(self) -> None:
+        """493 of 500 is seven lines from breaking and read as fine. A warning
+        is what turns 'nobody noticed' into 'somebody was told'."""
+        self._write(470)
+        findings = validator.validate_skill_length(self.skill)
+        self.assertTrue(findings)
+        self.assertEqual(findings[0].level, "warning")
+
+    def test_comfortably_short_is_silent(self) -> None:
+        self._write(120)
+        self.assertEqual(validator.validate_skill_length(self.skill), [])

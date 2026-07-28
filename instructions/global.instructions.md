@@ -31,9 +31,7 @@ verify → complete.
   verified. When a conclusion rests only on your own reasoning and no
   command can settle it, get a second opinion before acting — dispatch a
   reviewer given a lens it can fail on, or test the question a different
-  way. Say which you did. Agreement between agents you dispatched is not
-  evidence: when a command can settle the question, run it and cite its
-  output before acting on their verdict, even when they are unanimous.
+  way. Say which you did.
 - **Complete.** Report outcomes faithfully: failures with their output,
   skipped steps named as skipped. Leave a handoff a cold session could
   resume from.
