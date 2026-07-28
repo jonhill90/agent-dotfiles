@@ -53,7 +53,18 @@ OVERLAY_END = "<!-- <<< agent-dotfiles overlay <<< -->"
 #                 makes it possible to vary a candidate's delivery surface
 #                 without also varying instruction volume. `bare` cannot
 #                 answer that question because it moves both at once (#87).
+#   no-skill:<name> — one skill removed, everything else deployed. Needed to
+#                 attribute a behaviour change to a skill rather than to the
+#                 instructions that ship alongside it.
 ARMS = ("bare", "no-overlay")
+
+
+def _skill_dirs(harness: str, home: Path) -> list[Path]:
+    """The skills directories this harness reads."""
+    return [
+        home / rel for rel in HARNESS_PATHS.get(harness, ())
+        if rel.endswith("skills")
+    ]
 
 # What each harness must lose for a "bare" arm: its user-scope instruction
 # file(s) and the skills path it reads. Mirrors measure_e15.HARNESS_LAYOUT;
@@ -132,8 +143,12 @@ def stash(
     harness: str, home: Path, state_path: Path, arm: str = "bare"
 ) -> list[Path]:
     """Apply an arm. Returns the paths it changed."""
+    if arm.startswith("no-skill:"):
+        return _stash_skill(harness, home, state_path, arm.split(":", 1)[1])
     if arm not in ARMS:
-        raise StashError(f"unknown arm {arm!r}; known: {', '.join(ARMS)}")
+        raise StashError(
+            f"unknown arm {arm!r}; known: {', '.join(ARMS)}, no-skill:<name>"
+        )
     if arm == "no-overlay":
         return _stash_overlay(harness, home, state_path)
     if outstanding(state_path):
@@ -161,6 +176,44 @@ def stash(
         encoding="utf-8",
     )
     return moved
+
+
+def _stash_skill(
+    harness: str, home: Path, state_path: Path, skill: str
+) -> list[Path]:
+    """Move one skill aside, leaving instructions and every other skill."""
+    if outstanding(state_path):
+        raise StashError(
+            f"a stash is already outstanding ({state_path}); restore it first"
+        )
+    entries: list[dict] = []
+    changed: list[Path] = []
+    for skills_dir in _skill_dirs(harness, home):
+        path = skills_dir / skill
+        if not path.exists():
+            continue
+        # Park OUTSIDE the skills root. Renaming in place leaves
+        # `<name>.eval-stashed/SKILL.md` under the same tree, and a harness
+        # that globs for SKILL.md reads its frontmatter and lists the skill
+        # anyway — which is exactly what Pi did for four runs.
+        stash_root = skills_dir.parent / (skills_dir.name + SUFFIX + "-skills")
+        stash_root.mkdir(parents=True, exist_ok=True)
+        parked = stash_root / path.name
+        if parked.exists():
+            raise StashError(f"stash slot already occupied: {parked}")
+        digest = _digest(path)
+        path.rename(parked)
+        entries.append(
+            {"original": str(path), "parked": str(parked), "digest": digest}
+        )
+        changed.append(path)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps({"harness": harness, "arm": f"no-skill:{skill}",
+                    "entries": entries}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return changed
 
 
 def _stash_overlay(harness: str, home: Path, state_path: Path) -> list[Path]:
@@ -235,6 +288,11 @@ def restore(state_path: Path) -> list[Path]:
             )
             continue
         parked.rename(original)
+        # Leave no litter: the parking directory is ours and is empty now.
+        if parked.parent.name.endswith(SUFFIX + "-skills") and not any(
+            parked.parent.iterdir()
+        ):
+            parked.parent.rmdir()
         if _digest(original) != entry["digest"]:
             failures.append(f"{original} changed while stashed")
             continue

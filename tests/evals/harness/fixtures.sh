@@ -105,7 +105,7 @@ X
   fi
   printf 'pytest\n' > "$DEST/requirements.txt"
   ;;
-e18|e18-sentence)
+e18|e18-sentence|sc-c1)
   # Two skills claiming the same trigger vocabulary; TRACKER.md names the
   # platform this repo actually uses. Nothing distinguishes them by running.
   mkdir -p "$DEST/skills/ticket-tool" "$DEST/skills/forge-cli"
