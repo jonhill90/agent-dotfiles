@@ -934,11 +934,13 @@ class HarnessOverlayTests(SyncTestCase):
         (d / f"{name}.md").write_text(body, encoding="utf-8")
 
     def _root(self, harness: str) -> Path:
-        rel = sync.HARNESS_ROOT_FILES[harness]
-        path = self.home / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("# canonical\n\ncore instructions\n", encoding="utf-8")
-        return path
+        first = None
+        for rel in sync.HARNESS_ROOT_FILES[harness]:
+            path = self.home / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("# canonical\n\ncore instructions\n", encoding="utf-8")
+            first = first or path
+        return first
 
     def test_overlay_is_appended_to_the_harness_root(self) -> None:
         root = self._root("copilot")
@@ -1003,3 +1005,27 @@ class OverlayBodyTests(SyncTestCase):
     def test_an_overlay_that_is_only_a_comment_projects_nothing(self) -> None:
         self._write("# Copilot Overlay\n\n<!--\nNotes for maintainers.\n-->\n")
         self.assertEqual(sync.overlay_body(self.repo, "copilot"), "")
+
+
+class CopilotBothInstructionFilesTests(SyncTestCase):
+    """Copilot reads ~/.copilot/copilot-instructions.md, not AGENTS.md.
+
+    The overlay was written to AGENTS.md alone on 2026-07-27 and was never in
+    context: asked directly, a fresh Copilot answered "NO — my instructions
+    don't contain a rule stating that agreement between dispatched agents
+    isn't evidence", while quoting a rule that lives in the other file. Four
+    eval runs referenced the policy zero times and nearly became a finding
+    about delivery surfaces."""
+
+    def test_overlay_reaches_every_file_the_harness_reads(self) -> None:
+        d = self.repo / "instructions" / "overlays"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "copilot.md").write_text("# Copilot Overlay\n\nthe rule.\n", encoding="utf-8")
+        copilot = self.home / ".copilot"
+        copilot.mkdir(parents=True)
+        for name in ("AGENTS.md", "copilot-instructions.md"):
+            (copilot / name).write_text("core\n", encoding="utf-8")
+        sync.Sync(self.repo, self.home).apply_overlays()
+        for name in ("AGENTS.md", "copilot-instructions.md"):
+            self.assertIn("the rule.", (copilot / name).read_text(encoding="utf-8"),
+                          f"{name} missing the overlay")

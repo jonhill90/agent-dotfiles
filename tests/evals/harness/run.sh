@@ -6,7 +6,9 @@
 #
 # EVAL_ARM=bare runs the CLI with its user-scope instructions and skills
 # moved aside, which is how the §4 ladder gets an "absent" arm once a
-# candidate is already deployed. The stash is GLOBAL for the length of the
+# candidate is already deployed. EVAL_ARM=no-overlay removes only the
+# managed overlay block, so a candidate's delivery surface can be varied
+# without also varying instruction volume (#87). The stash is GLOBAL for the length of the
 # run — every process on the machine sees the stripped harness — and is
 # restored by the EXIT trap even on interrupt. See scripts/eval_arm.py.
 #
@@ -53,8 +55,11 @@ case "$CASE" in
 esac
 
 if [ "$ARM" != "deployed" ]; then
-  [ "$ARM" = "bare" ] || { echo "unknown EVAL_ARM: $ARM (deployed|bare)" >&2; exit 2; }
-  python3 "$REPO/scripts/eval_arm.py" stash "$CLI" "$ARM_STATE" || exit 3
+  case "$ARM" in
+    bare|no-overlay) ;;
+    *) echo "unknown EVAL_ARM: $ARM (deployed|bare|no-overlay)" >&2; exit 2 ;;
+  esac
+  python3 "$REPO/scripts/eval_arm.py" stash "$CLI" "$ARM_STATE" "$ARM" || exit 3
 fi
 
 "$HERE/fixtures.sh" "$CASE" "$DIR"

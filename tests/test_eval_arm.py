@@ -100,3 +100,42 @@ class StashRestoreTests(ArmTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OverlayArmTests(ArmTestCase):
+    """Isolating delivery surface needs an arm that removes ONLY the
+    candidate's user-scope copy, leaving the rest of the deployed
+    configuration intact. `bare` cannot do it: it strips everything, so
+    surface and instruction volume move together (#87)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        root = self.home / ".copilot" / "AGENTS.md"
+        root.write_text(
+            "# canonical\n\ncore policy\n\n"
+            + eval_arm.OVERLAY_BEGIN
+            + "\n\nthe candidate sentence\n\n"
+            + eval_arm.OVERLAY_END
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def test_no_overlay_removes_only_the_overlay_block(self) -> None:
+        root = self.home / ".copilot" / "AGENTS.md"
+        eval_arm.stash("copilot", self.home, self.state, arm="no-overlay")
+        text = root.read_text(encoding="utf-8")
+        self.assertIn("core policy", text)
+        self.assertNotIn("the candidate sentence", text)
+        self.assertTrue((self.home / ".agents" / "skills").is_dir())
+
+    def test_restore_puts_the_overlay_back_byte_identically(self) -> None:
+        root = self.home / ".copilot" / "AGENTS.md"
+        before = root.read_text(encoding="utf-8")
+        eval_arm.stash("copilot", self.home, self.state, arm="no-overlay")
+        eval_arm.restore(self.state)
+        self.assertEqual(root.read_text(encoding="utf-8"), before)
+
+    def test_bare_still_strips_everything(self) -> None:
+        eval_arm.stash("copilot", self.home, self.state, arm="bare")
+        self.assertFalse((self.home / ".copilot" / "AGENTS.md").exists())
+        eval_arm.restore(self.state)
