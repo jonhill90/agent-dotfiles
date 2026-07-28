@@ -310,6 +310,40 @@ def validate_apm_skill_roster(root: Path) -> list[Finding]:
     return findings
 
 
+# SPEC §10.1 rule 5. A row promising future verification is exactly what the
+# retired prior-bar path looked like, and the promise came due nine days late
+# the one time it was used. Cheap to check, so it is checked rather than
+# trusted — the 500-line skill cap was a convention nothing enforced and was
+# three days from being breached silently (#82).
+OPEN_CAVEAT = re.compile(r"\*\*will be\*\*|will be re-verified|prior bar", re.I)
+
+
+def validate_roster_credit(root: Path) -> list[Finding]:
+    """No default-roster skill may carry an unfinished verification promise."""
+    manifest = root / "docs" / "provenance-manifest.md"
+    if not manifest.is_file():
+        return []
+    roster = set(roster_union(root))
+    findings: list[Finding] = []
+    for line in manifest.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("|") or not OPEN_CAVEAT.search(line):
+            continue
+        if "caveat cleared" in line.lower():
+            continue
+        for name in roster:
+            if f"`{name}`" in line:
+                findings.append(
+                    Finding(
+                        "error",
+                        manifest,
+                        f"{name} is in the default roster with an unfinished "
+                        "verification promise; SPEC §10.1 rule 5 requires it "
+                        "ship opt-in until the bar is cleared",
+                    )
+                )
+    return findings
+
+
 def validate_privacy(root: Path) -> list[Finding]:
     """Flag tracked markdown containing terms from the untracked
     .privacy-denylist (one term per line; the terms never enter git)."""
@@ -451,6 +485,7 @@ def validate(root: Path, target: Path | None = None) -> list[Finding]:
     if target is None:
         findings.extend(validate_projections(root))
         findings.extend(validate_apm_skill_roster(root))
+        findings.extend(validate_roster_credit(root))
         findings.extend(validate_privacy(root))
         findings.extend(validate_static_context(root))
 

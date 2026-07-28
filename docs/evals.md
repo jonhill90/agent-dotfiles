@@ -18,6 +18,14 @@ order:
 3. a short session-start injection; and
 4. heavier machinery only after lighter options have failed.
 
+A component joins the **default roster** only once it has already cleared
+that bar — failed ×2, passed ×3 with the model pinned, counter-scenario at
+×2. Until then it ships **public opt-in**, which costs nothing at request
+time. Nothing enters the roster on a promise to verify later; that path was
+retired on 2026-07-27 (SPEC §10.1 rule 5) after two components used it and
+one skill with an open acceptance question sat in the roster for fifteen
+days while they did.
+
 Record an adoption in `docs/provenance-manifest.md` with its deciding results
 file. One component owns each loop stage; overlapping components do not remain
 installed “just in case.” Tool skills use the concrete checks in
