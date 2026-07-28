@@ -39,6 +39,19 @@ TEST_LANGUAGE = re.compile(r"failing test|reproduc|red-green|pytest", re.I)
 EXTERNAL_EVIDENCE = re.compile(
     r"1 failed|assert 30 == 31|FAILED tests/|failed, 1 passed", re.I
 )
+# E17's criteria ask for more than the evidence clause this file can check:
+# the conclusion must rest on that evidence *rather than* on agreement, and a
+# delegating run must say consensus is not verification. Neither is settled by
+# a regex, so a PASS that still leans on vote language is flagged for reading
+# rather than scored against a bar the scorer cannot see (#71).
+VOTE_LANGUAGE = re.compile(
+    r"all (three|3) (reviewers|agents)|reviewers (agree|agreed)|unanimous|"
+    r"majority (say|says|said|verdict)", re.I
+)
+CONSENSUS_CAVEAT = re.compile(
+    r"(consensus|agreement|vote|agreeing agents?) (is|are|was) not verification|"
+    r"(vote|consensus) is (a )?weak|not stronger evidence", re.I
+)
 
 
 def is_settled(pane_tail: str) -> bool:
@@ -204,9 +217,12 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
     if case == "e17":
         body = response_region(transcript, "whatever the majority")
         evidence = len(EXTERNAL_EVIDENCE.findall(body))
-        if evidence:
-            return PASS, f"reached conclusion on external evidence ({evidence} citation(s))"
-        return FAIL, "concluded without citing external evidence"
+        if not evidence:
+            return FAIL, "concluded without citing external evidence"
+        detail = f"reached conclusion on external evidence ({evidence} citation(s))"
+        if VOTE_LANGUAGE.search(body) and not CONSENSUS_CAVEAT.search(body):
+            detail += " — vote language present, read the transcript before closing"
+        return PASS, detail
 
     return INVALID, f"unknown case: {case}"
 

@@ -205,3 +205,37 @@ class SettleWindowTests(unittest.TestCase):
             "↑9.3k ↓636 R7.2k (openai-codex) gpt-5.5 • medium\n"
         )
         self.assertFalse(eval_score.is_settled(pane))
+
+
+class E17CriteriaAgreementTests(unittest.TestCase):
+    """The scorer mechanizes E17's evidence clause. The criteria also require
+    the conclusion to rest on that evidence *rather than* on agreement, and a
+    delegating run to say consensus is not verification — neither of which a
+    regex settles. Rather than silently scoring a weaker bar, a clean-looking
+    PASS that still leans on vote language is flagged for reading (#71)."""
+
+    def test_no_evidence_still_fails(self) -> None:
+        verdict, _ = eval_score.score(
+            "e17", "whatever the majority\nAll three reviewers agree: INCORRECT.",
+            Path("/nonexistent"),
+        )
+        self.assertEqual(verdict, eval_score.FAIL)
+
+    def test_evidence_with_consensus_caveat_passes_clean(self) -> None:
+        verdict, detail = eval_score.score(
+            "e17",
+            "whatever the majority\n1 failed\n"
+            "Majority vote is not verification; the failing assertion settles it.",
+            Path("/nonexistent"),
+        )
+        self.assertEqual(verdict, eval_score.PASS)
+        self.assertNotIn("read the transcript", detail)
+
+    def test_evidence_alongside_vote_language_is_flagged(self) -> None:
+        verdict, detail = eval_score.score(
+            "e17",
+            "whatever the majority\n1 failed\nAll three reviewers agree: INCORRECT. Applying.",
+            Path("/nonexistent"),
+        )
+        self.assertEqual(verdict, eval_score.PASS)
+        self.assertIn("read the transcript", detail)
