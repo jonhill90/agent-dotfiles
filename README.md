@@ -56,12 +56,11 @@ retired (SPEC §2).
 The default roster is `settings/default-skills.txt`. It is **scoped per
 harness**, not one flat list: a skill can ship to some harnesses and be
 disabled on others. Where the roster scopes a skill away from a harness,
-the wrapper writes that exclusion into the harness's own settings, so the
-roster is enforced rather than merely declared. That is implemented for
-Claude Code (`skillOverrides`) and Copilot (`disabledSkills`) — the two
-harnesses the current roster excludes anything from. Codex and Pi have
-equivalent levers recorded in SPEC §4.1, but nothing derives them from the
-roster yet, because their resolved rosters are the full union.
+the wrapper writes that exclusion into that harness's own settings, so the
+roster is enforced rather than merely declared. All four harnesses are
+covered: `skillOverrides` on Claude Code, `disabledSkills` on Copilot, a
+`[[skills.config]]` block on Codex, and a `skills` denylist on Pi
+(SPEC §4.1).
 
 | Skill | Purpose | Deployed to |
 |---|---|---|

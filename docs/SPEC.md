@@ -389,8 +389,11 @@ trio).* Excluding one of Pi/Codex/Copilot alone requires that harness's
 own disable surface:
 
 - **Codex:** `[[skills.config]]` entries in `~/.codex/config.toml` —
-  already proven and in production use for the `yeet` plugin-skill
-  disable (E14 PASS ×2, 2026-07-18).
+  proven in production for the `yeet` plugin-skill disable (E14 PASS ×2,
+  2026-07-18) and wired to the roster 2026-07-27. Personal skills key on
+  the bare name; plugin skills are namespaced (`github:yeet`), so the
+  wrapper writes a marker-delimited block and leaves foreign entries
+  alone.
 - **Copilot:** `disabledSkills` in `~/.copilot/settings.json` — resolved
   affirmatively 2026-07-27 (V10), verified live. Copilot discovers
   personal skills from `~/.agents/skills`, the directory the neutral
