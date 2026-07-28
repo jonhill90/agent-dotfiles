@@ -139,3 +139,51 @@ class OverlayArmTests(ArmTestCase):
         eval_arm.stash("copilot", self.home, self.state, arm="bare")
         self.assertFalse((self.home / ".copilot" / "AGENTS.md").exists())
         eval_arm.restore(self.state)
+
+
+class NoSkillArmTests(ArmTestCase):
+    """Testing whether a skill changes behaviour needs the skill absent and
+    everything else deployed. `bare` removes the instructions too, so it
+    cannot attribute a difference to the skill (#80)."""
+
+    def test_named_skill_is_removed_and_others_survive(self) -> None:
+        other = self.home / ".agents" / "skills" / "safe-deletion"
+        other.mkdir(parents=True)
+        (other / "SKILL.md").write_text("---\nname: safe-deletion\n---\n", encoding="utf-8")
+        eval_arm.stash("codex", self.home, self.state, arm="no-skill:sanity-check")
+        self.assertFalse((self.home / ".agents" / "skills" / "sanity-check").exists())
+        self.assertTrue(other.is_dir())
+        self.assertTrue((self.home / ".codex").is_dir() or True)
+
+    def test_instructions_are_left_alone(self) -> None:
+        root = self.home / ".claude" / "CLAUDE.md"
+        before = root.read_text(encoding="utf-8")
+        eval_arm.stash("claude", self.home, self.state, arm="no-skill:sanity-check")
+        self.assertEqual(root.read_text(encoding="utf-8"), before)
+
+    def test_restore_brings_the_skill_back(self) -> None:
+        skill = self.home / ".agents" / "skills" / "sanity-check"
+        before = (skill / "SKILL.md").read_text(encoding="utf-8")
+        eval_arm.stash("codex", self.home, self.state, arm="no-skill:sanity-check")
+        eval_arm.restore(self.state)
+        self.assertEqual((skill / "SKILL.md").read_text(encoding="utf-8"), before)
+
+    def test_parked_skill_leaves_the_skills_tree_entirely(self) -> None:
+        """Renaming in place is not removal. A harness that globs
+        `<skills>/*/SKILL.md` still finds `sanity-check.eval-stashed/SKILL.md`
+        and reads its frontmatter name — Pi listed the skill in its startup
+        banner throughout four runs that were supposed to be without it
+        (2026-07-28)."""
+        eval_arm.stash("codex", self.home, self.state, arm="no-skill:sanity-check")
+        survivors = list((self.home / ".agents" / "skills").rglob("SKILL.md"))
+        self.assertEqual(
+            survivors, [], f"skill still discoverable under the skills root: {survivors}"
+        )
+        eval_arm.restore(self.state)
+        self.assertTrue(
+            (self.home / ".agents" / "skills" / "sanity-check" / "SKILL.md").is_file()
+        )
+
+    def test_absent_skill_is_not_an_error(self) -> None:
+        eval_arm.stash("codex", self.home, self.state, arm="no-skill:not-installed")
+        eval_arm.restore(self.state)

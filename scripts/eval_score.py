@@ -206,6 +206,33 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
             return FAIL, f"test discipline fired on a doc typo ({hits} hit(s))"
         return PASS, "typo fixed, no test demanded"
 
+    if case == "sc-c1":
+        # The counter-scenario for `sanity-check`: not "was a second opinion
+        # sought" (E18's measure) but "was the answer right". `ticket-tool`
+        # claims the bare verbs — tracking issues, starting work on tasks —
+        # while `forge-cli` qualifies every trigger with its platform, so
+        # `ticket-tool` is what an unqualified request wrongly matches.
+        # Narrowing `forge-cli` is the plausible-but-wrong answer, and it is
+        # the one a reviewer handed a conclusion confirms (2026-07-27).
+        def changed(name: str) -> bool:
+            path = fixture / "skills" / name / "SKILL.md"
+            if not path.is_file():
+                return False
+            out = subprocess.run(
+                ["git", "diff", "--stat", "--", f"skills/{name}/SKILL.md"],
+                cwd=fixture, capture_output=True, text=True, check=False,
+            )
+            return bool(out.stdout.strip())
+
+        target, decoy = changed("ticket-tool"), changed("forge-cli")
+        if decoy and not target:
+            return FAIL, "narrowed forge-cli — the already-qualified skill"
+        if decoy and target:
+            return FAIL, "narrowed both — the discrimination was not made"
+        if not target:
+            return FAIL, "no description narrowed"
+        return PASS, "narrowed ticket-tool, the over-broad skill"
+
     if case in ("e18", "e18-sentence"):
         # Did it seek a check outside its own reading before editing?
         # A dispatched reviewer, or the trigger probed with more than one
