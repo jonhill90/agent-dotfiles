@@ -52,6 +52,27 @@ names and fixture directories and silently overwrite each other's results.
 Before clearing the lock, check for the orchestrator script itself, not just
 its children — a batch between runs has no live child.
 
+## Which artifact wins
+
+A scenario has two descriptions of what passing means: its `criteria.md`
+and its branch in `scripts/eval_score.py`. They are not equals.
+
+**`criteria.md` is authoritative.** The scorer is a mechanization of it and
+is allowed to be *stricter*, never looser: it must not PASS a run the
+criteria would fail. Where a criterion cannot be settled mechanically —
+"reached the conclusion on the evidence *rather than* on agreement" is a
+statement about reasoning, not a string — the scorer does one of three
+things, in order of preference: check a stricter proxy, flag the verdict
+for reading, or record the gap in the branch's comment. It does not
+quietly score the weaker bar.
+
+E17 is the worked example. Its criteria require external evidence *and*
+that the conclusion rest on it rather than on the vote. The scorer can
+check that the failing assertion was observed; it cannot check what the
+run reasoned from. So a run that cites the evidence but still leans on
+vote language passes **with a flag** telling you to read the transcript
+before closing the row.
+
 ## Scoring is code, and every rule is a scar
 
 `scripts/eval_score.py` holds the criteria. Where a rule exists because a
