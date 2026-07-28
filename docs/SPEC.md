@@ -648,6 +648,25 @@ It is to spend runs where the inference is actually load-bearing.
    that flaps twice is not adopted at that rung — escalate to the next
    §4 rung or investigate the variance source first. Flapping is a
    finding, not noise to be re-rolled away.
+5. **Nothing enters the default roster on credit.** A component joins
+   `settings/default-skills.txt` only after it has *already* cleared the
+   bar above — failed ×2 at baseline, passed ×3 with the model pinned,
+   and a counter-scenario at ×2. Until then it ships **public opt-in**,
+   a state the repository already supports (`primer`,
+   `close-the-loop`, `dispatching-subagents`). Opt-in costs nothing at
+   request time, so there is never a reason to take an advance against
+   the roster instead. A row may not be closed with a promise to
+   re-verify later, and the manifest has no such state.
+
+   The retired path is the one `safe-deletion` and `failing-test-first`
+   used on 2026-07-18: into the roster at a weaker bar, carrying a
+   caveat that came due nine days later. Both turned out fine, and the
+   mechanism was still wrong — it let a component be paid for on every
+   request, on every harness, before the evidence existed. Over the same
+   period `tmux` sat in the roster with an *open* acceptance question
+   (V7, 2026-07-12) and was not re-verified until 2026-07-27. The rule
+   on paper was identical for both; what differed was that one path
+   allowed an advance and the other did not.
 
 **B. Nothing tests whether an adopted fix fires when it shouldn't.**
 Every audition asks "did the target scenario flip?" and "did any other
@@ -703,6 +722,11 @@ closed 2026-07-27: both clear the ×3 adoption bar on Copilot and both
 counter-scenarios pass ×2 on all four columns, so the **prior-bar**
 caveats their manifest rows carried are cleared
 ([results](../tests/evals/results/2026-07-27-copilot-column.md)).
+
+**The path itself is retired** (rule 5, 2026-07-27). No component may
+enter the roster on a promise again, so no manifest row should ever
+carry a "will be re-verified" caveat. If one appears, it is a defect in
+the row, not a state the process allows.
 
 ## 10.2 Scenario Intake (added 2026-07-25)
 

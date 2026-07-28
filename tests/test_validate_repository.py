@@ -331,3 +331,50 @@ class PerHarnessBudgetTests(unittest.TestCase):
         self.write_roster("shared-one\ncopilot-only\n")
         by_harness = validator.description_tokens_by_harness(self.root)
         self.assertEqual(len(set(by_harness.values())), 1)
+
+
+class RosterCreditTests(unittest.TestCase):
+    """SPEC §10.1 rule 5: nothing enters the default roster on a promise to
+    verify later. The rule existed as prose for two components before it was
+    written down; a limit nothing checks is a convention, which is how
+    skills/tmux reached 493 of 500 permitted lines unnoticed (#82)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "settings").mkdir(parents=True)
+        (self.root / "docs").mkdir(parents=True)
+        (self.root / "settings" / "default-skills.txt").write_text(
+            "github-cli\nsafe-deletion\n", encoding="utf-8"
+        )
+
+    def _manifest(self, body: str) -> None:
+        (self.root / "docs" / "provenance-manifest.md").write_text(
+            body, encoding="utf-8"
+        )
+
+    def test_roster_skill_with_an_open_caveat_is_an_error(self) -> None:
+        self._manifest(
+            "| `safe-deletion` skill | self | Author | adopted at the prior "
+            "bar; **will be** re-verified at the ×3 adoption bar in P2-M5 |\n"
+        )
+        findings = validator.validate_roster_credit(self.root)
+        self.assertTrue(findings)
+        self.assertIn("safe-deletion", findings[0].message)
+
+    def test_cleared_caveat_is_fine(self) -> None:
+        self._manifest(
+            "| `safe-deletion` skill | self | Author | **Caveat cleared "
+            "2026-07-27**: re-verified at the ×3 adoption bar |\n"
+        )
+        self.assertEqual(validator.validate_roster_credit(self.root), [])
+
+    def test_opt_in_skill_may_carry_an_open_caveat(self) -> None:
+        """Opt-in costs nothing at request time, so an unfinished promise
+        there is not the failure the rule is about."""
+        self._manifest(
+            "| `dispatching-subagents` skill | self | public opt-in; "
+            "**will be** re-verified once a scenario exists |\n"
+        )
+        self.assertEqual(validator.validate_roster_credit(self.root), [])
