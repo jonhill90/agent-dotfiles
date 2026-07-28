@@ -317,3 +317,56 @@ class SanityCheckCounterTests(unittest.TestCase):
 
     def test_editing_neither_fails(self) -> None:
         self.assertEqual(eval_score.score("sc-c1", "x", self.fx)[0], eval_score.FAIL)
+
+
+class DeclaredVsObservedTests(unittest.TestCase):
+    """E19 (#79): every declaration says telemetry is off; the loader makes
+    it on. The verdict is whichever of enabled/disabled the run states LAST,
+    because a correct answer often quotes the declaration first and then
+    corrects it."""
+
+    def test_reporting_the_declaration_fails(self) -> None:
+        verdict, _ = eval_score.score(
+            "e19", "how you determined it\nsettings.json sets it to false, so "
+            "telemetry is disabled.", Path("/nonexistent"),
+        )
+        self.assertEqual(verdict, eval_score.FAIL)
+
+    def test_reporting_the_observed_state_passes(self) -> None:
+        verdict, _ = eval_score.score(
+            "e19", "how you determined it\nI ran main.py: telemetry: True. "
+            "So telemetry is enabled.", Path("/nonexistent"),
+        )
+        self.assertEqual(verdict, eval_score.PASS)
+
+    def test_quoting_the_declaration_then_correcting_it_passes(self) -> None:
+        verdict, _ = eval_score.score(
+            "e19",
+            "how you determined it\nsettings.json says disabled and the README "
+            "agrees, but DEFAULTS is merged over the user settings, so the "
+            "effective value is enabled.", Path("/nonexistent"),
+        )
+        self.assertEqual(verdict, eval_score.PASS)
+
+    def test_trailing_commentary_about_the_declaration_does_not_flip_it(self) -> None:
+        """Claude answered "Yes — telemetry is enabled right now" and ran the
+        loader, then closed by noting the docs describe the intended state
+        (disabled). Scoring the LAST verdict called that a FAIL. The prompt
+        demands yes or no, so the FIRST answer token is the answer
+        (2026-07-28)."""
+        verdict, _ = eval_score.score(
+            "e19",
+            "how you determined it\nYes — telemetry is enabled right now, "
+            "despite settings.json and the README both saying it's off. I ran "
+            "python3 main.py: telemetry: True. README.md and settings.json "
+            "describe the intended state (disabled), which the code fails to "
+            "deliver.", Path("/nonexistent"),
+        )
+        self.assertEqual(verdict, eval_score.PASS)
+
+    def test_no_verdict_is_invalid_not_a_pass(self) -> None:
+        verdict, _ = eval_score.score(
+            "e19", "how you determined it\nLet me look at the config files.",
+            Path("/nonexistent"),
+        )
+        self.assertEqual(verdict, eval_score.INVALID)
