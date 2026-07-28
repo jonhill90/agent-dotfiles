@@ -232,6 +232,35 @@ def discover_skill_dirs(root: Path, target: Path | None) -> list[Path]:
     raise ValueError(f"target is not a skill directory or skills root: {target}")
 
 
+# AGENTS.md caps SKILL.md at 500 lines. Enforced since 2026-07-27: it was a
+# convention before, and skills/tmux reached 493 lines with nobody notified
+# (#82). The warning band exists because "seven lines from breaking" and
+# "fine" look identical in a diff.
+SKILL_LINE_CAP = 500
+SKILL_LINE_WARN = 450
+
+
+def validate_skill_length(skill_dir: Path) -> list[Finding]:
+    """Keep SKILL.md within the cap, and say so before it is breached."""
+    path = skill_dir / "SKILL.md"
+    if not path.is_file():
+        return []
+    lines = len(path.read_text(encoding="utf-8").splitlines())
+    if lines > SKILL_LINE_CAP:
+        return [Finding(
+            "error", path,
+            f"{lines} lines exceeds the {SKILL_LINE_CAP}-line cap — move "
+            "detail into references/ (progressive disclosure)",
+        )]
+    if lines > SKILL_LINE_WARN:
+        return [Finding(
+            "warning", path,
+            f"{lines} lines, approaching the {SKILL_LINE_CAP}-line cap — "
+            "move detail into references/ before it breaks",
+        )]
+    return []
+
+
 def validate_projections(root: Path) -> list[Finding]:
     findings: list[Finding] = []
     for relative_path in RETIRED_PROJECTIONS:
@@ -380,6 +409,7 @@ def validate_skill_collection(skill_dirs: list[Path]) -> list[Finding]:
 
     for skill_dir in skill_dirs:
         findings.extend(validate_skill(skill_dir))
+        findings.extend(validate_skill_length(skill_dir))
         try:
             frontmatter, _ = parse_skill(skill_dir / "SKILL.md")
         except PARSE_ERRORS:

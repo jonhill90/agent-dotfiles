@@ -239,105 +239,39 @@ gh issue comment 456 --body "Working on this now"
 
 ## Workflows & Actions
 
-### List and View Workflows
-
 ```bash
-# List all workflows
-gh workflow list
-
-# View workflow details and recent runs
-gh workflow view {workflow-name}
-gh workflow view {workflow-name} --web
-```
-
-### Run Workflow
-
-```bash
-# Trigger workflow on default branch
-gh workflow run {workflow-file} --ref main
-
-# With input parameters
-gh workflow run deploy.yml -f environment=staging -f version=1.2.3
-
-# From a specific branch
-gh workflow run ci.yml --ref feature/new-feature
-```
-
-### View and Monitor Runs
-
-```bash
-# List recent runs
-gh run list --limit 10
+gh workflow list                      # what exists
+gh workflow run deploy.yml --ref main -f environment=staging
 gh run list --workflow ci.yml --branch main --status failure
-
-# View run details
-gh run view {run-id}
-gh run view {run-id} --web
-gh run view {run-id} --log          # Full log output
-gh run view {run-id} --log-failed   # Only failed step logs
-
-# Watch run in real time
-gh run watch {run-id}
-gh run watch {run-id} --exit-status  # Exit with run's status code
+gh run view {run-id} --log-failed     # only the failing step
+gh run watch {run-id} --exit-status   # block until done, exit with its status
+gh run rerun {run-id} --failed
+gh run download {run-id} --name build-output
 ```
 
-### Manage Runs
+`--log-failed` and `--exit-status` are the two worth remembering: the first
+skips the noise, the second makes a watch usable in a script.
 
-```bash
-# Download artifacts
-gh run download {run-id}
-gh run download {run-id} --name "build-output"  # Specific artifact
-gh run download {run-id} --dir ./artifacts       # Custom directory
-
-# Re-run
-gh run rerun {run-id}
-gh run rerun {run-id} --failed      # Only failed jobs
-gh run rerun {run-id} --debug       # With debug logging
-
-# Cancel
-gh run cancel {run-id}
-```
+Full surface — secrets, variables, cache, artifact patterns, CI scripting —
+in [references/actions.md](references/actions.md).
 
 ## Releases
 
-### Create Release
-
 ```bash
-# Create release from tag
-gh release create v1.0.0 --title "Release v1.0.0" --notes "Release notes here"
-
-# Auto-generate release notes from commits
-gh release create v1.0.0 --generate-notes
-
-# Draft release
-gh release create v1.0.0 --draft --generate-notes
-
-# Prerelease
-gh release create v1.0.0-beta.1 --prerelease --generate-notes
-
-# Upload assets with release
-gh release create v1.0.0 ./dist/*.tar.gz ./dist/*.zip --generate-notes
-
-# Notes from file
-gh release create v1.0.0 --notes-file CHANGELOG.md
+gh release list
+gh release create v1.2.3 --generate-notes          # notes from merged PRs
+gh release create v1.2.3 ./dist/*.tar.gz           # with assets
+gh release create v1.2.3 --draft --target main
+gh release view v1.2.3
+gh release download v1.2.3 --pattern "*.tar.gz"
+gh release edit v1.2.3 --draft=false               # publish a draft
 ```
 
-### List, View, and Download
+`--generate-notes` writes the changelog from merged PR titles, so the
+release notes are only as good as the PR titles.
 
-```bash
-# List releases
-gh release list --limit 10
-
-# View release details
-gh release view v1.0.0
-gh release view v1.0.0 --web
-
-# Download all assets
-gh release download v1.0.0
-
-# Download specific asset
-gh release download v1.0.0 --pattern "*.tar.gz" --dir ./downloads
-```
+Asset management and repo settings in
+[references/repos.md](references/repos.md).
 
 ## Repositories
 

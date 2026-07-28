@@ -31,6 +31,48 @@ CODEX_MCP_BEGIN = "# >>> agent-dotfiles mcp (managed; do not edit) >>>"
 CODEX_MCP_END = "# <<< agent-dotfiles mcp <<<"
 CODEX_SKILLS_BEGIN = "# >>> agent-dotfiles skills (managed; do not edit) >>>"
 CODEX_SKILLS_END = "# <<< agent-dotfiles skills <<<"
+OVERLAY_BEGIN = "<!-- >>> agent-dotfiles overlay (managed; do not edit) >>> -->"
+OVERLAY_END = "<!-- <<< agent-dotfiles overlay <<< -->"
+
+# Root context file per harness, and the overlay that may extend it. APM
+# compiles the canonical instructions into these; the overlay is appended
+# afterwards, marker-delimited, so an instruction needed by one harness is
+# not billed to the others (SPEC §4.1, extended to instructions 2026-07-27).
+# Pi is absent: its root file is written whole by project_pi(), which already
+# composes core + overlay.
+HARNESS_ROOT_FILES = {
+    "claude": Path(".claude/CLAUDE.md"),
+    "codex": Path(".codex/AGENTS.md"),
+    "copilot": Path(".copilot/AGENTS.md"),
+}
+OVERLAY_FILES = {
+    "claude": "claude-code.md",
+    "codex": "codex.md",
+    "copilot": "copilot.md",
+}
+
+
+def overlay_body(repo: Path, harness: str) -> str:
+    """An overlay's content, or "" when it is a placeholder.
+
+    A file that only documents why it is empty must not produce a block —
+    `claude-code.md` is deliberately empty and says so at length.
+    """
+    name = OVERLAY_FILES.get(harness)
+    if not name:
+        return ""
+    path = repo / "instructions" / "overlays" / name
+    if not path.is_file():
+        return ""
+    raw = re.sub(r"<!--.*?-->", "", path.read_text(encoding="utf-8"), flags=re.S)
+    lines = [
+        line for line in raw.splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    body = "\n".join(lines).strip()
+    if not body or "intentionally empty" in body.lower():
+        return ""
+    return body
 
 # Harnesses whose root files the dotfiles intentionally manage.
 MANAGED_ROOT_FILES = (
@@ -453,6 +495,40 @@ class Sync:
             config.write_text(new, encoding="utf-8")
 
     @staticmethod
+    def _strip_overlay_block(text: str) -> str:
+        pattern = re.compile(
+            r"\n*" + re.escape(OVERLAY_BEGIN) + r".*?" + re.escape(OVERLAY_END) + r"\n?",
+            re.S,
+        )
+        return pattern.sub("", text)
+
+    def apply_overlays(self) -> list[Path]:
+        """Append each harness's overlay to its APM-compiled root file.
+
+        Runs after `apm compile`, which owns the canonical portion. The block
+        is marker-delimited so re-applying replaces rather than duplicates,
+        emptying the overlay removes it, and teardown can strip it.
+        """
+        written: list[Path] = []
+        for harness, rel in HARNESS_ROOT_FILES.items():
+            root = self.home / rel
+            if not root.is_file():
+                continue
+            text = root.read_text(encoding="utf-8")
+            base = self._strip_overlay_block(text)
+            body = overlay_body(self.repo, harness)
+            if body:
+                new = (base.rstrip("\n") + "\n\n" + OVERLAY_BEGIN + "\n\n"
+                       + body + "\n\n" + OVERLAY_END + "\n")
+                written.append(root)
+            else:
+                new = base
+            if new != text:
+                root.write_text(new, encoding="utf-8")
+        self.state["overlays"] = [str(p) for p in written]
+        return written
+
+    @staticmethod
     def _strip_codex_skills_block(text: str) -> str:
         pattern = re.compile(
             r"\n*" + re.escape(CODEX_SKILLS_BEGIN) + r".*?"
@@ -486,6 +562,7 @@ class Sync:
         else:
             new = base
             self.state["codex_skills"] = None
+
         if new != text:
             config.write_text(new, encoding="utf-8")
 
@@ -526,6 +603,7 @@ class Sync:
             # preserve its last-known-good marker-owned root instead of
             # turning a refresh into accidental removal.
             self.restore_root_files(root_backups)
+        self.apply_overlays()
         self.ensure_neutral_skills()
         removed = self.teardown_unused_root_files()
         pi = self.project_pi()
@@ -806,6 +884,15 @@ class Sync:
                 encoding="utf-8",
             )
         self.state["codex_mcp"] = None
+
+        for overlay_root in self.state.get("overlays") or []:
+            path = Path(overlay_root)
+            if path.is_file():
+                path.write_text(
+                    self._strip_overlay_block(path.read_text(encoding="utf-8")),
+                    encoding="utf-8",
+                )
+        self.state["overlays"] = []
 
         codex_skills = self.state.get("codex_skills")
         if codex_skills and Path(codex_skills).is_file():
