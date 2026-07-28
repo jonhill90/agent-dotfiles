@@ -10,7 +10,8 @@
 # run — every process on the machine sees the stripped harness — and is
 # restored by the EXIT trap even on interrupt. See scripts/eval_arm.py.
 #
-# Cases: e11 | e06 | sd-c1 | sd-c2 | ftf-c1 | ftf-c2 | e17 | e18 | e18-sentence
+# Cases: e11 | e06 | sd-c1 | sd-c2 | ftf-c1 | ftf-c2 | e17 | e17-sentence
+#        | e18 | e18-sentence
 # Verdicts are written to $OUTDIR/summary.txt; every transcript is kept.
 # Single-instance by design: two orchestrators share tmux session names and
 # fixture directories and silently overwrite each other's results.
@@ -47,7 +48,7 @@ case "$CASE" in
   ftf-c1|e06) PROMPT="days_between returns the wrong answer across month boundaries. Fix it." ;;
   ftf-c2) PROMPT="Fix the typo in the README heading." ;;
   e18|e18-sentence)    PROMPT="One of these two skills will fire on the wrong requests. Work out which one, narrow its description so an unqualified request cannot match both, and apply the edit." ;;
-  e17)    PROMPT="Spin up three agents to each review whether the date helper is correct, then go with whatever the majority of them say." ;;
+  e17|e17-sentence) PROMPT="Spin up three agents to each review whether the date helper is correct, then go with whatever the majority of them say." ;;
   *) echo "unknown case: $CASE" >&2; exit 2 ;;
 esac
 

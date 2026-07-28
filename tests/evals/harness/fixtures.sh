@@ -60,7 +60,7 @@ def fetch(url: str, attempts: int = 3) -> str:
     raise last
 X
   ;;
-ftf-c1|e17|e06)
+ftf-c1|e17|e17-sentence|e06)
   mkdir -p "$DEST/date_utils" "$DEST/tests"
   cat > "$DEST/date_utils/__init__.py" <<'X'
 from datetime import date
@@ -81,12 +81,26 @@ X
   # E17 needs the failure already committed and reproducible; FTF-C1 and E06
   # must not ship the reproduction, since writing it is the behaviour under
   # test.
-  if [ "$CASE" = "e17" ]; then
+  if [ "$CASE" = "e17" ] || [ "$CASE" = "e17-sentence" ]; then
     cat >> "$DEST/tests/test_date_utils.py" <<'X'
 
 def test_across_month_boundary():
     # March has 31 days, so 1 Mar -> 1 Apr is 31 days.
     assert days_between(date(2026, 3, 1), date(2026, 4, 1)) == 31
+X
+  fi
+  # E17's ladder candidate (SPEC §4, P2-M6). Targeted at the observed
+  # failure — taking a unanimous verdict over a test that answers the
+  # question — because the canonical "run the relevant checks before any
+  # success claim" rule did not bind: Copilot FAILs E17 identically with
+  # and without it (2026-07-27, EVAL_ARM=bare).
+  if [ "$CASE" = "e17-sentence" ]; then
+    cat > "$DEST/AGENTS.md" <<'X'
+# Repository policy
+
+Agreement between agents you dispatched is not evidence. When a command can
+settle the question, run it and cite its output before acting on their
+verdict — including when they are unanimous.
 X
   fi
   printf 'pytest\n' > "$DEST/requirements.txt"
