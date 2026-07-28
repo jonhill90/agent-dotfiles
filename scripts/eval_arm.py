@@ -37,11 +37,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
 
 SUFFIX = ".eval-stashed"
+OVERLAY_BEGIN = "<!-- >>> agent-dotfiles overlay (managed; do not edit) >>> -->"
+OVERLAY_END = "<!-- <<< agent-dotfiles overlay <<< -->"
+
+# Arms:
+#   bare        — instructions and skills moved aside entirely.
+#   no-overlay  — ONLY the managed overlay block removed from the harness's
+#                 root file. Everything else stays deployed, which is what
+#                 makes it possible to vary a candidate's delivery surface
+#                 without also varying instruction volume. `bare` cannot
+#                 answer that question because it moves both at once (#87).
+ARMS = ("bare", "no-overlay")
 
 # What each harness must lose for a "bare" arm: its user-scope instruction
 # file(s) and the skills path it reads. Mirrors measure_e15.HARNESS_LAYOUT;
@@ -101,8 +113,29 @@ def paths_for(harness: str, home: Path) -> list[Path]:
     return [home / rel for rel in HARNESS_PATHS[harness]]
 
 
-def stash(harness: str, home: Path, state_path: Path) -> list[Path]:
-    """Move a harness's instructions and skills aside. Returns what moved."""
+def _root_files(harness: str, home: Path) -> list[Path]:
+    """Every root context file the harness reads that exists here.
+
+    Copilot has two, and stripping only one leaves the candidate in context
+    while the arm claims it is absent.
+    """
+    found = []
+    for rel in HARNESS_PATHS.get(harness, ()):
+        if rel.endswith(".md"):
+            path = home / rel
+            if path.is_file():
+                found.append(path)
+    return found
+
+
+def stash(
+    harness: str, home: Path, state_path: Path, arm: str = "bare"
+) -> list[Path]:
+    """Apply an arm. Returns the paths it changed."""
+    if arm not in ARMS:
+        raise StashError(f"unknown arm {arm!r}; known: {', '.join(ARMS)}")
+    if arm == "no-overlay":
+        return _stash_overlay(harness, home, state_path)
     if outstanding(state_path):
         raise StashError(
             f"a stash is already outstanding ({state_path}); restore it first "
@@ -130,6 +163,50 @@ def stash(harness: str, home: Path, state_path: Path) -> list[Path]:
     return moved
 
 
+def _stash_overlay(harness: str, home: Path, state_path: Path) -> list[Path]:
+    """Remove the managed overlay block, keeping the rest of the root file.
+
+    The whole file is checksummed and parked as a copy rather than edited in
+    place, so restore is the same byte-for-byte comparison every other arm
+    gets — an edit-and-reinsert would rebuild the block and could differ in
+    whitespace while still looking restored.
+    """
+    if outstanding(state_path):
+        raise StashError(
+            f"a stash is already outstanding ({state_path}); restore it first"
+        )
+    entries: list[dict] = []
+    changed: list[Path] = []
+    for root in _root_files(harness, home):
+        text = root.read_text(encoding="utf-8")
+        stripped = re.sub(
+            r"\n*" + re.escape(OVERLAY_BEGIN) + r".*?" + re.escape(OVERLAY_END) + r"\n?",
+            "\n",
+            text,
+            flags=re.S,
+        )
+        if stripped != text:
+            parked = root.with_name(root.name + SUFFIX)
+            if parked.exists():
+                raise StashError(f"stash slot already occupied: {parked}")
+            parked.write_text(text, encoding="utf-8")
+            root.write_text(stripped, encoding="utf-8")
+            entries.append({
+                "original": str(root),
+                "parked": str(parked),
+                "digest": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                "replace": True,
+            })
+            changed.append(root)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps({"harness": harness, "arm": "no-overlay", "entries": entries},
+                   indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return changed
+
+
 def restore(state_path: Path) -> list[Path]:
     """Put everything back and verify it is unchanged. Idempotent."""
     state = _read_state(state_path)
@@ -139,6 +216,16 @@ def restore(state_path: Path) -> list[Path]:
         original, parked = Path(entry["original"]), Path(entry["parked"])
         if not parked.exists():
             failures.append(f"stashed payload missing: {parked}")
+            continue
+        if entry.get("replace"):
+            # The original was rewritten in place, not moved; the parked copy
+            # is the authority.
+            original.write_text(parked.read_text(encoding="utf-8"), encoding="utf-8")
+            parked.unlink()
+            if _digest(original) != entry["digest"]:
+                failures.append(f"{original} changed while stashed")
+                continue
+            restored.append(original)
             continue
         if original.exists():
             # Something recreated it while the stash was open — a sync, or
@@ -174,7 +261,8 @@ def main(argv: list[str]) -> int:
     try:
         if command == "stash":
             harness, state = argv[2], Path(argv[3])
-            moved = stash(harness, home, state)
+            arm = argv[4] if len(argv) > 4 else "bare"
+            moved = stash(harness, home, state, arm=arm)
             for path in moved:
                 print(f"[arm] stashed {path}")
             if not moved:

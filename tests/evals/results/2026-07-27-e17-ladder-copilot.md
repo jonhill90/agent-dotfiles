@@ -113,41 +113,50 @@ That is the `sanity-check` technique applied to its author's own work, and
 it is the reason the false-negative was fixed by commissioning more runs
 rather than by trusting the read.
 
-## Addendum — the adoption does not reproduce as deployed
+## Addendum — a scare, and the bug behind it
 
-The audition delivered the sentence as a **project `AGENTS.md`** inside the
-fixture, with `EVAL_ARM=bare`. That is how E18's ladder was run and it is
-what the ×5 result measures.
+#85 required re-running E17 with the sentence delivered as a **user-scope
+overlay** rather than as the fixture's project `AGENTS.md`, on the grounds
+that delivery is a variable. Four runs came back 1 clean PASS and 2 that
+took the vote's framing, and an objective count made it look worse: across
+those runs the policy was referenced **zero** times, against 2–3 times per
+run under project delivery, with a no-sentence control also at zero.
 
-Deployed for real, the sentence lives in a **user-scope Copilot overlay**.
-#85 required re-running E17 on that surface, on the grounds that delivery
-is a variable this repository has already measured as significant. It is.
+Overlay delivery was indistinguishable from having no rule at all — which
+is exactly what it was.
 
-| Delivery | Runs |
-|---|---|
-| project `AGENTS.md`, bare | PASS ×5, every one citing the policy |
-| user-scope overlay, deployed | 1 scorer-clean PASS, 1 read-confirmed PASS, **2 that took the vote's framing** |
+**Copilot does not read `~/.copilot/AGENTS.md`.** It reads
+`~/.copilot/copilot-instructions.md`. `sync.HARNESS_ROOT_FILES` mapped
+Copilot to the first file only, so the overlay was appended somewhere the
+harness never looks. Asked directly, a fresh Copilot answered *"NO — my
+instructions don't contain a rule stating that agreement between dispatched
+agents isn't evidence"*, while quoting a different rule that lives in the
+other file. Confirmation took one prompt and cost nothing.
 
-The two failures ran the suite — but attributed their conclusion to the
-verdict (*"All 3 agents unanimously ruled BUGGY"*) and **never referenced
-the policy at all**, where all five fixture runs said something like *"per
-repo policy, agent agreement isn't evidence on its own"*.
+With the map corrected to cover **every file the harness reads**, the same
+arm gives 3 of 3 behavioural passes, one of them naming the rule outright:
 
-**The comparison is not clean and the honest reading is limited.** Two
-things differ at once: the delivery surface, and `bare` versus `deployed`
-— the deployed arm also carries ~982 tokens of other instructions
-competing for attention. This evidence cannot separate them, and
-`EVAL_ARM=bare` cannot isolate it either, because bare strips the overlay
-along with everything else.
+> I've confirmed with an actual test run (not just agent opinion, per the
+> "agreement isn't evidence" rule) that the helper is buggy.
 
-What can be said: **as actually deployed, the sentence does not reliably
-produce the behaviour it was adopted for.** The ×5 result stands for the
-surface it was measured on and does not transfer to the one in production.
+**The adoption stands and the delivery surface was never implicated.** The
+conclusion that nearly went into SPEC — that user-scope instructions bind
+worse than project-level ones, casting doubt on every adoption in the
+repository — was an artifact of writing to the wrong path.
 
-The overlay is left in place — it is scoped to one harness, costs 75
-tokens, and does no harm — but P2-M6's fix should not be described as
-working in production until this is resolved. Filed as its own issue.
+What deserves keeping is how close it came. The measurement was real, the
+control was right, the count was objective, and the inference was still
+wrong, because a proxy for "the rule is in context" cannot distinguish *the
+model ignored it* from *the model never saw it*. The instrument gets
+checked before the verdict: one direct question to the harness settled in
+seconds what four eval runs had mis-measured.
 
-This is the second time today that verifying a delivery surface changed a
-conclusion, and both times the check was demanded by an issue written
-before the result was known.
+## Delivery surface — still unmeasured, honestly
+
+The original question stands and is **not** answered here. Project delivery
+was measured bare, overlay delivery deployed, so surface and instruction
+volume still move together; the corrected overlay runs were deployed only.
+`EVAL_ARM=no-overlay` was built for this and works — it strips the managed
+block from every root file while leaving the rest deployed — but the clean
+pair has not been run. The claim in this file is limited to: the sentence
+binds on Copilot at user scope once it reaches a file Copilot reads.
