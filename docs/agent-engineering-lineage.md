@@ -152,10 +152,13 @@ unsettled:
    relaying.
 4. **Asymmetric** — the reviewer cannot edit; the implementer cannot dismiss.
 
-Two of the four are already covered here at the level of a single reviewer's
-prompt: `sanity-check` rule 2 is *independent context*, and its "a finding
-without evidence is a lead, not a fact" is the verification half of
-*mediated*. **Concurrent** and **asymmetric** are properties of a lane
+Two of the four are partly covered here at the level of a single reviewer's
+prompt. `sanity-check` rule 2 is adjacent to *independent context* but not
+the same: it says hand over the artifact rather than your conclusion, and
+where the reasoning itself is under review it says the rationale must be
+shown — labelled as the thing to attack. That is weaker than a reviewer
+which never sees the implementer's reasoning at all. Its "a finding without
+evidence is a lead, not a fact" is the verification half of *mediated*. **Concurrent** and **asymmetric** are properties of a lane
 layout rather than a prompt, and may not be expressible as a skill at all —
 a documented pattern with no roster cost is a legitimate ending.
 

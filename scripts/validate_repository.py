@@ -57,7 +57,6 @@ DEFAULT_APM_SKILLS = {
     "memory-conventions",
     "obsidian",
     "safe-deletion",
-    "sanity-check",
     "tmux",
 }
 # Retired at M3: installer-owned projection (APM + scripts/sync.py)
@@ -347,6 +346,26 @@ def validate_apm_skill_roster(root: Path) -> list[Finding]:
 OPEN_CAVEAT = re.compile(r"\*\*will be\*\*|will be re-verified|prior bar", re.I)
 
 
+def validate_roster_resolves(root: Path) -> list[Finding]:
+    """Every roster name must name a skill that exists here.
+
+    Nothing checked this, so deleting a skill directory while leaving its
+    roster line validated clean — and the wrapper would then derive disable
+    entries for a skill that is not there. Same silent shape as #93.
+    """
+    roster = root / "settings" / "default-skills.txt"
+    if not roster.is_file():
+        return []
+    return [
+        Finding(
+            "error", roster,
+            f"{name} is in the roster but skills/{name}/SKILL.md does not exist",
+        )
+        for name in roster_union(root)
+        if not (root / "skills" / name / "SKILL.md").is_file()
+    ]
+
+
 def validate_roster_credit(root: Path) -> list[Finding]:
     """No default-roster skill may carry an unfinished verification promise."""
     manifest = root / "docs" / "provenance-manifest.md"
@@ -516,6 +535,7 @@ def validate(root: Path, target: Path | None = None) -> list[Finding]:
         findings.extend(validate_projections(root))
         findings.extend(validate_apm_skill_roster(root))
         findings.extend(validate_roster_credit(root))
+        findings.extend(validate_roster_resolves(root))
         findings.extend(validate_privacy(root))
         findings.extend(validate_static_context(root))
 
