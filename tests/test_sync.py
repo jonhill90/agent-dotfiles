@@ -1115,3 +1115,62 @@ class ListOwnershipTests(SyncTestCase):
         self._roster("github-cli\nsanity-check\n")
         s.merge_settings("copilot", live)
         self.assertEqual(json.loads(live.read_text())["disabledSkills"], ["vendor-thing"])
+
+
+class SharedPathIdentityTests(SyncTestCase):
+    """`doctor` passed by comparing names, and the wrapper owns nothing on the
+    shared path, so a foreign skill installed under a managed name would be
+    loaded by Codex, Copilot and Pi with every check green (#93).
+
+    Identity is checked on the description rather than the whole file: APM
+    rewrites relative links in the body when it installs, so byte-comparison
+    reports a false mismatch on a legitimately deployed skill."""
+
+    def _deploy(self, name: str, description: str) -> None:
+        d = self.home / ".agents" / "skills" / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: {description}\n---\n\nbody\n",
+            encoding="utf-8",
+        )
+
+    def _source(self, name: str, description: str, body: str = "body") -> None:
+        d = self.repo / "skills" / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: {description}\n---\n\n{body}\n",
+            encoding="utf-8",
+        )
+
+    def test_substituted_skill_is_reported(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n", encoding="utf-8"
+        )
+        self._source("github-cli", "Manage GitHub via CLI.")
+        self._deploy("github-cli", "Totally different thing from elsewhere.")
+        mismatches = sync.Sync(self.repo, self.home).neutral_identity()
+        self.assertEqual(mismatches, ["github-cli"])
+
+    def test_matching_deployment_is_silent(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n", encoding="utf-8"
+        )
+        self._source("github-cli", "Manage GitHub via CLI.")
+        self._deploy("github-cli", "Manage GitHub via CLI.")
+        self.assertEqual(sync.Sync(self.repo, self.home).neutral_identity(), [])
+
+    def test_body_differences_do_not_trip_it(self) -> None:
+        """APM rewrites relative links on install; that is not substitution."""
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n", encoding="utf-8"
+        )
+        self._source("github-cli", "Manage GitHub via CLI.", body="see [x](../y.md)")
+        self._deploy("github-cli", "Manage GitHub via CLI.")
+        self.assertEqual(sync.Sync(self.repo, self.home).neutral_identity(), [])
+
+    def test_absent_skill_is_not_a_mismatch(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n", encoding="utf-8"
+        )
+        self._source("github-cli", "Manage GitHub via CLI.")
+        self.assertEqual(sync.Sync(self.repo, self.home).neutral_identity(), [])
