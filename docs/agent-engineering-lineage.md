@@ -128,6 +128,43 @@ The load-bearing design question at this layer, per Anthropic, is the
 the others are doing? For research their answer is "almost nothing" —
 self-contained task, output format, fresh context window.
 
+## Arbitrated review (recorded, not adopted)
+
+A pattern proposed from another estate's orchestrator lane, 2026-07-27.
+Kept because the properties are a useful vocabulary; **not adopted**, because
+the evidence for it is that estate's and this repository has no scenario
+that discriminates on it.
+
+Two panes: one implements, one reviews. The claim is that the second pane is
+not what makes it work — the routing is. Findings go to an arbiter who
+verifies each against the code before passing it down. Without that, the two
+agents negotiate and the one with more context wins rather than the one who
+is right.
+
+Defined by four properties rather than a name, which the proposer noted is
+unsettled:
+
+1. **Concurrent** — review lands while the work is still cheap to change.
+2. **Independent context** — the reviewer reads artifacts, not the
+   implementer's reasoning, which is why it can catch a claim the
+   implementer believes.
+3. **Mediated** — findings route through an arbiter who verifies before
+   relaying.
+4. **Asymmetric** — the reviewer cannot edit; the implementer cannot dismiss.
+
+Two of the four are already covered here at the level of a single reviewer's
+prompt: `sanity-check` rule 2 is *independent context*, and its "a finding
+without evidence is a lead, not a fact" is the verification half of
+*mediated*. **Concurrent** and **asymmetric** are properties of a lane
+layout rather than a prompt, and may not be expressible as a skill at all —
+a documented pattern with no roster cost is a legitimate ending.
+
+The cost, as stated by the proposer: a second agent's tokens, and an arbiter
+who must actually verify rather than relay. Reported as paying for itself
+against a base rate of six silent-config bugs in two days. That base rate is
+the load-bearing number and it is theirs; this repository has not measured
+its own.
+
 ## Contested claims
 
 Recorded so they are not re-litigated.
