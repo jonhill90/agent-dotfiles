@@ -392,7 +392,12 @@ class Sync:
                 fragment["disabledSkills"] = sorted(
                     set(fragment.get("disabledSkills", [])) | set(disabled)
                 )
-        if not fragment:
+        # Do not bail on an empty fragment when we still own list entries in
+        # this file: withdrawing them is exactly the case where the fragment
+        # has gone empty because the roster stopped excluding anything.
+        if not fragment and not self.state.get("settings_lists", {}).get(
+            str(live_path)
+        ):
             return
 
         live = {}
@@ -404,11 +409,56 @@ class Sync:
             if key not in previous:
                 previous[key] = live.get(key, ABSENT)
 
+        # List-valued keys need ownership, not replacement and not union.
+        # deep_merge replaces lists wholesale, which deletes entries a harness
+        # UI or another package wrote. A plain union fixes that and creates
+        # the opposite bug: an entry this wrapper wrote earlier can never be
+        # withdrawn, which is how a stale `disabledSkills` survived a skill
+        # leaving the roster (2026-07-29, found by hand).
+        #
+        # So: keep what we did not write, drop what we did write and no
+        # longer want, add what we want now.
+        owned = self.state.setdefault("settings_lists", {}).setdefault(
+            str(live_path), {}
+        )
+        merged = deep_merge(live, fragment)
+        # Driven by keys we have ever owned, not only keys in the fragment:
+        # when the roster stops excluding anything the key disappears from
+        # the fragment entirely, and a withdrawal keyed off the fragment
+        # would never fire — which is exactly how the stale entry survived.
+        list_keys = {k for k, v in fragment.items() if isinstance(v, list)}
+        list_keys |= set(owned)
+        for key in list_keys:
+            wanted = fragment.get(key, [])
+            if not isinstance(wanted, list):
+                continue
+            foreign = [
+                entry for entry in live.get(key, [])
+                if entry not in owned.get(key, [])
+            ]
+            merged[key] = sorted(set(foreign) | set(wanted))
+            owned[key] = sorted(set(wanted))
+
         live_path.parent.mkdir(parents=True, exist_ok=True)
         live_path.write_text(
-            json.dumps(deep_merge(live, fragment), indent=2) + "\n",
+            json.dumps(merged, indent=2) + "\n",
             encoding="utf-8",
         )
+
+    def restore_settings(self, live_path: Path) -> None:
+        """Put one settings file back as it was before the wrapper touched it."""
+        previous = self.state.get("settings", {}).get(str(live_path))
+        if previous is None or not live_path.is_file():
+            return
+        live = json.loads(live_path.read_text(encoding="utf-8"))
+        for key, value in previous.items():
+            if value == ABSENT:
+                live.pop(key, None)
+            else:
+                live[key] = value
+        live_path.write_text(json.dumps(live, indent=2) + "\n", encoding="utf-8")
+        self.state.get("settings", {}).pop(str(live_path), None)
+        self.state.get("settings_lists", {}).pop(str(live_path), None)
 
     # -- mcp --------------------------------------------------------------
 

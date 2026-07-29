@@ -1029,3 +1029,89 @@ class CopilotBothInstructionFilesTests(SyncTestCase):
         for name in ("AGENTS.md", "copilot-instructions.md"):
             self.assertIn("the rule.", (copilot / name).read_text(encoding="utf-8"),
                           f"{name} missing the overlay")
+
+
+class ForeignSettingsEntryTests(SyncTestCase):
+    """`deep_merge` recurses into dicts but replaces lists wholesale, so a
+    list-valued managed key loses anything the wrapper did not write. Hit for
+    real on 2026-07-29: removing a stale disable entry while its skill was
+    still deployed made the skill load on four harnesses instead of two."""
+
+    def _fragment(self, harness: str, body: dict) -> None:
+        d = self.repo / "settings" / harness
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "settings.json").write_text(json.dumps(body), encoding="utf-8")
+
+    def test_apply_keeps_a_foreign_disabled_skill_entry(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n\n[codex]\nsanity-check\n", encoding="utf-8"
+        )
+        live = self.home / ".copilot" / "settings.json"
+        live.parent.mkdir(parents=True, exist_ok=True)
+        live.write_text(
+            json.dumps({"disabledSkills": ["vendor-thing"]}), encoding="utf-8"
+        )
+        self._fragment("copilot", {})
+        sync.Sync(self.repo, self.home).merge_settings("copilot", live)
+        entries = json.loads(live.read_text())["disabledSkills"]
+        self.assertIn("vendor-thing", entries, "foreign entry was deleted")
+        self.assertIn("sanity-check", entries, "derived entry missing")
+
+    def test_remove_restores_foreign_entries_rather_than_dropping_the_key(self) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n\n[codex]\nsanity-check\n", encoding="utf-8"
+        )
+        live = self.home / ".copilot" / "settings.json"
+        live.parent.mkdir(parents=True, exist_ok=True)
+        live.write_text(
+            json.dumps({"disabledSkills": ["vendor-thing"]}), encoding="utf-8"
+        )
+        self._fragment("copilot", {})
+        s = sync.Sync(self.repo, self.home)
+        s.merge_settings("copilot", live)
+        s.restore_settings(live)
+        entries = json.loads(live.read_text()).get("disabledSkills", [])
+        self.assertEqual(entries, ["vendor-thing"], "foreign entry not restored")
+
+
+class ListOwnershipTests(SyncTestCase):
+    """The wrapper must withdraw its own stale entries while leaving foreign
+    ones. Union alone leaves residue; replacement alone deletes other
+    people's entries. Both failure modes were hit on 2026-07-29."""
+
+    def _roster(self, body: str) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(body, encoding="utf-8")
+
+    def _live(self) -> Path:
+        p = self.home / ".copilot" / "settings.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def test_stale_wrapper_entry_is_withdrawn_when_the_roster_changes(self) -> None:
+        live = self._live()
+        live.write_text("{}", encoding="utf-8")
+        (self.repo / "settings" / "copilot").mkdir(parents=True, exist_ok=True)
+        (self.repo / "settings" / "copilot" / "settings.json").write_text("{}", encoding="utf-8")
+
+        self._roster("github-cli\n\n[codex]\nsanity-check\n")
+        s = sync.Sync(self.repo, self.home)
+        s.merge_settings("copilot", live)
+        self.assertEqual(json.loads(live.read_text())["disabledSkills"], ["sanity-check"])
+
+        # sanity-check leaves the roster entirely — its disable must go too
+        self._roster("github-cli\nsanity-check\n")
+        s.merge_settings("copilot", live)
+        self.assertEqual(json.loads(live.read_text()).get("disabledSkills"), [])
+
+    def test_foreign_entry_survives_a_roster_change(self) -> None:
+        live = self._live()
+        live.write_text(json.dumps({"disabledSkills": ["vendor-thing"]}), encoding="utf-8")
+        (self.repo / "settings" / "copilot").mkdir(parents=True, exist_ok=True)
+        (self.repo / "settings" / "copilot" / "settings.json").write_text("{}", encoding="utf-8")
+
+        self._roster("github-cli\n\n[codex]\nsanity-check\n")
+        s = sync.Sync(self.repo, self.home)
+        s.merge_settings("copilot", live)
+        self._roster("github-cli\nsanity-check\n")
+        s.merge_settings("copilot", live)
+        self.assertEqual(json.loads(live.read_text())["disabledSkills"], ["vendor-thing"])
