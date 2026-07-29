@@ -180,6 +180,18 @@ the deployed tree and encodes the plugin counting rules (SPEC §6); measuring
 by hand under-counts plugins, which is how the 2026-07-26 matrix reported
 Claude Code 87 tokens light.
 
+**The script reads deployed files, so it cannot see what the harness
+itself ships.** Claude Code's bundled skills are in context and on no path
+it scans; asked directly, `/context` reported **26 skills, 2,600 tokens**
+where the script reported 490 — understated 5.3×, and over the 2,000-token
+description cap the whole time. The report now names its blind spots with
+their last measured cost instead of printing a total that implies none.
+
+Counts differ by more than an order of magnitude across harnesses: Claude
+Code ships many bundled skills, Codex 16, Copilot 1, Pi none. Ask the
+harness rather than the filesystem — `/context` on Claude Code, a skill
+listing on the others.
+
 A skill on disk is not necessarily in the model's context. Claude Code and
 Copilot are both sent the union and then told which entries to drop
 (`skillOverrides`, `disabledSkills`), so the script subtracts what each
