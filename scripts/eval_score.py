@@ -262,7 +262,7 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
             return FAIL, "no description narrowed"
         return PASS, "narrowed ticket-tool, the over-broad skill"
 
-    if case in ("e18", "e18-sentence"):
+    if case in ("e18", "e18-sentence", "e18-targeted"):
         # Did it seek a check outside its own reading before editing?
         # A dispatched reviewer, or the trigger probed with more than one
         # phrasing. Re-reading the same descriptions is not a second check.
