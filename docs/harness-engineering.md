@@ -32,6 +32,8 @@ directories; `.apm/` is only the package view.
 | MCP | wrapper → `~/.claude.json` | none shipped (0.80.6) | wrapper → `config.toml` block / `mcp-config.json` |
 | Long-term memory | shared vault plus native session memory | shared vault | shared vault (conventions skill) |
 | Per-skill disable | `skillOverrides` (v2.1.220) | `skills` denylist in `~/.pi/agent/settings.json` (0.80.6) | Codex `[[skills.config]]`; Copilot `disabledSkills` in `~/.copilot/settings.json` (1.0.75, V10 resolved 2026-07-27) |
+| Skills the harness ships | **many** bundled (`/code-review`, `/debug`, `/loop`, `/claude-api`, `/run`, `/verify`, `/batch`, `/doctor`) plus enabled plugins | **none** — lists only the deployed roster | Codex **16** (builtins plus namespaced plugin skills); Copilot **1** (`customize-cloud-agent`) |
+| Disabling those | bundled: `disableBundledSkills`, **all-or-nothing** except `/doctor`. Plugin skills are **not** reachable by `skillOverrides` — `/plugin` only | n/a | Codex: **per skill, by name**, builtins and `plugin:skill` alike. Copilot: `disabledSkills` covers its builtin |
 | Release status | v1 behavioral target | v1 behavioral target | **first-class since 2026-07-18** (P2-M3): breakage blocks release |
 
 Pi ships no MCP support as of 0.80.6 — verified by grepping its distributed
