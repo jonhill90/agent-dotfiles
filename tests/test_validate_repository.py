@@ -416,3 +416,37 @@ class SkillLengthTests(unittest.TestCase):
     def test_comfortably_short_is_silent(self) -> None:
         self._write(120)
         self.assertEqual(validator.validate_skill_length(self.skill), [])
+
+
+class RosterResolutionTests(unittest.TestCase):
+    """A roster name that resolves to no skill directory passes validation
+    today. Deleting skills/<name>/ while leaving its roster line green is a
+    silent half-cut, and sync then writes disable entries for a skill that
+    does not exist (2026-07-29)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "settings").mkdir(parents=True)
+        (self.root / "skills" / "github-cli").mkdir(parents=True)
+        (self.root / "skills" / "github-cli" / "SKILL.md").write_text(
+            "---\nname: github-cli\ndescription: x\n---\n", encoding="utf-8"
+        )
+
+    def _roster(self, body: str) -> None:
+        (self.root / "settings" / "default-skills.txt").write_text(body, encoding="utf-8")
+
+    def test_unresolvable_roster_name_is_an_error(self) -> None:
+        self._roster("github-cli\nvanished\n")
+        findings = validator.validate_roster_resolves(self.root)
+        self.assertTrue(findings)
+        self.assertIn("vanished", findings[0].message)
+
+    def test_resolvable_names_are_silent(self) -> None:
+        self._roster("github-cli\n")
+        self.assertEqual(validator.validate_roster_resolves(self.root), [])
+
+    def test_scoped_sections_are_checked_too(self) -> None:
+        self._roster("github-cli\n\n[pi]\nvanished\n")
+        self.assertTrue(validator.validate_roster_resolves(self.root))

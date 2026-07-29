@@ -114,24 +114,36 @@ and apply the same rules to the answer.
 
 ## Where this came from
 
-Recorded in `docs/provenance-manifest.md`; the results files are under
-`tests/evals/results/`.
+**Read this section as the author's practice, not as measured results.** An
+earlier version cited a provenance manifest and results files for the three
+anecdotes below. Two of those citations did not hold up when checked: the
+three-reviewer migration-plan review is recorded only in a commit message,
+and the trigger probe is recorded as **one** phrasing loading the wrong
+skill, not as two-right-and-one-wrong. The corrected status is below, and
+the claim each anecdote was supporting is marked accordingly.
 
-- **Three reviewers, three lenses, three changes (2026-07-26).** Dispatched
-  against one migration plan. Given placement, one rejected where the
-  document was going. Given the referenced files, one found they existed
-  only on a branch and not on the ref the consumer reads — it checked the
-  ref rather than judging whether they ought to exist. Given the stated
-  rationale to argue against, a dissenter proved it stale. A fourth generic
-  reviewer would have agreed with the other three.
-- **The trigger probe.** Two phrasings of a skill-trigger question landed on
-  the right answer; a third landed on the wrong one. Repetition agreed with
-  itself, and only a reviewer asking a different question found it. This is
-  the evidence for *vary the question, not the reviewer count*.
-- **Five false verdicts in one day, none from a skill**
-  ([pass 1](../../tests/evals/results/2026-07-26-p2m5-counter-pass1.md),
-  [pass 2](../../tests/evals/results/2026-07-26-p2m5-counter-pass2.md)).
-  Three would have read as a working skill misbehaving and would have caused
-  it to be narrowed. The tell each time was a missing transcript — a verdict
-  asserted with its evidence absent. This is why rule 4 requires evidence
-  per finding and rule 7 separates "could not check" from a verdict.
+- **A reviewer handed a conclusion confirms it.** *Evidenced.* Copilot
+  sought a second opinion exactly as instructed, handed over its diagnosis,
+  the reviewer agreed, and it edited the wrong skill
+  ([ladder](../../tests/evals/results/2026-07-27-copilot-ladder.md)). The
+  same fixture, given raw to a reviewer on another harness, produced a
+  falsified hypothesis instead
+  ([E18](../../tests/evals/results/2026-07-26-e18-sentence-rung.md)).
+- **Agreement is not verification.** *Evidenced.* Copilot delegated to three
+  reviewers, they agreed, and it acted on the vote without running the test
+  that settled the question — FAIL ×2
+  ([E17](../../tests/evals/results/2026-07-27-copilot-column.md)).
+- **Check the instrument before believing the verdict.** *Evidenced, and the
+  best-supported claim here.* Twenty-plus false verdicts across
+  2026-07-26/29, none from a skill; two were arms that reported a component
+  absent while it was still loaded
+  ([counter-scenario](../../tests/evals/results/2026-07-28-sc-c1-instrument.md)).
+- **Vary the question, not the reviewer count.** *Not evidenced.* Reasoning
+  from the two entries above, not from a run that varied it.
+- **The eight prompt properties.** *Not evidenced individually.* Rules 3, 5,
+  6 and 8 have no recorded instance behind them. They are practice.
+
+The technique as a whole has never been measured: E18 scores whether an
+outside check was **sought**, not whether the way it was asked improved the
+answer. That is why this skill is public opt-in rather than in the default
+roster — SPEC §10.1 rule 5 — and what issue #80 exists to settle.
