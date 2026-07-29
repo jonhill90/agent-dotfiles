@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import tomllib
 import os
 import re
 import sys
@@ -73,6 +74,22 @@ def suppressed_skills(home: Path, harness: str) -> set[str]:
     if harness == "copilot":
         settings = _read_json(home / ".copilot" / "settings.json")
         return set(settings.get("disabledSkills", []))
+    if harness == "codex":
+        # Codex keys its disable in TOML, not JSON. Missing this branch meant
+        # a skill the wrapper had disabled for Codex was still charged to it
+        # (#92, 2026-07-29).
+        path = home / ".codex" / "config.toml"
+        if not path.is_file():
+            return set()
+        try:
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return set()
+        entries = data.get("skills", {}).get("config", [])
+        return {
+            e["name"] for e in entries
+            if isinstance(e, dict) and e.get("enabled") is False and "name" in e
+        }
     if harness == "pi":
         settings = _read_json(home / ".pi" / "agent" / "settings.json")
         # Denylist entries look like "-skills/<name>/SKILL.md".
@@ -82,6 +99,48 @@ def suppressed_skills(home: Path, harness: str) -> set[str]:
             if entry.startswith("-") and entry.count("/") >= 2
         }
     return set()
+
+
+# Populations that are in the model's context and never touch a path this
+# script reads, with the last time each was measured against the harness
+# itself. Reporting zero for these is how Claude Code came to be understated
+# by 5.3x for weeks (#95). The numbers age; the point is that the report
+# names its blind spots instead of implying it has none.
+BLIND_SPOTS: dict[str, list[dict]] = {
+    "claude": [
+        {
+            "population": "bundled skills",
+            "tokens": 1758,
+            "count": 14,
+            "measured": "2026-07-29",
+            "lever": "disableBundledSkills (all-or-nothing except /doctor)",
+        },
+    ],
+    "codex": [
+        {
+            "population": "builtin and plugin skills",
+            "tokens": None,
+            "count": 16,
+            "measured": "2026-07-29",
+            "lever": "[[skills.config]] name=... enabled=false, per skill",
+        },
+    ],
+    "copilot": [
+        {
+            "population": "builtin skills",
+            "tokens": None,
+            "count": 1,
+            "measured": "2026-07-29",
+            "lever": "disabledSkills",
+        },
+    ],
+    "pi": [],
+}
+
+
+def blind_spots(harness: str) -> list[dict]:
+    """What this script cannot see for a harness, and when that was checked."""
+    return BLIND_SPOTS.get(harness, [])
 
 
 def _read_json(path: Path) -> dict:
@@ -236,6 +295,25 @@ def main() -> int:
             over += 1
     plugins = report["claude"]["plugin_names"]
     print(f"\nenabled plugins charged to Claude Code: {', '.join(plugins) or 'none'}")
+
+    # Name the blind spots. This script reads deployed files, so anything the
+    # harness itself ships is invisible to it — and printing a total without
+    # saying so is how Claude Code was reported at 490 tokens when the harness
+    # said 2,600 (#95).
+    print("\nNOT COUNTED ABOVE — populations this script cannot read:")
+    for harness in HARNESS_LAYOUT:
+        for spot in blind_spots(harness):
+            cost = (f"~{spot['tokens']} tok" if spot["tokens"]
+                    else "cost unmeasured")
+            print(
+                f"  {harness:8} {spot['count']:>3} {spot['population']:<28}"
+                f" {cost:<18} (checked {spot['measured']})"
+            )
+            print(f"           lever: {spot['lever']}")
+    print(
+        "  Ask the harness for the truth: Claude Code `/context`,"
+        " `codex exec`/`pi -p`/`copilot -p` skill listings."
+    )
     return 1 if over else 0
 
 
