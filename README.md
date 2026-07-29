@@ -124,16 +124,17 @@ covered: `skillOverrides` on Claude Code, `disabledSkills` on Copilot, a
 | `obsidian` | Notes, vaults and daily notes via the Obsidian CLI | all four |
 | `safe-deletion` | Verify contents match their described purpose before deleting | all four |
 | `tmux` | Operate persistent interactive terminal sessions safely | all four |
-| `sanity-check` | Check reasoning with a second mind before acting on it | **Codex, Pi only** |
 
-`sanity-check` is the first skill to use per-harness scoping. The cheaper
-rung — one sentence in the canonical instructions — binds on Claude Code
-and does not on Codex or Pi, so the skill ships only where the instruction
-failed (SPEC §4 ladder; [E18 results](tests/evals/results/2026-07-26-e18-sentence-rung.md)).
+The per-harness mechanism is built and enforced on all four harnesses, but
+**nothing currently uses it** — every harness resolves the same eight
+skills. `sanity-check` was its one live instance until 2026-07-29, when it
+moved to public opt-in for failing §10.1 rule 5: no skill-rung run was ever
+measured, and its counter-scenario is explicitly invalid.
 
-Three further skills are published here but excluded from the default
-package — `primer`, `close-the-loop`, and `dispatching-subagents` —
-because no failing eval justified their static description cost. All three
+Four further skills are published here but excluded from the default
+package — `primer`, `close-the-loop`, `dispatching-subagents`, and
+`sanity-check` —
+because no failing eval justified their static description cost. All four
 remain independently installable, and the reasoning for each is recorded in
 [docs/provenance-manifest.md](docs/provenance-manifest.md).
 
