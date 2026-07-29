@@ -53,6 +53,12 @@ is retired; validation errors if any reappear.
 
 ## Skill Authoring
 
+Decide placement first — see "Where a Skill Belongs" in `README.md`. The
+§10.1 evidence bar governs the **default roster**, not every skill written.
+A project skill lives in that project, needs no eval, no scenario and no
+manifest row. A skill from someone else is reached with `npx skills use`
+or declared as a pinned dependency (SPEC §3.1); it is never vendored here.
+
 - Use `skills/<name>/SKILL.md`.
 - Match the directory name and frontmatter `name`.
 - Use lowercase letters, digits, and hyphens; maximum 64 characters.
