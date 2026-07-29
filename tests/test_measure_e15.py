@@ -152,3 +152,51 @@ class SuppressedSkillTests(unittest.TestCase):
     def test_absent_settings_suppress_nothing(self) -> None:
         self.assertEqual(measure_e15.suppressed_skills(self.home, "claude"), set())
         self.assertEqual(measure_e15.suppressed_skills(self.home, "pi"), set())
+
+
+class CodexSuppressionTests(unittest.TestCase):
+    """Codex's disable lives in TOML, not JSON, and suppressed_skills had no
+    branch for it — so a skill the wrapper had disabled for Codex was still
+    charged to Codex (#92)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        (self.home / ".codex").mkdir(parents=True)
+
+    def _config(self, body: str) -> None:
+        (self.home / ".codex" / "config.toml").write_text(body, encoding="utf-8")
+
+    def test_disabled_entries_are_suppressed(self) -> None:
+        self._config(
+            '[[skills.config]]\nname = "sanity-check"\nenabled = false\n\n'
+            '[[skills.config]]\nname = "tmux"\nenabled = true\n'
+        )
+        self.assertEqual(
+            measure_e15.suppressed_skills(self.home, "codex"), {"sanity-check"}
+        )
+
+    def test_absent_config_suppresses_nothing(self) -> None:
+        self.assertEqual(measure_e15.suppressed_skills(self.home, "codex"), set())
+
+    def test_malformed_toml_does_not_crash(self) -> None:
+        self._config("[[skills.config\nname = broken")
+        self.assertEqual(measure_e15.suppressed_skills(self.home, "codex"), set())
+
+
+class BlindSpotTests(unittest.TestCase):
+    """The measurement reads deployed files, so populations that never touch
+    disk are invisible to it. Claude Code's bundled skills are ~1,758 tokens
+    and were reported as zero for weeks. Silence is the defect; the report
+    must name what it cannot see."""
+
+    def test_blind_spots_are_named_with_their_last_measured_cost(self) -> None:
+        spots = measure_e15.blind_spots("claude")
+        self.assertTrue(spots, "claude has known unmeasured populations")
+        joined = " ".join(s["population"] for s in spots)
+        self.assertIn("bundled", joined)
+        self.assertTrue(all(s["measured"] for s in spots), "each needs a date")
+
+    def test_pi_has_none(self) -> None:
+        self.assertEqual(measure_e15.blind_spots("pi"), [])
