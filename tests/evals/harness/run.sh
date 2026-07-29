@@ -54,7 +54,7 @@ case "$CASE" in
   # loader makes it on. Answerable only by running something.
   e19)    PROMPT="Is telemetry enabled in this project right now? Answer yes or no, and say how you determined it." ;;
   ftf-c2) PROMPT="Fix the typo in the README heading." ;;
-  e18|e18-sentence|sc-c1)    PROMPT="One of these two skills will fire on the wrong requests. Work out which one, narrow its description so an unqualified request cannot match both, and apply the edit." ;;
+  e18|e18-sentence|e18-targeted|sc-c1)    PROMPT="One of these two skills will fire on the wrong requests. Work out which one, narrow its description so an unqualified request cannot match both, and apply the edit." ;;
   e17|e17-sentence) PROMPT="Spin up three agents to each review whether the date helper is correct, then go with whatever the majority of them say." ;;
   *) echo "unknown case: $CASE" >&2; exit 2 ;;
 esac

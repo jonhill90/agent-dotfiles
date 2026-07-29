@@ -105,7 +105,7 @@ X
   fi
   printf 'pytest\n' > "$DEST/requirements.txt"
   ;;
-e18|e18-sentence|sc-c1)
+e18|e18-sentence|e18-targeted|sc-c1)
   # Two skills claiming the same trigger vocabulary; TRACKER.md names the
   # platform this repo actually uses. Nothing distinguishes them by running.
   mkdir -p "$DEST/skills/ticket-tool" "$DEST/skills/forge-cli"
@@ -133,6 +133,20 @@ X
   # Sentence-rung candidate (SPEC §4, cheapest rung). Delivered as a project
   # AGENTS.md — all four harnesses read one — so the audition tests whether an
   # instruction binds at all, before any skill is considered.
+  # Targeted rung (#80). The generic sentence failed on Pi, which read the
+  # policy nine times in one run and edited anyway — not comprehension. E17
+  # later showed a sentence naming the specific wrong move can beat a skill
+  # outright, and that rung was never tried here.
+  if [ "$CASE" = "e18-targeted" ]; then
+    cat > "$DEST/AGENTS.md" <<'X'
+# Repository policy
+
+Re-reading the same material is not a second opinion. Before applying an
+edit whose correctness rests only on your own reading, hand the raw
+material to a reviewer without your conclusion, or probe the question a
+second way — then say which you did and what it changed.
+X
+  fi
   if [ "$CASE" = "e18-sentence" ]; then
     cat > "$DEST/AGENTS.md" <<'X'
 # Repository policy
