@@ -180,8 +180,24 @@ the deployed tree and encodes the plugin counting rules (SPEC §6); measuring
 by hand under-counts plugins, which is how the 2026-07-26 matrix reported
 Claude Code 87 tokens light.
 
-**The script reads deployed files, so it cannot see what the harness
-itself ships.** Claude Code's bundled skills are in context and on no path
+Two instruments, and they answer different questions.
+
+`measure_e15.py` estimates the footprint **this repository deploys**, by
+reading files. Free, runs in CI, governs what we control.
+
+`measure_context.py` asks each harness **how large its static context
+actually is**, by sending a one-token prompt and reading the input-token
+count it reports. That covers everything — system prompt, tool definitions,
+bundled skills, instructions, memory. It costs an API call per harness, so
+it is invoked deliberately and never automatically.
+
+First run, 2026-07-29: Pi ~3.8k, Claude Code ~24.7k, Copilot ~30.4k, Codex
+~62.1k. A 16× spread nobody had intended or noticed, against §6 caps that
+total 8,000. Run-to-run variance is a few thousand tokens, so small
+differences are noise; the instrument is for deltas on one harness and for
+gaps nobody meant to create.
+
+**The disk-based script cannot see what the harness itself ships.** Claude Code's bundled skills are in context and on no path
 it scans; asked directly, `/context` reported **26 skills, 2,600 tokens**
 where the script reported 490 — understated 5.3×, and over the 2,000-token
 description cap the whole time. The report now names its blind spots with
