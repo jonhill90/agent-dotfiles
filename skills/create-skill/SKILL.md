@@ -8,6 +8,27 @@ description: Design, create, and validate portable Agent Skills with effective t
 Create focused skills that another agent can discover and apply without loading
 unrelated context.
 
+## Ask where it belongs first
+
+Before writing anything, settle where the skill will live. Most skills do
+not belong in a personal harness repository, and the answer changes what
+the skill has to earn.
+
+| Situation | Where | Has to earn its place? |
+|---|---|---|
+| Every project, every day | personal roster | yes — full evidence bar |
+| One repository only | that repo's `.claude/skills/` or `.agents/skills/` | no |
+| Occasional domain work | nothing installed — `npx skills use <pkg>@<skill>` | no |
+
+A skill in the personal roster is loaded on every request on every harness,
+so it is the only case that needs a failing scenario behind it. A project
+skill costs nothing anywhere else — write it, commit it next to the code,
+and move on.
+
+If the answer is "one repository" or "someone else already wrote it", stop
+here. The rest of this skill is about authoring for the portable case.
+
+
 ## Workflow
 
 1. Gather concrete examples of requests that should trigger the skill.

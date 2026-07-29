@@ -51,6 +51,58 @@ user scope and `scripts/sync.py apply` covers what APM does not (Pi
 projection, settings merges, teardown). The committed symlink matrix is
 retired (SPEC §2).
 
+## Where a Skill Belongs
+
+Decide this before writing anything. Most skills do **not** belong in this
+repository, and nothing here should ever be copied into a project.
+
+| Situation | Where it goes | Evidence bar |
+|---|---|---|
+| Useful in every project, every day | this repo's roster | **applies** — §10.1 |
+| Only true in one repository | that repo's `.claude/skills/` or `.agents/skills/` | none |
+| Useful often, not always | roster, marked `name-only` so it lists without its description | applies |
+| Needed once, or maintained by someone else | nothing installed — `npx skills use <package>@<skill>` | none |
+
+**The evidence bar governs the roster, not every skill you write.** A skill
+that ships to four harnesses on every request has to earn that cost. A
+skill in one project costs nothing anywhere else and needs no eval, no
+scenario and no manifest row. Do not run the ladder on a project skill.
+
+### Someone else's skill
+
+Vendor and community collections — Azure, Microsoft, a teammate's — are
+**never vendored** into this repository. Two ways to reach them:
+
+```bash
+# use it for one task; nothing is installed, nothing is charged to context
+npx skills use microsoft/skills@azure-naming
+
+# or install a specific one, pinned, as a declared dependency (SPEC §3.1)
+npx skills add microsoft/skills --skill azure-naming
+```
+
+Prefer `use`. It has no static cost, so it needs no justification — which
+is why it is the right default for a domain skill you touch occasionally.
+
+### Project skills
+
+Put them in the project, next to the code they describe:
+
+```text
+your-project/
+├── .claude/skills/deploy-widget/SKILL.md    # Claude Code
+└── .agents/skills/deploy-widget/SKILL.md    # Codex, Copilot, Pi
+```
+
+They travel with the repository, teammates get them by cloning, and they
+cost nothing in any other project. Two behaviours worth knowing: skills
+**hot-reload**, so adding one takes effect without restarting; and a
+project skill **overrides a bundled skill of the same name**, which is how
+one repository replaces `/code-review` locally without affecting others.
+
+Nested directories work too — a skill under `apps/web/.claude/skills/`
+loads when the agent touches that package, which suits a monorepo.
+
 ## Core Workflow Skills
 
 The default roster is `settings/default-skills.txt`. It is **scoped per
