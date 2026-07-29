@@ -56,6 +56,16 @@ OVERLAY_FILES = {
 }
 
 
+def _description_of(skill_md: Path) -> str:
+    """A skill's `description`, whitespace-normalised, or "" if unreadable."""
+    try:
+        text = skill_md.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    match = re.search(r"^description:\s*(.*?)(?=^\w+:|^---)", text, re.M | re.S)
+    return " ".join(match.group(1).split()) if match else ""
+
+
 def overlay_body(repo: Path, harness: str) -> str:
     """An overlay's content, or "" when it is a placeholder.
 
@@ -688,6 +698,13 @@ class Sync:
         if drift:
             print(f"[drift] ~/.agents/skills: unwanted {', '.join(drift)}")
             issues += 1
+        substituted = self.neutral_identity()
+        if substituted:
+            print(
+                "[substituted] ~/.agents/skills: not our copy — "
+                f"{', '.join(substituted)}"
+            )
+            issues += 1
         for relative in MANAGED_ROOT_FILES:
             path = self.home / relative
             if not path.parent.is_dir():
@@ -766,6 +783,30 @@ class Sync:
         wanted = set(neutral_union(self.repo))
         return sorted(set(self.state.get("neutral_skills", [])) - wanted)
 
+    def neutral_identity(self) -> list[str]:
+        """Roster skills on the shared path whose deployed copy is not ours.
+
+        `neutral_untracked` skips any name the roster wants, so a foreign
+        skill installed under a managed name is invisible to it — and the
+        wrapper owns nothing on that path (`ensure_neutral_skills` only links
+        when the target is absent), so nothing else notices either. Three
+        harnesses would load a third party's procedure, and its scripts,
+        under a trusted name with every check green (#93).
+
+        Compared on the description, not the whole file: APM rewrites
+        relative links in the body on install, so byte-comparison reports a
+        false mismatch on a legitimately deployed skill.
+        """
+        mismatched: list[str] = []
+        for name in neutral_union(self.repo):
+            deployed = self.home / ".agents" / "skills" / name / "SKILL.md"
+            source = self.repo / "skills" / name / "SKILL.md"
+            if not deployed.is_file() or not source.is_file():
+                continue
+            if _description_of(deployed) != _description_of(source):
+                mismatched.append(name)
+        return mismatched
+
     def neutral_untracked(self) -> list[str]:
         """Out-of-union links on the shared path this wrapper did not create.
 
@@ -789,8 +830,9 @@ class Sync:
     def doctor_checks(self, env: dict) -> list[tuple[str, tuple[bool | None, str]]]:
         checks: list[tuple[str, tuple[bool | None, str]]] = []
         drift = self.neutral_drift()
+        substituted = self.neutral_identity()
         untracked = self.neutral_untracked()
-        if drift or untracked:
+        if drift or untracked or substituted:
             parts = []
             if drift:
                 parts.append(f"managed, removed on next apply: {', '.join(drift)}")
@@ -799,11 +841,22 @@ class Sync:
                     f"untracked (pre-§4.1 mirror), remove manually: "
                     f"{', '.join(untracked)}"
                 )
+            if substituted:
+                # The one that fails silently: the name is wanted, so drift
+                # and untracked both skip it, and three harnesses load a copy
+                # this repository did not author (#93).
+                parts.append(
+                    f"not our copy, deployed under a managed name: "
+                    f"{', '.join(substituted)}"
+                )
             message = "~/.agents/skills — " + "; ".join(parts)
         else:
             message = "~/.agents/skills matches the neutral roster"
         checks.append(
-            ("neutral-roster-drift", (not (drift or untracked), message))
+            (
+                "neutral-roster-drift",
+                (not (drift or untracked or substituted), message),
+            )
         )
         checks.append(
             ("apm-cli", (shutil.which("apm") is not None, "apm on PATH"))
