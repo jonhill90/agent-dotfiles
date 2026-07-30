@@ -13,7 +13,8 @@ tests/evals/harness/run.sh copilot sd-c1  cop-sdc1-1
 
 `<cli>` is the harness binary (`claude`, `codex`, `copilot`, `pi`).
 `<case>` is one of `e11`, `e06`, `sd-c1`, `sd-c2`, `ftf-c1`, `ftf-c2`,
-`e17`, `e18`, `e18-sentence`. `docs/evals.md` says what each one tests;
+`e17`, `e17-sentence`, `e18`, `e18-sentence`, `e18-targeted`, `sc-c1`,
+`e19`, `e20`, `e20-sentence`. `docs/evals.md` says what each one tests;
 `e06` and `ftf-c1` share a fixture and prompt but answer different
 questions, so they are not interchangeable.
 
