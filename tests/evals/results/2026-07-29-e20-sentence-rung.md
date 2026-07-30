@@ -24,8 +24,11 @@ Delivered as a project `AGENTS.md`, which all four harnesses read.
 
 | Arm | Claude Code | Codex | Pi | Copilot |
 |---|---|---|---|---|
-| baseline | FAIL ×2 | FAIL, INVALID | FAIL ×2 | FAIL ×2 |
-| **sentence** | **PASS ×3** | INVALID ×4 | FAIL, PASS, FAIL | not run |
+| baseline | FAIL ×2 | FAIL ×2 | FAIL ×2 | FAIL ×2 |
+| **sentence** | **PASS ×3** | **FAIL ×3** | FAIL, PASS, FAIL | not run |
+
+*Codex re-measured 2026-07-29 after its delivery problem was fixed — see
+defect 29. It was never quota-blocked; the earlier reading was wrong.*
 
 **Claude Code binds, ×3, and the transcripts show real behaviour rather than
 policy recitation.** It ran the search, found the actual collection, picked
@@ -45,9 +48,18 @@ installed, and it surfaced the security trade-off as the reason.
 and 27 KB of transcript, so they are real. Same column, same shape as E18:
 Pi reads the policy and proceeds on its own reasoning.
 
-**Codex is unmeasured, not failing.** All four of its runs show the prompt
-never reaching the composer, and its banner reads *"You have 2 usage limit
-resets available."* Quota-blocked.
+**Codex does not bind either — three clean failures, delivery confirmed.**
+The earlier reading of "quota-blocked" was wrong: its banner line *"You have
+2 usage limit resets available"* is informational, and the owner confirmed
+the CLI was working. The prompt genuinely was not arriving, for a different
+reason (defect 29).
+
+Re-measured, Codex improvises thoroughly. One run worked for 2m 29s and
+produced a careful plan with Microsoft Learn citations, an OIDC
+recommendation over publish-profile credentials, and an environment
+inventory noting `azd` was not installed — and never once looked for an
+existing skill. Like Claude Code's baseline, this is not carelessness. It is
+an agent doing good work in a direction nobody told it had a shortcut.
 
 ## Adopted
 
@@ -86,3 +98,24 @@ rescore.
 
 Third and fourth over-broad matcher in three days. Both pointed toward the
 conclusion their author wanted.
+
+## Harness defect 29 — the harness skipped the check its own skill requires
+
+Codex 0.146.0 added a startup dialog — *"1. Yes, continue / 2. No, quit /
+Press enter to continue"* — and dismissing it leaves the TUI still
+initialising. The harness typed the prompt on a fixed timer, so it was
+swallowed, and **six runs were scored as behaviour when nothing had been
+asked.** Two of those scored PASS off banner text.
+
+`skills/tmux/SKILL.md` says it plainly: *"Never skip send verification.
+'I sent it' is not the same as 'the pane received it.'"* The harness had
+been doing exactly that since it was written.
+
+Now it clears any standing dialog, types the prompt, confirms the text is in
+the pane, and retries up to five times — and records the confirmation, so the
+scorer does not have to re-infer it. That last part matters: a 31 KB Codex
+run scrolled its own prompt echo out of the captured window and was lost as
+INVALID before delivery was recorded at send time.
+
+The guard's failure mode is now losing nothing and refusing to score runs
+that never happened, which is the right direction on both counts.
