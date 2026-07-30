@@ -80,8 +80,32 @@ for _ in 1 2 3; do
   O=$(tmux -S "$SOCKET" capture-pane -p -J -t "$TAG":w -S -40)
   echo "$O" | grep -qiE 'trust|do you want to allow|1\. Yes' && { tmux -S "$SOCKET" send-keys -t "$TAG":w Enter; sleep 6; }
 done
-tmux -S "$SOCKET" send-keys -t "$TAG":w C-u; sleep 0.3
-tmux -S "$SOCKET" send-keys -t "$TAG":w -l -- "$PROMPT"; sleep 0.6
+# Wait for a composer that will actually accept input, then VERIFY the send.
+# Fixed sleeps were not enough: Codex 0.146.0 added a trust dialog whose
+# dismissal leaves the TUI initialising, so a prompt typed on a timer was
+# swallowed and six runs scored as behaviour when nothing had been asked
+# (2026-07-29). The skill this repository ships says never to skip send
+# verification; the harness was doing exactly that.
+deliver() {
+  tmux -S "$SOCKET" send-keys -t "$TAG":w C-u; sleep 0.4
+  tmux -S "$SOCKET" send-keys -t "$TAG":w -l -- "$PROMPT"; sleep 1.2
+  tmux -S "$SOCKET" capture-pane -p -J -t "$TAG":w -S -20 \
+    | sed 's/\x1b\[[0-9;]*m//g' | grep -qF "${PROMPT:0:40}"
+}
+for attempt in 1 2 3 4 5; do
+  # clear any dialog still standing between us and the composer
+  LIVE=$(tmux -S "$SOCKET" capture-pane -p -J -t "$TAG":w -S -20 \
+         | sed 's/\x1b\[[0-9;]*m//g' | grep -vE '^[[:space:]]*$' | tail -8)
+  if echo "$LIVE" | grep -qiE 'trust|1\. Yes|do you want to (run|allow)|Press enter to continue'; then
+    tmux -S "$SOCKET" send-keys -t "$TAG":w Enter; sleep 8; continue
+  fi
+  if deliver; then : > "$OUTDIR/.delivered-$TAG"; break; fi
+  sleep 6
+done
+if ! tmux -S "$SOCKET" capture-pane -p -J -t "$TAG":w -S -20 \
+     | sed 's/\x1b\[[0-9;]*m//g' | grep -qF "${PROMPT:0:40}"; then
+  echo "WARN: prompt not confirmed in pane after 5 attempts" >&2
+fi
 tmux -S "$SOCKET" send-keys -t "$TAG":w Enter
 
 DEADLINE=$(($(date +%s)+900)); IDLE=0; SETTLED=0
@@ -132,5 +156,9 @@ if tmux -S "$SOCKET" has-session -t "$TAG" 2>/dev/null; then
 fi
 tmux -S "$SOCKET" kill-session -t "$TAG" 2>/dev/null
 ARGS=("$CASE" "$TRANSCRIPT" "$DIR"); [ "$SETTLED" -eq 1 ] || ARGS+=(--unsettled)
+# Delivery was confirmed at send time; say so, because on a long run the
+# prompt echo scrolls out of the captured window and the scorer would
+# otherwise call a real run INVALID (lost one 31 KB Codex run this way).
+[ -f "$OUTDIR/.delivered-$TAG" ] && ARGS+=(--delivered)
 RESULT=$(python3 "$REPO/scripts/eval_score.py" "${ARGS[@]}")
 printf "%-8s %-7s %-9s %s\n" "$CLI" "$CASE" "$ARM" "$RESULT" | tee -a "$OUTDIR/summary.txt"
