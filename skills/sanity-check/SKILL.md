@@ -135,8 +135,8 @@ the claim each anecdote was supporting is marked accordingly.
   ([E17](../../tests/evals/results/2026-07-27-copilot-column.md)).
 - **Check the instrument before believing the verdict.** *Evidenced, and the
   best-supported claim here.* Twenty-plus false verdicts across
-  2026-07-26/29, none from a skill; two were arms that reported a component
-  absent while it was still loaded
+  2026-07-26/29, none from a skill; one was an arm that reported a skill
+  absent while a harness still listed it
   ([counter-scenario](../../tests/evals/results/2026-07-28-sc-c1-instrument.md)).
 - **Vary the question, not the reviewer count.** *Not evidenced.* Reasoning
   from the two entries above, not from a run that varied it.
@@ -146,4 +146,6 @@ the claim each anecdote was supporting is marked accordingly.
 The technique as a whole has never been measured: E18 scores whether an
 outside check was **sought**, not whether the way it was asked improved the
 answer. That is why this skill is public opt-in rather than in the default
-roster — SPEC §10.1 rule 5 — and what issue #80 exists to settle.
+roster (SPEC §10.1 rule 5). The scenario that would settle it — a fixture
+where a well-built prompt and a naive one reach different answers — has not
+been written; the first attempt exercised the mechanism in 3 of 16 runs.

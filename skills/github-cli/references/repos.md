@@ -153,7 +153,7 @@ gh ruleset view {ruleset-id}
 gh ruleset view {ruleset-id} --web
 
 # Check which rules apply to a branch
-gh ruleset check --branch main
+gh ruleset check main
 ```
 
 ## Release Management
@@ -266,6 +266,6 @@ gh repo list --json name,description,isPrivate,primaryLanguage \
   --jq '.[] | "\(.name)\t\(.primaryLanguage.name // "none")\t\(.description // "")"'
 
 # Sort by various criteria
-gh repo list --sort stars --order desc
+gh repo list --json name,stargazerCount --jq 'sort_by(-.stargazerCount)'
 gh repo list --sort updated
 ```
