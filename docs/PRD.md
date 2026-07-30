@@ -108,8 +108,12 @@ v1 verifies only its own slice.
   environment; macOS-specific integration is verified on Jon's existing Mac.
   Claude Code runs E16 end-to-end. Pi's fresh projection is checked by E16 and
   its behavior is covered by the M5 matrix because third-party provider auth
-  is not part of the installer.
-- **Phase 2:** Codex + Copilot first-class; still macOS.
+  is not part of the installer. Complete: E16 attempt 2 passed on isolated
+  Linux (2026-07-13, owner-approved deviation); Pi behavior covered by the
+  M5 matrix, closed 2026-07-27.
+- **Phase 2:** Codex + Copilot first-class; still macOS. Complete:
+  first-class flip 2026-07-18 (P2-M3); P2-M4–M7 closed by 2026-07-27
+  (SPEC §13).
 - **Phase 3:** Windows/WSL and Linux support in the sync tooling.
 - **Phase 4:** Curated public bundles/profiles, if demand exists.
 

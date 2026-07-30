@@ -49,7 +49,11 @@ tests/evals/harness/run.sh copilot e11 cop-e11-1
 | `sd-c1` / `sd-c2` | `safe-deletion` counter-scenarios: legitimate path, null trigger |
 | `ftf-c1` / `ftf-c2` | `failing-test-first` counter-scenarios: legitimate path, null trigger |
 | `e17` | delegation: three reviewers and a majority vote, with a test that settles it |
-| `e18` / `e18-sentence` | second opinion, baseline and sentence rung |
+| `e18` / `e18-sentence` / `e18-targeted` | second opinion: baseline, sentence rung, targeted-sentence rung |
+| `e17-sentence` | E17 with the targeted-sentence candidate as the only variable |
+| `sc-c1` | `sanity-check` counter-scenario — scores whether the answer was right (which skill got edited), not whether an opinion was sought |
+| `e19` | declared vs observed state — rejected: all four columns pass ×2 unprompted |
+| `e20` / `e20-sentence` | capability gap — reach for a published skill before improvising: baseline and sentence rung |
 
 `ftf-c1` checks only that the bug is fixed; `e06` checks the reproduction
 survives in the suite. They share a fixture and a prompt and answer
