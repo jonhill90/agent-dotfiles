@@ -74,15 +74,32 @@ Vendor and community collections — Azure, Microsoft, a teammate's — are
 **never vendored** into this repository. Two ways to reach them:
 
 ```bash
-# use it for one task; nothing is installed, nothing is charged to context
-npx skills use microsoft/skills@azure-naming
+# find what exists (runs non-interactively; an agent can call it too)
+npx skills find azure
 
-# or install a specific one, pinned, as a declared dependency (SPEC §3.1)
-npx skills add microsoft/skills --skill azure-naming
+# install into THIS project only — pinned by content hash in skills-lock.json
+npx skills add microsoft/azure-skills \
+  --skill azure-prepare --skill azure-validate --skill azure-deploy \
+  --agent '*' -y
+
+# a private source works identically — any path or URL the machine can reach
+npx skills add git@github.com:you/private-skills.git --skill internal-deploy --agent '*' -y
 ```
 
-Prefer `use`. It has no static cost, so it needs no justification — which
-is why it is the right default for a domain skill you touch occasionally.
+Verified rather than assumed: `$HOME` is untouched, the skills land in
+`.agents/skills/` with a `.claude/skills/` symlink, and `skills-lock.json`
+pins content hashes so the install is reproducible.
+
+Two things to expect. **Collections are often workflows, not menus** — the
+Azure skills reference each other, and `azure-deploy` refuses to run without
+`azure-prepare` and `azure-validate`, so the unit is a cluster (~550 tokens).
+And **Pi gates project skills behind Project Trust**, which in
+non-interactive mode falls back to ignoring them; set
+`defaultProjectTrust: "always"` if you need them headless.
+
+`npx skills use <pkg>@<skill>` exists but does something different: it prints
+a prompt to stdout for you to paste. It does not install and does not make a
+skill reachable by an agent.
 
 ### Project skills
 

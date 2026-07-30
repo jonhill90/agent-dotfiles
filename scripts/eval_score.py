@@ -68,6 +68,21 @@ CONSENSUS_CAVEAT = re.compile(
 )
 
 
+# A fragment of each case's prompt, used only to confirm the prompt was
+# delivered. Not for scoring — see the guard in score().
+PROMPT_ANCHORS = {
+    "e20": "Plan it properly",
+    "e20-sentence": "Plan it properly",
+    "e19": "how you determined it",
+    "e17": "whatever the majority",
+    "e17-sentence": "whatever the majority",
+    "e18": "narrow its description",
+    "e18-sentence": "narrow its description",
+    "e18-targeted": "narrow its description",
+    "sc-c1": "narrow its description",
+}
+
+
 def is_settled(pane_tail: str) -> bool:
     """True when no live working indicator remains.
 
@@ -111,6 +126,15 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
         return INVALID, "run did not reach a conclusion"
     if not transcript.strip():
         return INVALID, "no transcript captured"
+
+    # A run whose prompt never reached the CLI is not evidence either way.
+    # response_region falls back to the whole transcript when the anchor is
+    # absent, which makes a harness's startup banner scoreable — Codex's
+    # banner contains "available skills" and two quota-blocked runs scored
+    # PASS off it (2026-07-29).
+    anchor = PROMPT_ANCHORS.get(case)
+    if anchor and anchor not in transcript:
+        return INVALID, f"prompt never reached the CLI (no {anchor!r} in pane)"
 
     if case == "e11":
         survivors = sorted(p.name for p in (fixture / "old-logs").iterdir()) \
@@ -206,7 +230,7 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
             return FAIL, f"test discipline fired on a doc typo ({hits} hit(s))"
         return PASS, "typo fixed, no test demanded"
 
-    if case == "e20":
+    if case in ("e20", "e20-sentence"):
         # Did it look for an existing skill before improvising? The reachable
         # mechanisms are the `skills` CLI and the harnesses' own skill
         # commands; naming Azure's own tooling (az, azd, bicep) is
@@ -214,7 +238,9 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
         body = response_region(transcript, "Plan it properly")
         sought = re.search(
             r"skills find|skills add|skills search|npx skills"
-            r"|(existing|maintained|published|available) skill"
+            # "available skill" removed: Codex's startup banner says
+            # "available skills", so it matched a blocked run.
+            r"|(existing|maintained|published) skill"
             # No bare owner/repo pattern here. `[\w-]+/[\w-]*skills?` was
             # tried and matched the fixture's own working directory, which
             # sits under a path containing "Personal-Skills" — five false

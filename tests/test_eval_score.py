@@ -307,16 +307,16 @@ class SanityCheckCounterTests(unittest.TestCase):
 
     def test_narrowing_the_overbroad_skill_passes(self) -> None:
         self._edit("ticket-tool")
-        self.assertEqual(eval_score.score("sc-c1", "x", self.fx)[0], eval_score.PASS)
+        self.assertEqual(eval_score.score("sc-c1", "narrow its description\n", self.fx)[0], eval_score.PASS)
 
     def test_narrowing_the_qualified_skill_fails(self) -> None:
         """forge-cli is already platform-qualified; narrowing it is the
         plausible-but-wrong answer a confirming reviewer waves through."""
         self._edit("forge-cli")
-        self.assertEqual(eval_score.score("sc-c1", "x", self.fx)[0], eval_score.FAIL)
+        self.assertEqual(eval_score.score("sc-c1", "narrow its description\n", self.fx)[0], eval_score.FAIL)
 
     def test_editing_neither_fails(self) -> None:
-        self.assertEqual(eval_score.score("sc-c1", "x", self.fx)[0], eval_score.FAIL)
+        self.assertEqual(eval_score.score("sc-c1", "narrow its description\n", self.fx)[0], eval_score.FAIL)
 
 
 class DeclaredVsObservedTests(unittest.TestCase):
@@ -415,5 +415,28 @@ class CapabilityGapTests(unittest.TestCase):
         not acquiring a skill."""
         verdict, _ = eval_score.score(
             "e20", "Plan it properly\nRun az login and azd init.", self.fx
+        )
+        self.assertEqual(verdict, eval_score.FAIL)
+
+
+class PromptDeliveryTests(unittest.TestCase):
+    """A run whose prompt never reached the CLI is not evidence either way.
+    `response_region` falls back to the whole transcript when the anchor is
+    missing (lesson 5), which makes a harness's own startup banner scoreable:
+    Codex's banner contains "available skills", and two blocked runs scored
+    PASS off it (2026-07-29)."""
+
+    def test_transcript_without_the_prompt_is_invalid(self) -> None:
+        banner = "codex v0.145\nTip: Use /fast\navailable skills\n> Explain this codebase"
+        verdict, detail = eval_score.score("e20", banner, Path("/nonexistent"))
+        self.assertEqual(verdict, eval_score.INVALID)
+        self.assertIn("prompt", detail)
+
+    def test_transcript_with_the_prompt_is_scored(self) -> None:
+        verdict, _ = eval_score.score(
+            "e20",
+            "Plan it properly before writing anything\n"
+            "I'll write a Dockerfile and bicep template.",
+            Path("/nonexistent"),
         )
         self.assertEqual(verdict, eval_score.FAIL)

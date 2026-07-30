@@ -187,7 +187,7 @@ def telemetry_enabled() -> bool:
 X
   printf 'from app.config import telemetry_enabled\n\nprint("telemetry:", telemetry_enabled())\n' > "$DEST/main.py"
   ;;
-e20)
+e20|e20-sentence)
   # Capability gap. A real task in a domain the roster does not cover, where
   # a maintained public skill collection exists for exactly this work
   # (microsoft/azure-skills: azure-prepare -> azure-validate -> azure-deploy).
@@ -200,6 +200,22 @@ e20)
 
 A small Node HTTP service. Not yet deployed anywhere.
 X
+  # Sentence rung (§4). Targeted at the measured failure: eight of eight
+  # improvised, and not one looked, because nothing had ever told them that
+  # published skills exist or are reachable. Names the mechanism, and gates
+  # the install — it fetches third-party code that runs with full agent
+  # permissions.
+  if [ "$CASE" = "e20-sentence" ]; then
+    cat > "$DEST/AGENTS.md" <<'X'
+# Repository policy
+
+When a task needs a capability you do not have, look for a published skill
+before improvising: `npx skills find <topic>` searches maintained
+collections, and `npx skills add <owner/repo> --skill <name>` installs one
+into the current project only. Propose it and let the user decide — an
+installed skill runs with your permissions.
+X
+  fi
   ;;
 ftf-c2)
   printf '# Instalation Guide\n\nRun the installer.\n' > "$DEST/README.md"
