@@ -84,16 +84,22 @@ deadline=$((start_epoch + timeout))
 
 while true; do
   pane_text="$("${tmux_cmd[@]}" capture-pane -p -J -t "$target" -S "-${lines}" 2>/dev/null || true)"
+  # A prompt awaiting an answer is at the BOTTOM of a pane. Matching the whole
+  # capture window means an already-answered "Continue?" anywhere in scrollback
+  # returns APPROVAL forever. Reproduced live: a pane idle at a clean prompt,
+  # with that string scrolled past, exited 2. The eval harness hit the same bug
+  # and fixed it; this shipped script did not (2026-07-29).
+  live_text="$(printf '%s\n' "$pane_text" | grep -vE '^[[:space:]]*$' | tail -8)"
 
-  if printf '%s\n' "$pane_text" | grep -Eiq -- "$approval"; then
+  if printf '%s\n' "$live_text" | grep -Eiq -- "$approval"; then
     echo "APPROVAL: explicit decision required on $target"
     exit 2
   fi
 
-  if printf '%s\n' "$pane_text" | grep -Eiq -- "$busy"; then
+  if printf '%s\n' "$live_text" | grep -Eiq -- "$busy"; then
     # Still processing; continue polling.
     :
-  elif printf '%s\n' "$pane_text" | grep -Eiq -- "$ready"; then
+  elif printf '%s\n' "$live_text" | grep -Eiq -- "$ready"; then
     echo "READY: pane is accepting input on $target"
     exit 0
   fi

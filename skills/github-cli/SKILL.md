@@ -231,7 +231,7 @@ gh issue reopen 456
 
 # Edit issue fields
 gh issue edit 456 --title "Updated title" --add-label "priority" --remove-label "triage"
-gh issue edit 456 --assignee user1 --milestone "v3.0"
+gh issue edit 456 --add-assignee user1 --milestone "v3.0"
 
 # Add comment
 gh issue comment 456 --body "Working on this now"
@@ -396,7 +396,7 @@ gh run download "$RUN_ID" --name "build-output" --dir ./artifacts
 
 ```bash
 # List untriaged issues and add label
-gh issue list --label "" --limit 50 --json number,title --jq '.[].number' | while read -r num; do
+gh issue list --search "no:label" --limit 50 --json number,title --jq '.[].number' | while read -r num; do
   gh issue edit "$num" --add-label "needs-triage"
 done
 ```

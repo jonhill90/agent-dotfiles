@@ -50,7 +50,7 @@ gh issue develop 456 --checkout
 # Lock an issue conversation
 gh issue lock 456 --reason "resolved"
 
-# Lock reasons: off-topic, too heated, resolved, spam
+# Lock reasons: off_topic, too_heated, resolved, spam
 gh issue lock 456 --reason "spam"
 
 # Unlock
