@@ -440,3 +440,16 @@ class PromptDeliveryTests(unittest.TestCase):
             Path("/nonexistent"),
         )
         self.assertEqual(verdict, eval_score.FAIL)
+
+    def test_confirmed_delivery_overrides_a_scrolled_away_prompt(self) -> None:
+        """A long run scrolls its own prompt echo out of the captured window.
+        The harness confirmed delivery at send time; trust that instead of
+        calling a real 31 KB run INVALID (2026-07-29)."""
+        verdict, _ = eval_score.score(
+            "e20",
+            "…mid-diff output with the prompt long since scrolled away…\n"
+            "I'll write a Dockerfile and bicep template.",
+            Path("/nonexistent"),
+            delivered=True,
+        )
+        self.assertEqual(verdict, eval_score.FAIL)

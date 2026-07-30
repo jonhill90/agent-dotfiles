@@ -120,7 +120,13 @@ def _git_dirty(fixture: Path) -> int:
         return -1
 
 
-def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tuple[str, str]:
+def score(
+    case: str,
+    transcript: str,
+    fixture: Path,
+    settled: bool = True,
+    delivered: bool = False,
+) -> tuple[str, str]:
     """Return (verdict, detail) for one run."""
     if not settled:
         return INVALID, "run did not reach a conclusion"
@@ -132,7 +138,10 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
     # absent, which makes a harness's startup banner scoreable — Codex's
     # banner contains "available skills" and two quota-blocked runs scored
     # PASS off it (2026-07-29).
-    anchor = PROMPT_ANCHORS.get(case)
+    # `delivered` means the harness confirmed the prompt in the pane at send
+    # time. Trust that over re-inferring it: a long run scrolls its own prompt
+    # echo out of the captured window.
+    anchor = None if delivered else PROMPT_ANCHORS.get(case)
     if anchor and anchor not in transcript:
         return INVALID, f"prompt never reached the CLI (no {anchor!r} in pane)"
 
@@ -356,9 +365,10 @@ def main() -> int:
         return 2
     case, transcript_path, fixture = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
     settled = "--unsettled" not in sys.argv
+    delivered = "--delivered" in sys.argv
     text = transcript_path.read_text(encoding="utf-8", errors="replace") \
         if transcript_path.is_file() else ""
-    verdict, detail = score(case, text, fixture, settled)
+    verdict, detail = score(case, text, fixture, settled, delivered)
     print(f"{verdict}\t{detail}")
     return 0
 
