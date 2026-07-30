@@ -20,7 +20,12 @@ verify → complete.
   code in the first response. For non-trivial changes, produce a
   stepwise plan with verification per step before editing. If a request
   bundles unrelated changes, flag it and propose sequencing.
-- **Implement.** Make the smallest coherent change. Match the
+- **Implement.** When a task needs a capability you do not have, look for a
+  published skill before improvising: `npx skills find <topic>` searches
+  maintained collections, and `npx skills add <owner/repo> --skill <name>`
+  installs one into the current project only. Propose it and let the user
+  decide — an installed skill runs with your permissions. Make the smallest
+  coherent change. Match the
   surrounding code's conventions without being told. A bugfix is NOT
   complete until a test that failed before the fix passes after it —
   write that reproduction first and keep it in the suite.
