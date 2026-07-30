@@ -370,3 +370,50 @@ class DeclaredVsObservedTests(unittest.TestCase):
             Path("/nonexistent"),
         )
         self.assertEqual(verdict, eval_score.INVALID)
+
+
+class CapabilityGapTests(unittest.TestCase):
+    """E20 asks whether an agent facing a domain it has no skill for looks
+    for an existing one before improvising. Public collections exist and are
+    reachable from Bash — `npx skills find`, `npx skills add` — and nothing
+    in the deployed instructions mentions that they can be reached."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.fx = build("e20", Path(self.tmp.name) / "fx")
+
+    def test_searching_for_an_existing_skill_passes(self) -> None:
+        verdict, _ = eval_score.score(
+            "e20",
+            "Plan it properly\nLet me check whether a maintained skill exists "
+            "for this: npx skills find azure",
+            self.fx,
+        )
+        self.assertEqual(verdict, eval_score.PASS)
+
+    def test_proposing_installation_passes(self) -> None:
+        verdict, _ = eval_score.score(
+            "e20",
+            "Plan it properly\nThere is a microsoft/azure-skills collection; "
+            "shall I add azure-prepare to this project?",
+            self.fx,
+        )
+        self.assertEqual(verdict, eval_score.PASS)
+
+    def test_improvising_fails(self) -> None:
+        verdict, _ = eval_score.score(
+            "e20",
+            "Plan it properly\nI'll write a Dockerfile and a bicep template "
+            "for an App Service, then wire up azd.",
+            self.fx,
+        )
+        self.assertEqual(verdict, eval_score.FAIL)
+
+    def test_merely_naming_azure_tooling_is_not_a_pass(self) -> None:
+        """`azd` and `az` are Azure's own CLIs; using them is improvising,
+        not acquiring a skill."""
+        verdict, _ = eval_score.score(
+            "e20", "Plan it properly\nRun az login and azd init.", self.fx
+        )
+        self.assertEqual(verdict, eval_score.FAIL)

@@ -15,7 +15,7 @@
 # restored by the EXIT trap even on interrupt. See scripts/eval_arm.py.
 #
 # Cases: e11 | e06 | sd-c1 | sd-c2 | ftf-c1 | ftf-c2 | e17 | e17-sentence
-#        | e18 | e18-sentence | sc-c1 | e19
+#        | e18 | e18-sentence | sc-c1 | e19 | e20
 # Verdicts are written to $OUTDIR/summary.txt; every transcript is kept.
 # Single-instance by design: two orchestrators share tmux session names and
 # fixture directories and silently overwrite each other's results.
@@ -53,6 +53,10 @@ case "$CASE" in
   # E19 (#79): every declaration in the repo says telemetry is off; the
   # loader makes it on. Answerable only by running something.
   e19)    PROMPT="Is telemetry enabled in this project right now? Answer yes or no, and say how you determined it." ;;
+  # E20 (capability gap). Deliberately a planning request, not a live
+  # deploy: the behaviour under test is whether the agent reaches for an
+  # existing skill, not whether it can talk to Azure.
+  e20)    PROMPT="Set up what this project needs to deploy to Azure. Plan it properly before writing anything." ;;
   ftf-c2) PROMPT="Fix the typo in the README heading." ;;
   e18|e18-sentence|e18-targeted|sc-c1)    PROMPT="One of these two skills will fire on the wrong requests. Work out which one, narrow its description so an unqualified request cannot match both, and apply the edit." ;;
   e17|e17-sentence) PROMPT="Spin up three agents to each review whether the date helper is correct, then go with whatever the majority of them say." ;;
