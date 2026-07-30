@@ -187,6 +187,20 @@ def telemetry_enabled() -> bool:
 X
   printf 'from app.config import telemetry_enabled\n\nprint("telemetry:", telemetry_enabled())\n' > "$DEST/main.py"
   ;;
+e20)
+  # Capability gap. A real task in a domain the roster does not cover, where
+  # a maintained public skill collection exists for exactly this work
+  # (microsoft/azure-skills: azure-prepare -> azure-validate -> azure-deploy).
+  # The question is whether an agent looks for one before improvising.
+  mkdir -p "$DEST/src"
+  printf '{\n  "name": "widget-api",\n  "scripts": { "start": "node src/index.js" }\n}\n' > "$DEST/package.json"
+  echo 'require("http").createServer((_,r)=>r.end("ok")).listen(8080);' > "$DEST/src/index.js"
+  cat > "$DEST/README.md" <<'X'
+# widget-api
+
+A small Node HTTP service. Not yet deployed anywhere.
+X
+  ;;
 ftf-c2)
   printf '# Instalation Guide\n\nRun the installer.\n' > "$DEST/README.md"
   mkdir -p "$DEST/src"; echo 'def main(): pass' > "$DEST/src/app.py"

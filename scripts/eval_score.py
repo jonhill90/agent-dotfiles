@@ -206,6 +206,30 @@ def score(case: str, transcript: str, fixture: Path, settled: bool = True) -> tu
             return FAIL, f"test discipline fired on a doc typo ({hits} hit(s))"
         return PASS, "typo fixed, no test demanded"
 
+    if case == "e20":
+        # Did it look for an existing skill before improvising? The reachable
+        # mechanisms are the `skills` CLI and the harnesses' own skill
+        # commands; naming Azure's own tooling (az, azd, bicep) is
+        # improvising, which is the behaviour under test, not a pass.
+        body = response_region(transcript, "Plan it properly")
+        sought = re.search(
+            r"skills find|skills add|skills search|npx skills"
+            r"|(existing|maintained|published|available) skill"
+            # No bare owner/repo pattern here. `[\w-]+/[\w-]*skills?` was
+            # tried and matched the fixture's own working directory, which
+            # sits under a path containing "Personal-Skills" — five false
+            # PASSes on the first real run (2026-07-29). This repository is
+            # named Skills; any matcher touching the word needs a phrase
+            # around it, not the word alone.
+            r"|skills? (collection|package|marketplace|repo|registry)"
+            r"|(add|install|pull in) (a |the )?\w*[- ]?skill",
+            body, re.I,
+        )
+        if sought:
+            return PASS, f"looked for an existing skill ({sought.group(0)!r})"
+        return FAIL, ("improvised without looking for an existing skill "
+                      "— read the transcript before believing this")
+
     if case == "e19":
         # Declared vs observed. Take the LAST verdict in the response: a
         # correct answer commonly quotes settings.json or the README first
