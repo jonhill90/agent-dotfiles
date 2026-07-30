@@ -122,7 +122,7 @@ echo "$OUTPUT"
 | Approval/confirm prompt | `[Y/n]`, `(y/N)`, `Continue?`, `approve?` | **No** — your text answers the prompt | Answer the prompt deliberately, or `C-c` to cancel |
 | TUI active (editor, REPL) | Editor chrome, line numbers, REPL `>>>` | **No** — your text inserts into the TUI | Use TUI-appropriate input, or exit the TUI first |
 | Agent thinking | Spinner, `Thinking...`, progress indicator | **No** — agent hasn't finished | Wait for agent to return to its prompt |
-| Agent prompt waiting | Agent's input prompt visible (e.g. `claude>`) | Yes — for agent input | Send agent-directed input |
+| Agent prompt waiting | Agent's input prompt visible (a boxed `>` in Claude Code, `›` in Codex) | Yes — for agent input | Send agent-directed input |
 
 ### What to do next — the action decision
 
@@ -334,9 +334,10 @@ When prompting these tools later, keep using the same session and split text/Ent
 
 ## Worktree Integration
 
-For filesystem isolation between agents, use Superpowers'
-`using-git-worktrees` skill before starting tmux sessions. Do not duplicate
-worktree creation logic here.
+For filesystem isolation between agents, create one git worktree per agent
+before starting tmux sessions, and keep worktree logic out of this skill. (A
+`using-git-worktrees` skill was referenced here previously; it is not
+installed and is not part of this collection.)
 
 Pattern: one worktree per agent, one tmux session (or pane) per worktree.
 
@@ -345,10 +346,10 @@ Pattern: one worktree per agent, one tmux session (or pane) per worktree.
 Run the self-test script to verify tmux mechanics work in your environment:
 
 ```bash
-bash skills/tmux/scripts/self-test.sh
+bash "$(dirname "$0")/scripts/self-test.sh"   # or scripts/self-test.sh beside this SKILL.md
 ```
 
-See [scripts/self-test.sh](scripts/self-test.sh) for the full test procedure. It creates an isolated tmux socket, verifies pane targeting, send verification, cross-pane isolation, and wrong-target recovery, then cleans up.
+See [scripts/self-test.sh](scripts/self-test.sh) — beside this file, wherever the skill is installed — for the full procedure. It creates an isolated tmux socket, verifies pane targeting, send verification, cross-pane isolation, and wrong-target recovery, then cleans up.
 
 ## Cleanup
 
@@ -356,6 +357,17 @@ See [scripts/self-test.sh](scripts/self-test.sh) for the full test procedure. It
 tmux -S "$SOCKET" kill-session -t "$SESSION"
 tmux -S "$SOCKET" kill-server
 ```
+
+## Bundled scripts
+
+All four sit in `scripts/` beside this file.
+
+| Script | Use |
+|---|---|
+| `self-test.sh` | verify tmux mechanics in this environment |
+| `find-sessions.sh` | list agent sessions on a socket, or across all sockets with `--all` |
+| `wait-for-text.sh` | poll a pane until a pattern appears, with a timeout |
+| `supervisor-watch.sh` | watch a supervised pane and exit on ready / approval / timeout |
 
 ## References
 
@@ -366,4 +378,4 @@ tmux -S "$SOCKET" kill-server
 - tmux supports macOS/Linux natively. On Windows, use WSL.
 - Prefer tmux for interactive tools, auth flows, and REPLs.
 - Prefer normal exec/background jobs for non-interactive commands.
-- For multi-agent lane orchestration, see the Supervisor Lane Protocol section above. Use `/loop` (Claude Code) or a shell loop (other agents) for recurring supervision.
+- For multi-agent lane orchestration, see [references/supervisor-lanes.md](references/supervisor-lanes.md). Use `/loop` (Claude Code) or a shell loop (other agents) for recurring supervision.

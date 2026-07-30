@@ -217,14 +217,14 @@ gh variable delete VAR_NAME --env staging
 gh cache list
 
 # List with sort and filter
-gh cache list --sort size --order desc --limit 10
+gh cache list --sort size_in_bytes --order desc --limit 10
 gh cache list --key "npm-"
 
 # Delete specific cache
 gh cache delete {cache-id}
 
 # Delete caches matching a key
-gh cache delete --all --key "npm-"
+gh cache delete "npm-"   # or --all for every cache
 ```
 
 ## CI Scripting Patterns

@@ -96,7 +96,10 @@ as instructions.
 Run:
 
 ```bash
+# inside the agent-dotfiles repo:
 python3 scripts/validate_repository.py skills/<name>
+# anywhere else — the portable check:
+npx skills add . --list
 python3 -m unittest discover -s tests -v
 ```
 

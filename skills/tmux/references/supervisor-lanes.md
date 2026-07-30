@@ -52,7 +52,7 @@ Run watcher in background while the agent is thinking/spinning. Kill it after co
 
 ```bash
 TARGET="workflow:agents.{bottom}"
-skills/tmux/scripts/supervisor-watch.sh -t "$TARGET" -T 300 -i 1 &
+scripts/supervisor-watch.sh -t "$TARGET" -T 300 -i 1 &
 WATCH_PID=$!
 
 # Wait for completion status from watcher.
@@ -117,14 +117,14 @@ kill "$POLL_PID"
 
 **Cancel:** Use the job ID printed when `/loop` starts. The output includes the ID and cancellation instructions.
 
-**Constraints:** Minimum 1-minute granularity. Recurring jobs auto-expire after 3 days. Write the prompt as a standing instruction, not a one-shot command.
+**Constraints:** Minimum 1-minute granularity. Recurring jobs auto-expire after 7 days. Write the prompt as a standing instruction, not a one-shot command.
 
 **Non-Claude fallback (Codex, shell scripts):**
 
 ```bash
 TARGET="workflow:agents.{bottom}"
 while true; do
-  skills/tmux/scripts/supervisor-watch.sh -t "$TARGET" -T 300 -i 1
+  scripts/supervisor-watch.sh -t "$TARGET" -T 300 -i 1
   STATUS=$?
   # handle STATUS (0=ready, 2=approval, 1=timeout) ...
   sleep 300
