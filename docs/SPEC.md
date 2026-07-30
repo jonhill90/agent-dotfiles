@@ -93,7 +93,9 @@ agent-dotfiles/
     mcp/servers.json       # declared MCP servers (env-var auth, no secrets)
   scripts/
     sync.py                # the wrapper (Python 3 stdlib only)
-    validate_repository.py # extended with token-budget + secret checks
+    validate_repository.py # token-budget checks + a private-term scan
+                           # (.privacy-denylist). NOT a secret scanner:
+                           # no credential detection exists, here or in CI
   tests/                   # one verification tree (layout rev. 2026-07-18)
     test_*.py              # unittest suite (wrapper + validators)
     requirements-dev.txt   # dev/CI-only dependencies
@@ -334,8 +336,10 @@ it*, and the P2-M3 adoptions exposed the gap: `safe-deletion` and
 E06), but `settings/default-skills.txt` was then a single flat roster,
 so Claude Code, Codex, and Pi — which passed both scenarios on the
 canonical instructions alone — loaded them too. (The sectioned format
-below is the answer to this; it landed in P2-M4 and `sanity-check` is
-scoped by it.) Unclosed, every rung-2
+below is the answer to this; it landed in P2-M4 and was used by
+`sanity-check` until 2026-07-29, when that skill moved to public opt-in for
+failing §10.1 rule 5. The mechanism is enforced on all four harnesses and
+currently has no user.) Unclosed, every rung-2
 adoption charges all four harnesses, and a roster kept deliberately lean
 by M1.5 grows one justified skill at a time.
 
@@ -509,9 +513,13 @@ Commands:
   settings merges → MCP merge (§3.4) → state file update.
 - `sync status` — drift report: `apm audit` + wrapper-owned surfaces
   (settings keys, Pi files, root files vs marker) vs `state.json`.
-- `sync doctor` — environment checks: required CLIs present (apm, node,
-  official Obsidian CLI registered if the app is expected, pi if
-  expected), env vars set (`AGENT_MEMORY_VAULT`,
+- `sync doctor` — environment checks. Actually implemented: `apm` on PATH,
+  the Cowork skills-dir pin, `AGENT_MEMORY_VAULT` set and personal, the MCP
+  auth var, each harness root file present, and shared-path drift and
+  substitution. **Not** checked, despite earlier drafts of this section
+  claiming otherwise: node, the Obsidian CLI, Pi, and trust state —
+  `install.sh` gates on this command, so a machine missing those still
+  passes (env vars checked: `AGENT_MEMORY_VAULT`,
   MCP auth vars, `APM_COPILOT_COWORK_SKILLS_DIR` pinned — live-trial
   wart 2), trust state.
 - `sync remove` — reverse everything `state.json` recorded.
@@ -555,8 +563,10 @@ cd ~/.agent-dotfiles-src && ./install.sh
 2. If Obsidian is installed: verify installer ≥1.12 and register the
    official CLI on PATH (`~/bin/obsidian` symlink; no third-party CLI).
    Memory works without it (direct file operations).
-3. Prompt once for machine-local values (`AGENT_MEMORY_VAULT`, MCP env
-   vars) → write shell-profile block + untracked local override file.
+3. Prompt once for `AGENT_MEMORY_VAULT` → write a marker-fenced
+   shell-profile block, and source `~/.zshrc.local` if it exists.
+   **MCP env vars are not prompted for and no override file is created** —
+   set them yourself; `doctor` reports the missing one.
 4. `python3 scripts/sync.py apply`.
 5. `python3 scripts/sync.py doctor` — print pass/fail summary.
 
@@ -841,7 +851,7 @@ Open milestones are surfaced as GitHub issues labelled `milestone`
 | P2-M3 | First-class flip: SPEC/README list Codex + Copilot as release-blocking | **Done 2026-07-18**: all P2-M2 cells pass ×2; Codex and Copilot breakage now blocks release; harness-engineering matrix updated |
 | P2-M4 | Per-harness skill rosters (§4.1): sectioned `default-skills.txt`, Tier A scoping in `ensure_neutral_skills()`, Tier B Codex disable wiring, per-harness §6 budget check, `status`/`doctor` roster reporting | **Done 2026-07-26** ([matrix](../tests/evals/results/2026-07-26-p2m4-e11-matrix.md)): sectioned roster parses with the flat file still valid (TDD); Tier A verified in tests and as a live no-op against the deployed tree; removal from a section removes the wrapper symlink reversibly; per-harness E15 measured live — 1,726 tokens on Claude Code/Codex/Copilot and 2,184 on Pi against an 8,000 cap; E11 PASS ×2 on all four columns with models and CLI versions pinned and recorded, no files deleted in any scored run. **Correction 2026-07-26:** this row previously required that "Claude Code no longer receives Copilot-scoped skills," which Tier A cannot deliver — §4.1 states APM installs the union and keeps ownership of `~/.claude/skills`, so excluding a skill from Claude Code needs a Tier B disable surface, which at the time was V9 and unverified. **V9 resolved affirmatively 2026-07-26 and the wrapper now writes `skillOverrides` from the roster**, so the exclusion is enforced rather than declared. The achievable Tier A guarantee is the reverse direction, stated above. The roster stayed flat until the eval evidence landed; E18 supplied it the same day, and `sanity-check` is now scoped to `[codex]`/`[pi]`, so the mechanism is live |
 | P2-M5 | Evidence bar + counter-scenarios (§10.1) | **Closed 2026-07-27** ([results](../tests/evals/results/2026-07-27-copilot-column.md)). Both counter files pass ×2 on all four columns; `sd-c2` was re-run ×2 on every column after its prompt was corrected to name the edit target. `safe-deletion` clears E11 ×3 and `failing-test-first` clears E06 ×3 on Copilot 1.0.75 with `claude-sonnet-5` pinned. E06 had no scored case — `ftf-c1` checks only that the bug is fixed — so `e06` was added at the red-green bar and validated on the other three columns. Manifest caveats dropped |
-| P2-M7 | Baseline E18 (§10.2) and run the §4 ladder for verification discipline | **Ladder run 2026-07-26** ([baseline](../tests/evals/results/2026-07-26-e18-baseline.md), [sentence rung](../tests/evals/results/2026-07-26-e18-sentence-rung.md)): sentence adopted globally, `sanity-check` scoped to `[codex]` and `[pi]` where the sentence does not bind. First real use of §4.1 per-harness scoping. **Closed 2026-07-27** ([ladder](../tests/evals/results/2026-07-27-copilot-ladder.md)). Per-arm configuration (`EVAL_ARM=bare`) made the absent arm reachable, and Copilot ran both rungs: baseline FAIL ×2, sentence rung PASS ×2, both arms bare so the fixture's sentence is the only variable. **The sentence binds on Copilot**, as on Claude Code, so `sanity-check` stays off its roster — on evidence now rather than by default. Original scope: **Three of four columns baselined 2026-07-26** ([results](../tests/evals/results/2026-07-26-e18-baseline.md)): FAIL ×2 on Claude Code, Codex and Pi — six of six, every run finishing, editing, and seeking no outside check. E18 discriminates, so it is admissible and the §4 ladder is open. **Open.** Done when: the ladder has been run from the sentence rung (an instruction line, re-tested against E18) before any skill is auditioned — `sanity-check` already exists and reaching for it first is the backwards path §10.2 forbids; and E18 has run ×2 on Copilot |
+| P2-M7 | Baseline E18 (§10.2) and run the §4 ladder for verification discipline | **Ladder run 2026-07-26** ([baseline](../tests/evals/results/2026-07-26-e18-baseline.md), [sentence rung](../tests/evals/results/2026-07-26-e18-sentence-rung.md)): sentence adopted globally, `sanity-check` scoped to `[codex]` and `[pi]` where the sentence does not bind. First real use of §4.1 per-harness scoping. **Closed 2026-07-27** ([ladder](../tests/evals/results/2026-07-27-copilot-ladder.md)). Per-arm configuration (`EVAL_ARM=bare`) made the absent arm reachable, and Copilot ran both rungs: baseline FAIL ×2, sentence rung PASS ×2, both arms bare so the fixture's sentence is the only variable. **The sentence binds on Copilot**, as on Claude Code, so `sanity-check` stays off its roster — on evidence now rather than by default. Original scope: **Three of four columns baselined 2026-07-26** ([results](../tests/evals/results/2026-07-26-e18-baseline.md)): FAIL ×2 on Claude Code, Codex and Pi — six of six, every run finishing, editing, and seeking no outside check. E18 discriminates, so it is admissible and the §4 ladder is open. (Original done-when, satisfied: run the ladder from the sentence rung before auditioning a skill, and run E18 ×2 on Copilot.) |
 | P2-M6 | Baseline E17 (§10.2) | **Baselined on all four columns 2026-07-27** ([Copilot](../tests/evals/results/2026-07-27-copilot-column.md), [other three](../tests/evals/results/2026-07-26-e17-baseline.md)): PASS ×2 on Claude Code, Codex and Pi; **FAIL ×2 on Copilot 1.0.75 `claude-sonnet-5`**, which delegated as asked and then went with the vote without running the committed failing test. **E17 discriminates**, reversing the earlier reading, so under §10.2 it is admissible evidence and the §4 ladder is open **for Copilot only**. No component is adopted on it: both runs were made in the deployed configuration, which already carries the second-opinion sentence, so the sentence rung cannot be scored from them. **Baseline extended 2026-07-27**: Copilot also FAILs ×2 with all instructions and skills removed (`EVAL_ARM=bare`), identical to its deployed result, so the canonical verification rule is not what is missing and the first rung is exhausted rather than untried ([ladder](../tests/evals/results/2026-07-27-copilot-ladder.md)). **Closed 2026-07-27** ([ladder](../tests/evals/results/2026-07-27-e17-ladder-copilot.md)). A targeted sentence — *agreement between agents you dispatched is not evidence; when a command can settle the question, run it and cite its output before acting on their verdict* — passes **×5 on Copilot** against a bare baseline of FAIL ×2, and is adopted into `instructions/global.instructions.md`. `dispatching-subagents` is **not** adopted: the cheaper rung won. Regression clean on `ftf-c2` across three harnesses plus `sd-c2` and `e11` on Copilot, the over-verification risk being the one worth checking. The sentence is scoped to a Copilot overlay (#85 closed the same day, generalising overlay projection beyond Pi), so the other three columns pay nothing: instructions stay at 982 for them and rise to 1057 on Copilot. The overlay initially appeared not to bind, which turned out to be a wrapper bug rather than a behavioural finding: Copilot reads `copilot-instructions.md`, not the `AGENTS.md` the overlay was written to, so the rule was never in context. With the path map corrected the sentence binds at user scope, 3 of 3. Whether delivery surface matters in general remains unmeasured (#87) |
 
 Phase 1 exit satisfies M6 (primary) and the required-pair M5 baseline. The
