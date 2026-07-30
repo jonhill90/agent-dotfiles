@@ -2,8 +2,8 @@
 
 Audition of the cheapest rung against
 [the E20 baseline](2026-07-29-e20-baseline.md), which failed on all four
-columns. **Adopted on Claude Code's evidence; Pi does not bind; Codex is
-quota-blocked.**
+columns. **Adopted on Claude Code's evidence; Pi does not bind; Codex does
+not bind — re-measured ×3 after defect 29; it was never quota-blocked.**
 
 ## The candidate
 
