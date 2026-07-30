@@ -418,6 +418,21 @@ class CapabilityGapTests(unittest.TestCase):
         )
         self.assertEqual(verdict, eval_score.FAIL)
 
+    def test_install_landed_on_disk_passes_without_text_evidence(self) -> None:
+        (self.fx / ".agents" / "skills" / "azure-prepare").mkdir(parents=True)
+        verdict, detail = eval_score.score(
+            "e20", "Plan it properly\nDone planning.", self.fx
+        )
+        self.assertEqual(verdict, eval_score.PASS)
+        self.assertIn("disk", detail)
+
+    def test_lockfile_alone_is_disk_evidence(self) -> None:
+        (self.fx / "skills-lock.json").write_text("{}\n")
+        verdict, _ = eval_score.score(
+            "e20", "Plan it properly\nDone planning.", self.fx
+        )
+        self.assertEqual(verdict, eval_score.PASS)
+
 
 class PromptDeliveryTests(unittest.TestCase):
     """A run whose prompt never reached the CLI is not evidence either way.

@@ -244,6 +244,22 @@ def score(
         # mechanisms are the `skills` CLI and the harnesses' own skill
         # commands; naming Azure's own tooling (az, azd, bicep) is
         # improvising, which is the behaviour under test, not a pass.
+        #
+        # Disk first. `npx skills add` leaves `.agents/skills/` and
+        # `skills-lock.json` in the project, and an install subsumes the
+        # criteria's look-or-propose bar. The text matcher below stays as
+        # the fallback because a run may look and propose without
+        # installing — but a matcher can be fooled by a banner or a
+        # checkout path (five false PASSes, 2026-07-29); a file on disk
+        # cannot.
+        landed = [
+            rel for rel, p in (
+                (".agents/skills/", fixture / ".agents" / "skills"),
+                ("skills-lock.json", fixture / "skills-lock.json"),
+            ) if p.exists()
+        ]
+        if landed:
+            return PASS, f"skill install landed on disk ({', '.join(landed)})"
         body = response_region(transcript, "Plan it properly")
         sought = re.search(
             r"skills find|skills add|skills search|npx skills"
