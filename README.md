@@ -9,7 +9,24 @@ declarations are the other managed layers, deployed at user scope via APM
 plus a thin sync wrapper. Product requirements: [docs/PRD.md](docs/PRD.md);
 technical design: [docs/SPEC.md](docs/SPEC.md).
 
-## Install Skills
+## Install the Harness
+
+On a new machine, clone and run the bootstrap. This is the path the
+new-machine criterion in [docs/PRD.md](docs/PRD.md) is measured against:
+
+```bash
+git clone https://github.com/jonhill90/agent-dotfiles.git
+cd agent-dotfiles && ./install.sh          # --non-interactive to skip prompts
+python3 scripts/sync.py apply
+python3 scripts/sync.py doctor             # environment checks
+```
+
+`install.sh` prompts once for `$AGENT_MEMORY_VAULT`, writes a marker-fenced
+block to your shell profile, and sources `~/.zshrc.local` if present.
+**It does not prompt for MCP credentials** — set `CONTEXT7_API_KEY` yourself;
+`doctor` reports it missing.
+
+## Install Individual Skills
 
 Browse the collection and select individual skills:
 
@@ -60,7 +77,6 @@ repository, and nothing here should ever be copied into a project.
 |---|---|---|
 | Useful in every project, every day | this repo's roster | **applies** — §10.1 |
 | Only true in one repository | that repo's `.claude/skills/` or `.agents/skills/` | none |
-| Useful often, not always | roster, marked `name-only` so it lists without its description | applies |
 | Needed once, or maintained by someone else | nothing installed — `npx skills use <package>@<skill>` | none |
 
 **The evidence bar governs the roster, not every skill you write.** A skill
@@ -122,9 +138,9 @@ loads when the agent touches that package, which suits a monorepo.
 
 ## Core Workflow Skills
 
-The default roster is `settings/default-skills.txt`. It is **scoped per
-harness**, not one flat list: a skill can ship to some harnesses and be
-disabled on others. Where the roster scopes a skill away from a harness,
+The default roster is `settings/default-skills.txt` — currently a flat list
+of eight names. The wrapper *can* scope it per harness, and enforces that on
+all four, but nothing uses the mechanism today. Where the roster scopes a skill away from a harness,
 the wrapper writes that exclusion into that harness's own settings, so the
 roster is enforced rather than merely declared. All four harnesses are
 covered: `skillOverrides` on Claude Code, `disabledSkills` on Copilot, a

@@ -40,8 +40,8 @@ instructions/
 agents/
 hooks/                   # canonical hook scripts, harness-agnostic
 settings/                # wrapper-owned config fragments (claude, copilot, pi, mcp)
-  default-skills.txt     # per-harness skill roster; sync enforces it on all
-                         # four harnesses (SPEC §4.1)
+  default-skills.txt     # skill roster, flat today; sync can scope it per
+                         # harness and enforces that on all four (SPEC §4.1)
 docs/
 scripts/
 tests/                   # unittest suite + evals/ (scenarios, harness, results)
