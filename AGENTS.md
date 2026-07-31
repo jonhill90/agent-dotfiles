@@ -121,6 +121,40 @@ npx skills add . --list
 
 Run language-specific tests when changing bundled scripts or tools.
 
+## Recording Figures
+
+Every number written into `docs/` is either **measured** — a command was
+run and its output read — or **inferred** from a setting, a prediction, or
+arithmetic. Write which. An inferred figure that reads as measured is the
+most common defect in this repository's record, and it is always
+self-flattering: it makes a result look stronger than the evidence
+supports.
+
+Four instances, all corrected after the fact:
+
+- `~352 tokens saved` by disabling two plugins — inferred from
+  `enabledPlugins: false`. The plugin's skills load anyway; only
+  uninstalling removes them.
+- `7 FAIL / 1 INVALID` as the E20 baseline — a re-score that a later guard
+  *would have* produced. The measurement is 8 FAIL.
+- `six candidates fetched and read` — five were read; the sixth failed to
+  install and is unmeasured.
+- `~40 stale figures remaining` — arithmetic on a round number. No list
+  existed until one was built, and the real count was two.
+
+Rules:
+
+- State the instrument beside the number. `measure_e15.py` reads deployed
+  files under `$HOME` and reports declared state; `/context` reports what
+  the model was actually sent, free, on Claude Code only;
+  `measure_context.py` asks all four harnesses and bills for it.
+- A prediction, a counterfactual, and a re-score are not results. Record
+  them where they belong — as a note on the results file, not as the
+  result.
+- Do not quote a count for a set you have not enumerated. Build the list.
+- When correcting a figure, say what it was and why it was wrong. A
+  silently improved number teaches nothing and cannot be audited.
+
 ## Distribution
 
 - Use `npx skills` for individual skill discovery and installation.
@@ -146,4 +180,5 @@ Do not:
 - add duplicate skill identities;
 - encode one harness as the portable source model;
 - load every skill into every workflow by default;
-- claim validation without running the commands above.
+- claim validation without running the commands above;
+- write an inferred figure as if it were measured (see Recording Figures).
