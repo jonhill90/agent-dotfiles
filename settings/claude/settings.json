@@ -1,7 +1,6 @@
 {
   "enabledPlugins": {
     "playwright@claude-plugins-official": true,
-    "ralph-loop@claude-plugins-official": false,
     "frontend-design@claude-plugins-official": false
   },
   "alwaysThinkingEnabled": true,
