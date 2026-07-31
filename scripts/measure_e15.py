@@ -188,9 +188,18 @@ def plugin_skill_bytes(plugins_root: Path, enabled: set[str]) -> tuple[int, list
       whole tree double-counts anything installed. Only `cache/` is read.
     * A plugin may ship `commands/*.md` instead of `skills/*/SKILL.md`;
       Claude Code merges commands into skills, so they cost description
-      tokens too. `ralph-loop` is entirely commands.
-    * A cached-but-disabled plugin costs nothing — `superpowers` sits in
-      the cache while the manifest records it as rejected.
+      tokens too.
+    * A plugin absent from the cache costs nothing — `superpowers` was
+      never installed and the manifest records it as rejected.
+
+    **This function reports what the settings declare, not what the model
+    was sent.** `enabledPlugins: false` was assumed to suppress a plugin's
+    skills; on 2026-07-30 `/context` showed `frontend-design`'s skill loaded
+    in a session where that key was `false` at user scope and set nowhere
+    else. Uninstalling removes the skills; disabling apparently does not.
+    So a plugin this function excludes may still be charged. Until that is
+    re-measured, treat the plugin column as a lower bound and settle the
+    question with `/context`, which is free.
     """
     cache = plugins_root / "cache"
     if not cache.is_dir():
@@ -294,7 +303,11 @@ def main() -> int:
             )
             over += 1
     plugins = report["claude"]["plugin_names"]
-    print(f"\nenabled plugins charged to Claude Code: {', '.join(plugins) or 'none'}")
+    print(f"\nplugins declared enabled for Claude Code: {', '.join(plugins) or 'none'}")
+    print(
+        "  (declared, not observed: a plugin set to false may still load its "
+        "skills — check /context)"
+    )
 
     # Name the blind spots. This script reads deployed files, so anything the
     # harness itself ships is invisible to it — and printing a total without
