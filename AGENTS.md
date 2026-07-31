@@ -146,8 +146,9 @@ Rules:
 
 - State the instrument beside the number. `measure_e15.py` reads deployed
   files under `$HOME` and reports declared state; `/context` reports what
-  the model was actually sent, free, on Claude Code only;
-  `measure_context.py` asks all four harnesses and bills for it.
+  the model was actually sent, free, on Claude Code only; `claude plugin
+  details <name>` prices one plugin, free; `measure_context.py` asks all
+  four harnesses and bills for it.
 - A prediction, a counterfactual, and a re-score are not results. Record
   them where they belong — as a note on the results file, not as the
   result.
