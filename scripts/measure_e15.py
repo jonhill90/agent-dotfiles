@@ -64,9 +64,31 @@ def description_bytes(skill_md: Path) -> int:
 # on disk is not necessarily in the model's context: the wrapper writes these
 # from the roster (SPEC §4.1 Tier B), so charging the whole directory reports
 # Claude Code and Copilot heavy by whatever the roster scoped away.
+def name_only_skills(home: Path, harness: str) -> set[str]:
+    """Skills listed without their description (`skillOverrides: name-only`).
+
+    Charged the length of the name instead of the description — still in the
+    model's list, still invocable, cheaper (SPEC §4.1, #96). Claude Code is
+    the only harness with this state: Copilot's `disabledSkills` and Pi's
+    denylist are boolean, and Codex's `[[skills.config]]` carries `enabled`,
+    with no description-suppressing value in any of the three (checked
+    2026-07-30). The others therefore return an empty set rather than
+    pretending to a state they do not have.
+    """
+    if harness != "claude":
+        return set()
+    settings = _read_json(home / ".claude" / "settings.json")
+    return {
+        name for name, state in settings.get("skillOverrides", {}).items()
+        if state == "name-only"
+    }
+
+
 def suppressed_skills(home: Path, harness: str) -> set[str]:
     if harness == "claude":
         settings = _read_json(home / ".claude" / "settings.json")
+        # Only `off` suppresses. `name-only` still reaches the model's list,
+        # so counting it here would under-report by the whole skill.
         return {
             name for name, state in settings.get("skillOverrides", {}).items()
             if state == "off"
@@ -154,15 +176,29 @@ def _read_json(path: Path) -> dict:
 
 
 def skill_dir_bytes(
-    skills_dir: Path, suppressed: set[str] | None = None
+    skills_dir: Path,
+    suppressed: set[str] | None = None,
+    name_only: set[str] | None = None,
 ) -> tuple[int, list[str]]:
+    """Description bytes for a skills directory.
+
+    Three states, not two: absent (`suppressed`, charged nothing),
+    name-only (charged the name), and present (charged the description).
+    """
     if not skills_dir.is_dir():
         return 0, []
     skip = suppressed or set()
+    names_only = name_only or set()
     total = 0
     names: list[str] = []
     for entry in sorted(skills_dir.iterdir()):
         if entry.name in skip:
+            continue
+        if entry.name in names_only:
+            # Listed without its description: the name is what reaches
+            # the model.
+            total += len(entry.name.encode("utf-8"))
+            names.append(entry.name)
             continue
         payload = description_bytes(entry / "SKILL.md")
         if payload:
@@ -250,7 +286,9 @@ def measure(
         root = home / root_rel
         instructions = token_estimate(root.stat().st_size) if root.is_file() else 0.0
         skill_bytes, skill_names = skill_dir_bytes(
-            home / skills_rel, suppressed_skills(home, harness)
+            home / skills_rel,
+            suppressed_skills(home, harness),
+            name_only_skills(home, harness),
         )
         plugin_tokens = token_estimate(plugin_bytes) if loads_plugins else 0.0
         report[harness] = {

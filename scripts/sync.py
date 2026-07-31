@@ -140,15 +140,51 @@ def deep_merge(base: dict, patch: dict) -> dict:
     return out
 
 
+# Per-entry roster modifiers. `name-only` is Claude Code's third
+# `skillOverrides` state (SPEC §4.1, #96): the skill stays installed and
+# invocable, but its description is not charged until it fires. A modifier
+# qualifies membership; it never removes it.
+SKILL_MODIFIERS = frozenset({"name-only"})
+
+
+def _split_modifier(entry: str) -> tuple[str, str | None]:
+    """`obsidian @name-only` -> ("obsidian", "name-only")."""
+    name, _, rest = entry.partition("@")
+    name = name.strip()
+    modifier = rest.strip() or None
+    if modifier is not None and modifier not in SKILL_MODIFIERS:
+        raise ValueError(
+            f"unknown roster modifier @{modifier} on {name!r}; "
+            f"known: {', '.join(sorted(SKILL_MODIFIERS))}"
+        )
+    return name, modifier
+
+
 def load_skill_roster(repo: Path) -> tuple[list[str], dict[str, list[str]]]:
     """Parse `settings/default-skills.txt` into (shared, per-harness sections).
 
     Lines before any `[harness]` header are shared by every harness, so a
-    flat file keeps its original meaning (SPEC §4.1).
+    flat file keeps its original meaning (SPEC §4.1). A trailing
+    `@<modifier>` qualifies the entry and is stripped here, so every caller
+    that only wants membership keeps working unchanged; `skill_modifiers()`
+    reads the annotations.
     """
+    shared, sections, _ = _parse_skill_roster(repo)
+    return shared, sections
+
+
+def skill_modifiers(repo: Path) -> dict[str, str]:
+    """Roster entries carrying a modifier, as `{skill: modifier}`."""
+    return _parse_skill_roster(repo)[2]
+
+
+def _parse_skill_roster(
+    repo: Path,
+) -> tuple[list[str], dict[str, list[str]], dict[str, str]]:
     roster = repo / "settings" / "default-skills.txt"
     shared: list[str] = []
     sections: dict[str, list[str]] = {}
+    modifiers: dict[str, str] = {}
     current: list[str] | None = None
     for raw in roster.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
@@ -157,8 +193,11 @@ def load_skill_roster(repo: Path) -> tuple[list[str], dict[str, list[str]]]:
         if line.startswith("[") and line.endswith("]"):
             current = sections.setdefault(line[1:-1].strip().lower(), [])
             continue
-        (shared if current is None else current).append(line)
-    return shared, sections
+        name, modifier = _split_modifier(line)
+        if modifier is not None:
+            modifiers[name] = modifier
+        (shared if current is None else current).append(name)
+    return shared, sections, modifiers
 
 
 def load_default_skills(repo: Path, harness: str | None = None) -> list[str]:
@@ -196,9 +235,18 @@ def claude_skill_overrides(repo: Path) -> dict[str, str]:
     model's list. V9 resolved the Tier B lever — `skillOverrides` with a value
     of `off` — and this derives it from the roster so the declaration and the
     enforcement cannot drift.
+
+    Two states come out of the roster. A skill Claude Code is not scoped to
+    is `off`. A skill it keeps but which carries `@name-only` is
+    `name-only`: listed without its description, so it costs a name instead
+    of a description and stays invocable (SPEC §4.1, #96).
     """
     claude = set(load_default_skills(repo, "claude"))
-    return {name: "off" for name in roster_union(repo) if name not in claude}
+    overrides = {name: "off" for name in roster_union(repo) if name not in claude}
+    for name, modifier in skill_modifiers(repo).items():
+        if modifier == "name-only" and name in claude:
+            overrides[name] = "name-only"
+    return overrides
 
 
 def copilot_disabled_skills(repo: Path) -> list[str]:
