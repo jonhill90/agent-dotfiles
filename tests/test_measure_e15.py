@@ -153,6 +153,69 @@ class SuppressedSkillTests(unittest.TestCase):
         self.assertEqual(measure_e15.suppressed_skills(self.home, "claude"), set())
         self.assertEqual(measure_e15.suppressed_skills(self.home, "pi"), set())
 
+    def test_name_only_is_not_suppressed(self) -> None:
+        """`name-only` keeps the skill listed, so it is not suppressed — it is
+        charged differently. Treating it as `off` would under-report."""
+        (self.home / ".claude").mkdir(parents=True)
+        (self.home / ".claude" / "settings.json").write_text(
+            json.dumps({"skillOverrides": {"obsidian": "name-only"}}), encoding="utf-8"
+        )
+        self.assertEqual(measure_e15.suppressed_skills(self.home, "claude"), set())
+
+    def test_name_only_skills_are_reported_for_charging(self) -> None:
+        (self.home / ".claude").mkdir(parents=True)
+        (self.home / ".claude" / "settings.json").write_text(
+            json.dumps(
+                {"skillOverrides": {"obsidian": "name-only", "sanity-check": "off"}}
+            ),
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            measure_e15.name_only_skills(self.home, "claude"), {"obsidian"}
+        )
+
+    def test_only_claude_has_a_name_only_state(self) -> None:
+        """No other harness was found to have an equivalent (#96)."""
+        for harness in ("codex", "copilot", "pi"):
+            self.assertEqual(measure_e15.name_only_skills(self.home, harness), set())
+
+
+class NameOnlyChargeTests(unittest.TestCase):
+    """`name-only` lists a skill without its description. It costs the name,
+    not the description — charging either extreme misreports the budget
+    (#96)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+
+    def skill(self, name: str, description: str) -> None:
+        d = self.root / name
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: {description}\n---\n", encoding="utf-8"
+        )
+
+    def test_name_only_skill_is_charged_its_name(self) -> None:
+        self.skill("obsidian", "x" * 200)
+        total, names = measure_e15.skill_dir_bytes(
+            self.root, name_only={"obsidian"}
+        )
+        self.assertEqual(total, len("obsidian"))
+        self.assertEqual(names, ["obsidian"])
+
+    def test_full_skill_is_charged_its_description(self) -> None:
+        self.skill("obsidian", "x" * 200)
+        total, _ = measure_e15.skill_dir_bytes(self.root)
+        self.assertEqual(total, 200)
+
+    def test_name_only_saves_the_difference(self) -> None:
+        self.skill("obsidian", "x" * 200)
+        full, _ = measure_e15.skill_dir_bytes(self.root)
+        reduced, _ = measure_e15.skill_dir_bytes(self.root, name_only={"obsidian"})
+        self.assertEqual(full - reduced, 200 - len("obsidian"))
+
 
 class CodexSuppressionTests(unittest.TestCase):
     """Codex's disable lives in TOML, not JSON, and suppressed_skills had no
