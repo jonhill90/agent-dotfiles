@@ -376,8 +376,24 @@ safe-deletion
 failing-test-first
 ```
 
+An entry may carry a trailing modifier, `<skill> @name-only`, in the
+shared list or in a section:
+
+```text
+github-cli
+obsidian @name-only
+```
+
+A modifier **qualifies membership, it never removes it**: the skill is
+still installed, still deployed, still invocable. `@name-only` is the only
+one defined; an unrecognised modifier is a `ValueError` at parse time
+rather than a silently dropped annotation, because a roster that parses
+but does not mean what it says is worse than one that refuses to load.
+
 `load_default_skills(repo, harness=None)` returns the shared list when
-called without a harness, and `shared + section` for a named one. APM
+called without a harness, and `shared + section` for a named one, with
+modifiers stripped — every membership caller is unchanged.
+`skill_modifiers(repo)` reads the annotations. APM
 still installs the **union** across harnesses, so package deployment is
 unchanged and APM keeps ownership of `~/.claude/skills`.
 
@@ -437,6 +453,24 @@ without its description, so it cuts the description tokens a skill costs
 while keeping it invocable. That is a cheaper instrument than exclusion
 for a skill that is wanted but rarely triggered, and it applies to the
 per-harness aggregate §4.1 introduced.
+
+**Built 2026-07-30 (#96).** The roster expresses it as `@name-only`,
+`claude_skill_overrides()` derives `name-only` alongside `off`, and
+`measure_e15.py` charges such a skill the length of its *name* rather than
+its description — three states, not two, since counting it as suppressed
+under-reports by a whole skill and counting it as present over-reports by
+a description.
+
+**Claude Code is the only harness with this state**, checked hands-on
+2026-07-30: Copilot's `disabledSkills` is boolean and `copilot skill` has
+only `add`/`list`/`remove`; Codex's `[[skills.config]]` carries `name` and
+a boolean `enabled`; Pi has `--skill`, `--no-skills` and a denylist. None
+exposes a description-suppressing value, so `name_only_skills()` returns
+an empty set for those three rather than implying a state they do not
+have. **No roster entry uses the modifier yet** — the mechanism is built
+and unused, and the observation that a fresh Claude Code lists a
+`name-only` skill without its description is still outstanding, because it
+needs a settings change on the owner's machine.
 
 **Consequences.**
 

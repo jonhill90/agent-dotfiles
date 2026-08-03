@@ -828,6 +828,61 @@ class ClaudeSkillOverrideTests(SyncTestCase):
         self.assertEqual(sync.claude_skill_overrides(self.repo), {})
 
 
+class NameOnlyRosterTests(SyncTestCase):
+    """`name-only` is the third roster state SPEC §4.1 names and #96 asked
+    for: keep the skill invocable, stop paying for its description. It is a
+    modifier on membership, not an exclusion — so a `@name-only` skill stays
+    in the resolved roster and is still deployed."""
+
+    def roster(self, text: str) -> None:
+        (self.repo / "settings" / "default-skills.txt").write_text(text, encoding="utf-8")
+
+    def test_modifier_is_stripped_from_the_resolved_roster(self) -> None:
+        self.roster("github-cli\nobsidian @name-only\n")
+        self.assertEqual(
+            sync.load_default_skills(self.repo), ["github-cli", "obsidian"]
+        )
+
+    def test_name_only_skill_is_still_installed(self) -> None:
+        """The whole point: it stays deployed and invocable."""
+        self.roster("github-cli\nobsidian @name-only\n")
+        self.assertIn("obsidian", sync.roster_union(self.repo))
+        self.assertIn("obsidian", sync.neutral_union(self.repo))
+
+    def test_override_is_name_only_not_off(self) -> None:
+        self.roster("github-cli\nobsidian @name-only\n")
+        self.assertEqual(
+            sync.claude_skill_overrides(self.repo), {"obsidian": "name-only"}
+        )
+
+    def test_name_only_and_off_coexist(self) -> None:
+        """A skill scoped away from Claude is still `off`; the modifier only
+        changes skills Claude keeps."""
+        self.roster("github-cli\nobsidian @name-only\n\n[codex]\nsanity-check\n")
+        self.assertEqual(
+            sync.claude_skill_overrides(self.repo),
+            {"obsidian": "name-only", "sanity-check": "off"},
+        )
+
+    def test_modifier_applies_inside_a_harness_section(self) -> None:
+        self.roster("github-cli\n\n[claude]\nprimer @name-only\n")
+        self.assertEqual(
+            sync.claude_skill_overrides(self.repo), {"primer": "name-only"}
+        )
+
+    def test_unknown_modifier_is_refused_rather_than_ignored(self) -> None:
+        """Silently dropping an unrecognised modifier would deploy a roster
+        that does not match what the file asks for."""
+        self.roster("github-cli\nobsidian @nmae-only\n")
+        with self.assertRaises(ValueError) as caught:
+            sync.load_skill_roster(self.repo)
+        self.assertIn("@nmae-only", str(caught.exception))
+
+    def test_skill_modifiers_reports_only_annotated_skills(self) -> None:
+        self.roster("github-cli\nobsidian @name-only\n")
+        self.assertEqual(sync.skill_modifiers(self.repo), {"obsidian": "name-only"})
+
+
 class CopilotDisabledSkillsTests(SyncTestCase):
     """Copilot reads the shared ~/.agents/skills directory, so a skill scoped
     to Codex and Pi reaches Copilot too. V10 resolved affirmatively on
