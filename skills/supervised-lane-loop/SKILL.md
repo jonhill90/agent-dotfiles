@@ -22,6 +22,27 @@ author's preference is unknown. The supervisor's own untested guess: the
 self-sufficient prompt and the defect family do most of the work, the merge
 standards make it safe, and the rest is refinement. Treat that as a hypothesis.
 
+Two separate claims live here, and only one is testable in a single session:
+
+- **The standards are followable and improve individual decisions.** These are
+  per-decision properties. A single scored session can falsify them.
+- **The loop compounds over days.** The prompt's value is that it survives
+  context loss; the seam's value is that it generates the next task without a
+  human. Both are *scheduling* properties, unobservable in one session by
+  construction.
+
+No amount of the first passing is evidence for the second. If you see rule
+tests go green, they cover the safety leg and say nothing about the
+productivity leg.
+
+And when you do test the standards, **make the salted item the Nth, not the
+first.** These rules do not fail from ignorance — every competent agent knows
+to read a diff. They fail from vigilance decaying under monotony: skipping the
+check on the thirtieth PR because the previous twenty-nine were clean and this
+body reads plausibly. A fixture that presents one suspicious item cues the
+behaviour it means to measure and passes trivially. Seven clean items and one
+salted measures the thing that actually breaks.
+
 ## Preconditions
 
 Without these the loop does not degrade gracefully — it becomes unsupervised
@@ -163,6 +184,21 @@ on a squash merge, close it by hand *after* verifying the fix is on main. A
 finding recorded only in a merged PR body is parked where nobody will look
 for it again; an issue left open behind a shipped fix is the same defect
 family in miniature.
+
+### Instrument the rules rather than trusting them
+
+Require every report to state the triaged-versus-real ratio and the file list
+checked. A report that omits them is itself the degradation signal, and you
+get that on every cycle for free instead of discovering it in an audit weeks
+later.
+
+This is the same principle as making an instrument capable of falsifying a
+hypothesis before testing it, turned on the supervisor instead of the code.
+It matters because these rules decay silently: the two worth watching are **a
+hit is not a finding**, which fails first and is visible in the very next
+report when a ratio disappears and volume starts standing in for judgement,
+and **verify against code, never the PR body**, which is the last gate — when
+it goes, nothing catches anything, and bad merges do not announce themselves.
 
 ## Anything probabilistic gets statistical honesty
 
