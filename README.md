@@ -164,12 +164,15 @@ skills. `sanity-check` was its one live instance until 2026-07-29, when it
 moved to public opt-in for failing §10.1 rule 5: no skill-rung run was ever
 measured, and its counter-scenario is explicitly invalid.
 
-Four further skills are published here but excluded from the default
-package — `primer`, `close-the-loop`, `dispatching-subagents`, and
-`sanity-check` —
-because no failing eval justified their static description cost. All four
+Five further skills are published here but excluded from the default
+package — `primer`, `close-the-loop`, `dispatching-subagents`,
+`sanity-check`, and `supervised-lane-loop` —
+because no failing eval justified their static description cost. All five
 remain independently installable, and the reasoning for each is recorded in
 [docs/provenance-manifest.md](docs/provenance-manifest.md).
+`supervised-lane-loop` is the newest and the least measured: it is vendored
+practice from another repository, carries its own "practice, not measured"
+status line, and has no eval behind it at all.
 
 The behavioral layer is deliberately minimal: loop discipline lives in the
 canonical instructions, and skills are added only when a failing eval
