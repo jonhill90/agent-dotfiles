@@ -15,6 +15,26 @@ contract, the *seam* generates the next task, and the *standards* make merging
 safe. Remove any of the three and the loop degrades within an hour — usually
 into documentation passes, which feel productive and are not.
 
+**Status: practice, not measured.** This describes one estate, one supervisor,
+two lanes, about two days of continuous operation. It has never been run
+against a counterfactual, so which rules carry the weight and which are the
+author's preference is unknown. The supervisor's own untested guess: the
+self-sufficient prompt and the defect family do most of the work, the merge
+standards make it safe, and the rest is refinement. Treat that as a hypothesis.
+
+## Preconditions
+
+Without these the loop does not degrade gracefully — it becomes unsupervised
+implementation wearing a supervisor's vocabulary.
+
+- **A health gate that can actually go red.** If the check cannot fail, the
+  first leg is decorative and nothing stops work landing on a broken estate.
+- **CI that can fail, and an issue tracker.** The standards below assume a
+  merge can be blocked and a parked finding has somewhere to live.
+- **A codebase large enough to sustain one defect family for days.** A small
+  repo exhausts a family in an hour, and then the loop needs new seams far
+  more often than this implies.
+
 ## The recurring prompt must be self-sufficient
 
 Restate the whole contract every firing: the health command, the lane
@@ -36,6 +56,10 @@ Begin every firing with the same concrete check, by name, against the real
 system. Not a count — a list. Counts agree with themselves; a name that is
 absent is a name.
 
+The gate is *a named list of things that must be true, checked against the
+real system*. It is not any particular list — sixteen containers, seven
+tenants and two endpoints is one estate's instance of it.
+
 Degraded means stop everything and report. Do not start new work on a
 degraded estate, and do not let a lane's PR merge into one.
 
@@ -47,6 +71,16 @@ Two rules that come from getting this wrong:
 - **A "clean" result from a query that could not see the thing is not clean.**
   An empty result proves nothing unless you can show the query was capable of
   returning a non-empty one.
+
+### Suspect your own instrument first
+
+The supervisor runs more one-off commands than any lane, so it makes more
+instrument errors than any lane. Observed in a single day: a production
+endpoint reported down when the supervisor's own `curl` had failed; a CI
+failure line cut off by `tail` and the run called clean; a `grep` matched
+against the wrong section of a file, twice; call sites miscounted by half.
+
+Every one of those would have reached the human as a false report.
 
 ## The seam: name a defect family, not a task list
 
@@ -66,6 +100,14 @@ bugs", which produces scattered, unrankable churn nobody can review.
 Signs your seam has gone stale: findings get cosmetic, ranking gets
 arbitrary, or the lanes start proposing documentation. Name a new family.
 
+## The supervisor never implements
+
+State it explicitly, because the loop only implies it and the pressure to
+break it is constant. The reason is not workload. If the supervisor writes the
+fix, the supervisor reviews its own work, and the independence of the second
+seat — the entire value of the arrangement — is gone. Touching the tree also
+contaminates a lane's workspace.
+
 ## Standards that make merging safe
 
 The supervisor merges without the human reading diffs. That is only
@@ -77,6 +119,11 @@ directions: it goes red on a real violation and green without one. Prove it
 against something real — a live container, a mutated production-shaped file —
 not a fixture written to match the checker's own expectations, which only
 proves the checker agrees with itself.
+
+**Read the diff's file list, not just the claim.** Verify what the PR says it
+does, then look at what else is in the commit. A 155-line file once rode into
+a merged PR about wiring a CI check, because the wiring claim was verified and
+nothing else was looked at. The file was this skill.
 
 **A hit is not a finding.** Grep matches are candidates. For each, establish
 what the caller/user/operator actually observes, and drop the ones where the
@@ -101,8 +148,38 @@ a missing check is found, these are two separate facts and the second must be
 measured, not inferred from the first. Usually the answer is reassuring and
 the report is stronger for having proven it.
 
-**File an issue for anything parked.** A finding recorded only in a merged PR
-body is parked where nobody will look for it again.
+**A suppression and the thing it suppresses are one change.** Wiring a check
+and removing its allowlist entry ship together. Leave the entry behind and it
+suppresses nothing today — but if that check is later removed or renamed, the
+allowlist catches it on the way down and reports a regression as an
+acknowledged gap.
+
+**Serial work on shared files wants serial branches.** Cutting eight branches
+up front that all edit the same file means every one after the first
+conflicts. Cut the next branch after the previous merges.
+
+**File an issue for anything parked**, and when an issue does not auto-close
+on a squash merge, close it by hand *after* verifying the fix is on main. A
+finding recorded only in a merged PR body is parked where nobody will look
+for it again; an issue left open behind a shipped fix is the same defect
+family in miniature.
+
+## Anything probabilistic gets statistical honesty
+
+State sample sizes before and after, and be willing to kill your own lead. A
+flake investigation watched a file-level failure count fall from 4-in-30 to
+1-in-30 and correctly refused to call it fixed: p=0.35, and 11-in-30 to
+9-in-30 overall at p=0.78. A lead disproven with 30 runs behind it is real
+progress, because it shortens the suspect list.
+
+**Make the instrument capable of falsifying the hypothesis before testing
+it.** In that same investigation the guard under test had no file output, so
+"we never observed a violation" would have been indistinguishable from an
+instrument that could not record one. Wiring durable evidence first is what
+made the later negative result mean anything.
+
+**Measurement batches run solo.** Two batches sharing a machine contaminate
+exactly the timing-sensitive thing being measured.
 
 ## Reviewing a lane's work
 
@@ -121,24 +198,39 @@ Send findings back rather than fixing them yourself, and tell the lane to
 check your reasoning rather than take it. You will be wrong sometimes; a lane
 that defers to you propagates it.
 
-**Praise restraint explicitly.** When a lane declines to overturn an existing
-reasoned decision for lack of new evidence, or reports a hypothesis *you*
-supplied as not-real, say so. Those are the behaviours that decay first under
-pressure to produce.
+**A hypothesis you handed a lane that comes back refuted is a success.** A
+suggestion from the reviewer is the easiest thing in the world to find
+supporting evidence for, so a lane that declines — reporting that the code
+path does not exist, with the reason — is worth more than one that delivers.
+
+**Praise restraint explicitly.** That includes the refutation above, and a
+lane declining to overturn an existing reasoned decision for lack of new
+evidence. Say so out loud when it happens, or it stops happening.
 
 ## Lane mechanics
 
-- Dispatch to an idle lane immediately. An idle lane is the only real waste.
-- Send prompts as: clear the input line, type, **capture to confirm it
-  landed**, then submit. Sends fail silently.
-- Detecting idle is harder than it looks. A lane waiting on sub-agents or a
-  background command is *working* while showing no activity indicator, and
-  stale scrollback can make a finished lane look busy. Check the live tail,
-  not a keyword anywhere in the buffer.
-- Give each lane a distinct surface so two lanes never edit the same files.
-  Parallelising a producer and its consumer ships a broken contract.
-- Long tasks: state the goal, the ranking rule, the standard of evidence, and
-  the boundary you will not authorise crossing. Then let them work.
+For pane targeting, send verification and clearing the input line, use the
+[tmux skill](../tmux/SKILL.md) — it owns that ground and its rules are tested.
+Three things here are not terminal mechanics and belong with the loop:
+
+- **Idle detection is a correctness problem.** Getting it wrong costs cycles
+  in both directions: stale scrollback made a finished lane read as working
+  and it sat idle a full cycle, and a lane waiting on forked sub-agents read
+  as idle and was nearly dispatched over. Check the live tail, never a
+  keyword anywhere in the buffer. This generalises to any harness where a
+  worker signals liveness through a rendered surface.
+- **A lane that says it will wait and then ends its turn has stopped, not
+  waited.** That is agent behaviour, not a terminal flag, and it cost four
+  cycles across two lanes before it was diagnosed. Instruct lanes to block
+  inside a single foreground command with a bounded polling loop, and never
+  to end a turn whose only remaining step is waiting.
+- **Give each lane a distinct surface** so two lanes never edit the same
+  files. Parallelising a producer and its consumer ships a broken contract —
+  the consumer merges before it knows about a new type.
+
+Dispatch to an idle lane immediately; an idle lane is the only real waste.
+For long tasks, state the goal, the ranking rule, the standard of evidence,
+and the boundary you will not authorise crossing. Then let them work.
 
 ## Reporting to the human
 
@@ -147,8 +239,11 @@ a loud one means something.
 
 Escalate only what genuinely needs a decision: an irreversible action, an
 outward-facing change, a security finding with real blast radius, or a fork
-where either branch is defensible. State the options and give a
-recommendation.
+where either branch is defensible.
+
+**Escalate as a fork with a recommendation, never as an open question.** The
+useful form is: here are the two branches, here is the cost of each, here is
+what I would do.
 
 Report outcomes faithfully. Failures with their output, skipped steps named
 as skipped, and boundaries stated — "this proves the message reached the mail
