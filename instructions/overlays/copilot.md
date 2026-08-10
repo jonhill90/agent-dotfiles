@@ -12,6 +12,7 @@ them absent, then passing x5 with this sentence. Claude Code, Codex and Pi
 pass E17 unaided and should not pay for it.
 
 Deciding results: tests/evals/results/2026-07-27-e17-ladder-copilot.md
+in the private jonhill90/agent-evals repository.
 This block is a comment so the rationale stays with the rule in the repo
 without being charged to Copilot's static context.
 -->

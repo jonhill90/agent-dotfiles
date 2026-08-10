@@ -2,6 +2,16 @@
 
 Living document. Rewritten, not appended to. Last verified **2026-07-29**.
 
+**Stale as of 2026-08-09 (#10):** the eval scenarios, counter-scenarios,
+harness, results/transcripts, scoring/arming tools, and `docs/evals.md`
+moved to the private jonhill90/agent-evals (evidence unavailable publicly)
+repository. Everything below dated 2026-07-29 or earlier that discusses
+`tests/evals/...` content, defect counts, or eval-apparatus size describes
+that repository now, not this one; mechanical numbers (test counts, skill
+counts) were not re-measured for this note and need a fresh verification
+pass before they're trusted again. This banner replaces a full rewrite,
+which the split alone does not justify.
+
 Two reviewers audited this file before you got it. The mechanical numbers below
 were re-run and hold exactly. Nine *narrative* numbers were wrong on the first
 draft — each one drifted toward the point its sentence was making. Corrected
@@ -21,9 +31,10 @@ directory is `Skills`, which matters — see Traps.
 
 Read in this order: `AGENTS.md` (repo policy — this is the one that governs how
 you work), `README.md` (where a skill belongs), `docs/PRD.md` (intent),
-`docs/SPEC.md` (design), `docs/evals.md` (the eval vocabulary used throughout
-this file), `docs/provenance-manifest.md` (every adopt/reject decision),
-`docs/work-tracking.md` (issue conventions).
+`docs/SPEC.md` (design), `docs/provenance-manifest.md` (every adopt/reject
+decision), `docs/work-tracking.md` (issue conventions). The eval vocabulary
+used throughout this file now lives in `docs/evals.md` in the private
+jonhill90/agent-evals (evidence unavailable publicly) repository.
 
 `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md` are the same file
 by symlink. Edit `AGENTS.md`.

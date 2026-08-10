@@ -125,19 +125,19 @@ the claim each anecdote was supporting is marked accordingly.
 - **A reviewer handed a conclusion confirms it.** *Evidenced.* Copilot
   sought a second opinion exactly as instructed, handed over its diagnosis,
   the reviewer agreed, and it edited the wrong skill
-  ([ladder](../../tests/evals/results/2026-07-27-copilot-ladder.md)). The
+  (ladder — private repository jonhill90/agent-evals, evidence unavailable publicly (`tests/evals/results/2026-07-27-copilot-ladder.md`)). The
   same fixture, given raw to a reviewer on another harness, produced a
   falsified hypothesis instead
-  ([E18](../../tests/evals/results/2026-07-26-e18-sentence-rung.md)).
+  (E18 — private repository jonhill90/agent-evals, evidence unavailable publicly (`tests/evals/results/2026-07-26-e18-sentence-rung.md`)).
 - **Agreement is not verification.** *Evidenced.* Copilot delegated to three
   reviewers, they agreed, and it acted on the vote without running the test
   that settled the question — FAIL ×2
-  ([E17](../../tests/evals/results/2026-07-27-copilot-column.md)).
+  (E17 — private repository jonhill90/agent-evals, evidence unavailable publicly (`tests/evals/results/2026-07-27-copilot-column.md`)).
 - **Check the instrument before believing the verdict.** *Evidenced, and the
   best-supported claim here.* Twenty-plus false verdicts across
   2026-07-26/29, none from a skill; one was an arm that reported a skill
   absent while a harness still listed it
-  ([counter-scenario](../../tests/evals/results/2026-07-28-sc-c1-instrument.md)).
+  (counter-scenario — private repository jonhill90/agent-evals, evidence unavailable publicly (`tests/evals/results/2026-07-28-sc-c1-instrument.md`)).
 - **Vary the question, not the reviewer count.** *Not evidenced.* Reasoning
   from the two entries above, not from a run that varied it.
 - **The eight prompt properties.** *Not evidenced individually.* Rules 3, 5,
