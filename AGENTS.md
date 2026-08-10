@@ -153,6 +153,18 @@ apm lock -v          # resolves both pinned skill-source refs without deploying
 local `skills/` to enumerate (#9); it correctly reports "No skills found."
 Run language-specific tests when changing bundled scripts or tools.
 
+Citing a newly-opened issue by bare number (`#N`) in a tracked `.md` fails
+`tests/test_cross_repo_references.py` until the manifest it checks against
+is refreshed in the same change:
+
+```bash
+python3 scripts/refresh_known_references.py
+```
+
+`tests/fixtures/reference_guard_allowlist.json` is for genuinely
+unresolvable historical references only — a stale manifest is not that;
+refresh it instead of adding the number there (#34).
+
 ## Recording Figures
 
 Every number written into `docs/` is either **measured** — a command was
