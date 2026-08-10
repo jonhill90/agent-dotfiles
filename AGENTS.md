@@ -22,6 +22,12 @@ other two follow with no sync step.
   `jonhill90/skills-private` (private) — this repository declares them as
   pinned dependencies and rosters names, it does not vendor a `skills/`
   directory (#9).
+- The *global* `~/.apm/apm.yml` (distinct from this repo's own `apm.yml`)
+  can carry stale local-package registrations from any machine's history,
+  not just this repo's. `apply()` fails closed on them; `status`/`doctor`
+  name them; recovery is `apm uninstall -g <path> --dry-run` then
+  `apm uninstall -g <path>` — never manual deletion. See README.md's
+  "Stale Global Registrations and Recovery" (#14).
 - Keep canonical content out of harness-owned directories.
 - Treat `.claude/` and `.github/` as repo-development configuration or
   repository automation; other harness-owned directories must not

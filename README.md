@@ -140,6 +140,70 @@ deployed the public skills, then failed cloning the private one (`git
 checkout` exit 128), and `apply()` restored the prior 8-skill set
 byte-for-byte (sha256-verified) and returned the failing exit code.
 
+## Stale Global Registrations and Recovery
+
+`apm install -g` is additive: every machine that has ever run it carries a
+*global* manifest, `~/.apm/apm.yml`, distinct from this repo's own
+`apm.yml`. Every `apm install -g <path>` a machine has ever run — not just
+agent-dotfiles' own — adds a `path:`-registered entry there and leaves its
+content cached under `~/.apm/apm_modules/_local/<name>`. Neither is pruned
+when the source directory is deleted, moved, or its shape changes (a skill
+renamed or removed upstream). A real deployment surfaced exactly this
+(#11 → #14): two registrations pointed at deleted temp directories, and a
+third — a local checkout of `jonhill90/skills` registered before its #126
+restructuring — had three of its twelve originally-requested skill names
+(`az-devops`, `gh-cli`, `using-tmux`) renamed or deleted out from under it.
+`apm compile` does not fail on this; it silently accumulates cached
+content from every stale registration into whatever it compiles next. The
+Copilot legacy surface, `~/.copilot/copilot-instructions.md`, ended up
+with four consecutive copies of the same canonical instructions block,
+each carrying a `<!-- apm:source:NAME -->` comment naming a different
+stale registration.
+
+**Detection, in `status` and `doctor`:**
+
+- `[stale-global] <path>: <reason>` in `status`, and a `stale-global-registrations`
+  check in `doctor` — one line per stale entry in `~/.apm/apm.yml`, naming
+  the exact path. A registration is stale when its source directory no
+  longer exists, when the source has no package markers at all (no
+  `apm.yml`, no root `SKILL.md`, no `skills/<name>/SKILL.md` bundle), or
+  when it is a bare skill-bundle registration (no `apm.yml` of its own)
+  whose requested `skills:` selection names something no longer present
+  in the bundle. **A registration with its own `apm.yml` is never flagged**
+  — a real, independent global package's manifest is authoritative about
+  itself; #14 requires not rejecting one just because its `skills/`
+  directory happens to differ from what was last requested.
+- `[source-blocks] <path>: <finding>` in `status`, and a
+  `compiled-root-sources` check in `doctor` — every compiled root file
+  (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.copilot/AGENTS.md`,
+  `~/.copilot/copilot-instructions.md`, `~/.pi/agent/AGENTS.md`) is
+  scanned for `apm:source` blocks. Zero blocks is normal for most of them
+  (they use a different, single-line marker). More than one block, or any
+  block not naming the current local package, is flagged by exact file
+  and source name.
+
+**`apply()` fails closed.** If `status`/`doctor` would report a stale
+global registration, `apply()` refuses to invoke `apm` at all — checked
+first, before even the skill-directory backup — and exits non-zero naming
+every stale path. It does not attempt to guess which registration is safe
+to ignore.
+
+**Recovery is manual and uses APM's own uninstall mechanism — never
+arbitrary directory deletion, and never hand-edited `apm.yml` or
+`apm_modules/`.** For each path `status`/`doctor` names:
+
+```bash
+apm uninstall -g <path> --dry-run   # review what it would remove
+apm uninstall -g <path>             # then actually remove it
+```
+
+Run the dry-run first for every path, read what it would remove, and only
+then run the real command. This removes exactly that manifest entry, its
+integrated files, and its `apm_modules/` cache — not neighboring entries,
+not user-authored files. Re-run `sync.py doctor` afterward to confirm
+`stale-global-registrations` and `compiled-root-sources` are both clean,
+then run `apply()` once.
+
 ## Where a Skill Belongs
 
 Decide this before writing anything. Most skills do **not** belong in this

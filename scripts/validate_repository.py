@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # two cannot drift on what a section means (SPEC §4.1).
 from sync import (  # noqa: E402
     NEUTRAL_HARNESSES,
+    apm_dependency_block,
     load_default_skills,
     load_skill_roster,
     roster_union,
@@ -416,23 +417,6 @@ def validate_roster_credit(root: Path) -> list[Finding]:
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
-def _apm_dependency_block(text: str) -> str:
-    """Every line belonging to `dependencies: apm:`'s list, comments and
-    all, up to the next line dedented to two spaces or less (a sibling key
-    like `mcp:`, or end of the mapping). Indentation-based, not a fixed
-    line-shape regex — the caller may still contain full-line comments,
-    which this does not strip."""
-    match = re.search(r"^dependencies:\n(?:.*\n)*?  apm:\n", text, re.M)
-    if not match:
-        return ""
-    lines: list[str] = []
-    for line in text[match.end():].splitlines():
-        if line.strip() and (len(line) - len(line.lstrip(" "))) <= 2:
-            break  # dedented to a sibling key or back to top level
-        lines.append(line)
-    return "\n".join(lines) + "\n"
-
-
 def parse_skill_source_dependencies(root: Path) -> list[dict[str, object]]:
     """Every entry under apm.yml's `dependencies.apm`, as a dict of
     whatever `key: value` pairs it declares, plus `skills` (bool: does
@@ -455,7 +439,7 @@ def parse_skill_source_dependencies(root: Path) -> list[dict[str, object]]:
     apm_yml = root / "apm.yml"
     if not apm_yml.is_file():
         return []
-    block = _apm_dependency_block(apm_yml.read_text(encoding="utf-8"))
+    block = apm_dependency_block(apm_yml.read_text(encoding="utf-8"))
     block = "\n".join(
         line for line in block.splitlines() if not line.strip().startswith("#")
     )

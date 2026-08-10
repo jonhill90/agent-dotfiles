@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -122,6 +123,18 @@ class ApmSubprocessIsolationTests(SyncTestCase):
         self.assertTrue(seen_homes)
         for home in seen_homes:
             self.assertEqual(home, str(self.home))
+
+    def test_default_runner_is_the_isolated_wrapper_not_raw_subprocess_run(self) -> None:
+        # #14: a direct, structural guard beside the behavioural ones
+        # above. If a future edit ever reverts __init__ to
+        # `self.runner = subprocess.run`, this fails immediately and
+        # explains why, rather than only failing indirectly (and
+        # possibly not at all, in a test that happens to mock
+        # self.syncer.runner itself and never exercises the default).
+        fresh = sync.Sync(repo_root=self.repo, home=self.home)
+        self.assertEqual(fresh.runner, fresh._run_apm)  # bound methods compare by (func, instance)
+        self.assertEqual(fresh.runner.__func__, sync.Sync._run_apm)
+        self.assertNotEqual(fresh.runner.__func__, subprocess.run)
 
 
 class PiProjectionTests(SyncTestCase):
@@ -644,6 +657,270 @@ class SkillBackupConflictTests(SyncTestCase):
         self.assertTrue(ok)
 
 
+class StaleGlobalRegistrationDetectionTests(SyncTestCase):
+    """Sync.stale_global_registrations() (#14): reads the *global*
+    ~/.apm/apm.yml (not the project apm.yml #9 already covers) and
+    reports every stale local-package entry, by exact path."""
+
+    def _write_global_manifest(self, body: str) -> Path:
+        apm_dir = self.home / ".apm"
+        apm_dir.mkdir(parents=True, exist_ok=True)
+        manifest = apm_dir / "apm.yml"
+        manifest.write_text(body, encoding="utf-8")
+        return manifest
+
+    def test_empty_when_no_global_manifest_exists(self) -> None:
+        self.assertEqual(self.syncer.stale_global_registrations(), [])
+
+    def test_reports_a_missing_source_path_by_exact_path(self) -> None:
+        missing = self.home / "gone"
+        self._write_global_manifest(
+            "dependencies:\n"
+            "  apm:\n"
+            f"    - path: {missing}\n"
+            "      skills:\n"
+            "        - tmux\n"
+        )
+        findings = self.syncer.stale_global_registrations()
+        self.assertEqual(len(findings), 1)
+        path, reason = findings[0]
+        self.assertEqual(path, str(missing))
+        self.assertIn("no longer exist", reason)
+
+    def test_current_valid_registration_is_not_reported(self) -> None:
+        valid = self.home / "valid-project"
+        valid.mkdir()
+        (valid / "apm.yml").write_text("name: valid-project\nversion: 0.1.0\n")
+        self._write_global_manifest(
+            "dependencies:\n"
+            "  apm:\n"
+            f"    - path: {valid}\n"
+            "      skills:\n"
+            "        - tmux\n"
+        )
+        self.assertEqual(self.syncer.stale_global_registrations(), [])
+
+
+class ApplyFailsClosedOnStaleGlobalRegistrationTests(SyncTestCase):
+    """apply() must refuse to invoke apm at all when the global manifest
+    carries a stale local-package registration (#14) -- the incident was
+    apm silently compiling contaminated output from exactly this state,
+    not apm failing loudly."""
+
+    def test_apply_never_calls_apm_when_a_registration_is_stale(self) -> None:
+        missing = self.home / "gone"
+        apm_dir = self.home / ".apm"
+        apm_dir.mkdir(parents=True)
+        (apm_dir / "apm.yml").write_text(
+            "dependencies:\n"
+            "  apm:\n"
+            f"    - path: {missing}\n"
+            "      skills:\n"
+            "        - tmux\n"
+        )
+
+        def runner(cmd, check=False):
+            raise AssertionError("apm must not run while a global registration is stale")
+
+        self.syncer.runner = runner
+        rc = self.syncer.apply()
+
+        self.assertNotEqual(rc, 0)
+
+    def test_apply_names_the_exact_stale_path_in_its_error(self) -> None:
+        import contextlib
+        import io
+
+        missing = self.home / "gone"
+        apm_dir = self.home / ".apm"
+        apm_dir.mkdir(parents=True)
+        (apm_dir / "apm.yml").write_text(
+            "dependencies:\n"
+            "  apm:\n"
+            f"    - path: {missing}\n"
+            "      skills:\n"
+            "        - tmux\n"
+        )
+        self.syncer.runner = lambda cmd, check=False: (_ for _ in ()).throw(
+            AssertionError("apm must not run")
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.syncer.apply()
+        self.assertIn(str(missing), buf.getvalue())
+
+    def test_apply_proceeds_normally_when_global_manifest_is_clean(self) -> None:
+        valid = self.home / "valid-project"
+        valid.mkdir()
+        (valid / "apm.yml").write_text("name: valid-project\nversion: 0.1.0\n")
+        apm_dir = self.home / ".apm"
+        apm_dir.mkdir(parents=True)
+        (apm_dir / "apm.yml").write_text(
+            "dependencies:\n"
+            "  apm:\n"
+            f"    - path: {valid}\n"
+            "      skills:\n"
+            "        - tmux\n"
+        )
+
+        def runner(cmd, check=False):
+            class R:
+                returncode = 0
+
+            return R()
+
+        self.syncer.runner = runner
+        self.assertEqual(self.syncer.apply(), 0)
+
+
+class StatusDoctorStaleGlobalReportingTests(SyncTestCase):
+    """status() and doctor() must name the exact stale path (#14) -- not
+    just say "something is stale" -- so a human can act on it without
+    re-deriving which registration is the problem."""
+
+    def _write_stale_global_manifest(self) -> Path:
+        missing = self.home / "gone-for-status"
+        apm_dir = self.home / ".apm"
+        apm_dir.mkdir(parents=True)
+        (apm_dir / "apm.yml").write_text(
+            "dependencies:\n"
+            "  apm:\n"
+            f"    - path: {missing}\n"
+            "      skills:\n"
+            "        - tmux\n"
+        )
+        return missing
+
+    def test_status_prints_a_stale_global_line_with_the_exact_path(self) -> None:
+        import contextlib
+        import io
+
+        missing = self._write_stale_global_manifest()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.syncer.status()
+        self.assertIn(f"[stale-global] {missing}:", buf.getvalue())
+        self.assertNotEqual(rc, 0)
+
+    def test_status_is_clean_without_stale_global_registrations(self) -> None:
+        self.assertEqual(self.syncer.stale_global_registrations(), [])
+
+    def test_doctor_check_fails_and_names_the_exact_path(self) -> None:
+        missing = self._write_stale_global_manifest()
+        checks = dict(self.syncer.doctor_checks(env={}))
+        self.assertIn("stale-global-registrations", checks)
+        ok, message = checks["stale-global-registrations"]
+        self.assertFalse(ok)
+        self.assertIn(str(missing), message)
+
+    def test_doctor_check_passes_when_clean(self) -> None:
+        checks = dict(self.syncer.doctor_checks(env={}))
+        ok, _ = checks["stale-global-registrations"]
+        self.assertTrue(ok)
+
+
+class CompiledRootSourceBlockTests(SyncTestCase):
+    """#14: detect duplicate or foreign `apm:source` blocks in a compiled
+    root file. This is the marker convention apm's *legacy* Copilot
+    surface (`copilot-instructions.md`) uses -- `<!-- Generated by APM
+    CLI -->` (APM_MARKER, checked elsewhere) never appears in it at all.
+    The fixture below is the literal shape captured from the real,
+    contaminated ~/.copilot/copilot-instructions.md during the #11
+    incident (content bodies shortened; the marker structure is verbatim)."""
+
+    def _block(self, source: str, body: str = "content\n") -> str:
+        return f"<!-- apm:source:{source} -->\n{body}<!-- /apm:source -->\n"
+
+    def test_no_source_blocks_is_not_a_finding(self) -> None:
+        # CLAUDE.md / codex AGENTS.md / copilot AGENTS.md use the other
+        # marker convention entirely and never carry apm:source at all.
+        path = self.home / ".claude" / "CLAUDE.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("<!-- Generated by APM CLI from .apm/ primitives -->\nbody\n")
+        self.assertEqual(self.syncer.compiled_root_source_findings(path), [])
+
+    def test_one_correctly_named_block_is_not_a_finding(self) -> None:
+        path = self.home / ".copilot" / "copilot-instructions.md"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "<!-- apm-managed: copilot-instructions.md -->\n"
+            + self._block(f"_local/{self.repo.name}")
+        )
+        self.assertEqual(self.syncer.compiled_root_source_findings(path), [])
+
+    def test_one_foreign_block_is_flagged(self) -> None:
+        path = self.home / ".copilot" / "copilot-instructions.md"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "<!-- apm-managed: copilot-instructions.md -->\n"
+            + self._block("_local/Skills")
+        )
+        findings = self.syncer.compiled_root_source_findings(path)
+        self.assertTrue(findings)
+        self.assertTrue(any("_local/Skills" in f for f in findings))
+
+    def test_real_contaminated_shape_reports_duplicate_and_foreign(self) -> None:
+        # verbatim marker structure from the real #11 incident file
+        path = self.home / ".copilot" / "copilot-instructions.md"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "<!-- apm-managed: copilot-instructions.md -->\n"
+            + self._block("_local/Skills")
+            + self._block("_local/repo-bad-private-ref")
+            + self._block("_local/repo-without-vendored-skills")
+            + self._block(f"_local/{self.repo.name}")
+        )
+        findings = self.syncer.compiled_root_source_findings(path)
+        self.assertTrue(any("4" in f and "expected 1" in f for f in findings))
+        foreign_finding = next(f for f in findings if "foreign" in f)
+        reported = [
+            name.strip()
+            for name in foreign_finding.split(":", 1)[1].split(",")
+        ]
+        self.assertEqual(
+            reported,
+            ["_local/Skills", "_local/repo-bad-private-ref", "_local/repo-without-vendored-skills"],
+        )
+        # the one genuinely-current source is not reported as foreign
+        self.assertNotIn(f"_local/{self.repo.name}", reported)
+
+    def test_missing_file_is_not_a_finding(self) -> None:
+        path = self.home / ".copilot" / "copilot-instructions.md"
+        self.assertEqual(self.syncer.compiled_root_source_findings(path), [])
+
+    def test_status_reports_duplicate_source_blocks_for_copilot_instructions(self) -> None:
+        import contextlib
+        import io
+
+        path = self.home / ".copilot" / "copilot-instructions.md"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "<!-- apm-managed: copilot-instructions.md -->\n"
+            + self._block("_local/Skills")
+            + self._block(f"_local/{self.repo.name}")
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.syncer.status()
+        self.assertIn("copilot-instructions.md", buf.getvalue())
+        self.assertIn("_local/Skills", buf.getvalue())
+        self.assertNotEqual(rc, 0)
+
+    def test_doctor_reports_duplicate_source_blocks(self) -> None:
+        path = self.home / ".copilot" / "copilot-instructions.md"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "<!-- apm-managed: copilot-instructions.md -->\n"
+            + self._block("_local/Skills")
+            + self._block(f"_local/{self.repo.name}")
+        )
+        checks = dict(self.syncer.doctor_checks(env={}))
+        self.assertIn("compiled-root-sources", checks)
+        ok, message = checks["compiled-root-sources"]
+        self.assertFalse(ok)
+        self.assertIn("copilot-instructions.md", message)
+
+
 class ApplyInstallFailureRollbackTests(SyncTestCase):
     def test_apply_restores_prior_skills_on_install_failure(self) -> None:
         agents_dir = self.home / ".agents" / "skills"
@@ -846,6 +1123,194 @@ class PinnedSourceReportingTests(SyncTestCase):
         self.assertIn(
             "[source] skills-public: jonhill90/skills@069e2c47", buf.getvalue()
         )
+
+
+class GlobalManifestParsingTests(unittest.TestCase):
+    """#14: parse ~/.apm/apm.yml's dependencies.apm *local* (path:)
+    registrations. Real YAML apm itself emits, not hand-authored -- these
+    fixtures are the literal shapes captured from the real global manifest
+    during the #11 deployment incident, not synthetic simplifications."""
+
+    # The exact real ~/.apm/apm.yml shape captured during #14's own
+    # investigation: one inline `path:`, one bare string item (no `path:`
+    # key at all), one `path:` value wrapped onto the next line (apm's own
+    # emitter does this for long paths), and the current valid
+    # agent-dotfiles entry.
+    REAL_GLOBAL_MANIFEST = (
+        "name: jon\n"
+        "version: 1.0.0\n"
+        "description: APM project for jon\n"
+        "author: Jon Hill\n"
+        "dependencies:\n"
+        "  apm:\n"
+        "    - path: /Users/jon/source/repos/Personal/Skills\n"
+        "      skills:\n"
+        "        - az-devops\n"
+        "        - create-skill\n"
+        "        - failing-test-first\n"
+        "        - gh-cli\n"
+        "        - github-cli\n"
+        "        - linear\n"
+        "        - memory-conventions\n"
+        "        - obsidian\n"
+        "        - safe-deletion\n"
+        "        - sanity-check\n"
+        "        - tmux\n"
+        "        - using-tmux\n"
+        "    - /var/folders/_b/n12wrrv55hlfyfcpsx6smkqm0000gn/T/tmpyt17a1k6/repo\n"
+        "    - path: \n"
+        "        /private/tmp/scratchpad/issue10/repo-bad-private-ref\n"
+        "      skills:\n"
+        "        - create-skill\n"
+        "        - failing-test-first\n"
+        "        - github-cli\n"
+        "        - linear\n"
+        "        - memory-conventions\n"
+        "        - obsidian\n"
+        "        - safe-deletion\n"
+        "        - tmux\n"
+        "    - path: /Users/jon/source/repos/Personal/agent-dotfiles\n"
+        "      skills:\n"
+        "        - create-skill\n"
+        "        - failing-test-first\n"
+        "        - github-cli\n"
+        "        - linear\n"
+        "        - memory-conventions\n"
+        "        - obsidian\n"
+        "        - safe-deletion\n"
+        "        - tmux\n"
+        "  mcp: []\n"
+        "includes: auto\n"
+        "scripts: {}\n"
+    )
+
+    def test_discovers_all_four_local_registrations(self) -> None:
+        entries = sync.parse_global_local_packages(self.REAL_GLOBAL_MANIFEST)
+        self.assertEqual(len(entries), 4)
+        paths = [entry["path"] for entry in entries]
+        self.assertEqual(
+            paths,
+            [
+                "/Users/jon/source/repos/Personal/Skills",
+                "/var/folders/_b/n12wrrv55hlfyfcpsx6smkqm0000gn/T/tmpyt17a1k6/repo",
+                "/private/tmp/scratchpad/issue10/repo-bad-private-ref",
+                "/Users/jon/source/repos/Personal/agent-dotfiles",
+            ],
+        )
+
+    def test_parses_the_inline_path_and_its_skills_list(self) -> None:
+        entries = sync.parse_global_local_packages(self.REAL_GLOBAL_MANIFEST)
+        skills_entry = entries[0]
+        self.assertEqual(skills_entry["path"], "/Users/jon/source/repos/Personal/Skills")
+        self.assertEqual(
+            skills_entry["skills"],
+            [
+                "az-devops", "create-skill", "failing-test-first", "gh-cli",
+                "github-cli", "linear", "memory-conventions", "obsidian",
+                "safe-deletion", "sanity-check", "tmux", "using-tmux",
+            ],
+        )
+
+    def test_parses_a_bare_string_entry_with_no_path_key(self) -> None:
+        entries = sync.parse_global_local_packages(self.REAL_GLOBAL_MANIFEST)
+        bare = entries[1]
+        self.assertEqual(
+            bare["path"],
+            "/var/folders/_b/n12wrrv55hlfyfcpsx6smkqm0000gn/T/tmpyt17a1k6/repo",
+        )
+        self.assertEqual(bare.get("skills", []), [])
+
+    def test_parses_a_path_wrapped_onto_the_next_line(self) -> None:
+        entries = sync.parse_global_local_packages(self.REAL_GLOBAL_MANIFEST)
+        wrapped = entries[2]
+        self.assertEqual(wrapped["path"], "/private/tmp/scratchpad/issue10/repo-bad-private-ref")
+        self.assertIn("create-skill", wrapped["skills"])
+
+    def test_no_manifest_text_is_empty_list(self) -> None:
+        self.assertEqual(sync.parse_global_local_packages(""), [])
+
+    def test_manifest_with_no_apm_dependencies_is_empty_list(self) -> None:
+        self.assertEqual(
+            sync.parse_global_local_packages("name: jon\nversion: 1.0.0\n"), []
+        )
+
+
+class StaleGlobalRegistrationTests(unittest.TestCase):
+    """#14: a local registration is stale when its source is missing, or
+    when it no longer structurally constitutes an APM package, or when it
+    is a bare skill-bundle registration whose requested skill names no
+    longer exist in the bundle. A registration with its own apm.yml is
+    never flagged structurally -- #14 explicitly requires preserving
+    legitimate independent global packages."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def _skill_bundle(self, root: Path, names: list[str]) -> Path:
+        for name in names:
+            skill_dir = root / "skills" / name
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: x\n---\n", encoding="utf-8"
+            )
+        return root
+
+    def test_missing_source_directory_is_stale(self) -> None:
+        entry = {"path": str(self.root / "does-not-exist"), "skills": []}
+        reason = sync.stale_global_registration(entry)
+        self.assertIsNotNone(reason)
+        self.assertIn("no longer exist", reason)
+
+    def test_source_with_apm_yml_is_never_stale_even_with_skill_drift(self) -> None:
+        pkg = self.root / "real-project"
+        pkg.mkdir()
+        (pkg / "apm.yml").write_text("name: real-project\nversion: 0.1.0\n")
+        self._skill_bundle(pkg, ["current-skill"])
+        entry = {"path": str(pkg), "skills": ["vanished-skill"]}
+        self.assertIsNone(sync.stale_global_registration(entry))
+
+    def test_bundle_registration_with_all_requested_names_present_is_fine(self) -> None:
+        pkg = self._skill_bundle(self.root / "bundle", ["tmux", "github-cli"])
+        entry = {"path": str(pkg), "skills": ["tmux", "github-cli"]}
+        self.assertIsNone(sync.stale_global_registration(entry))
+
+    def test_bundle_registration_with_a_missing_requested_name_is_stale(self) -> None:
+        # exactly the Skills registration's real shape: some renamed/deleted
+        pkg = self._skill_bundle(
+            self.root / "bundle",
+            ["create-skill", "github-cli", "tmux"],  # renamed from gh-cli/using-tmux
+        )
+        entry = {
+            "path": str(pkg),
+            "skills": ["create-skill", "gh-cli", "using-tmux", "az-devops"],
+        }
+        reason = sync.stale_global_registration(entry)
+        self.assertIsNotNone(reason)
+        self.assertIn("gh-cli", reason)
+        self.assertIn("using-tmux", reason)
+        self.assertIn("az-devops", reason)
+        self.assertNotIn("create-skill", reason)
+
+    def test_source_with_no_package_markers_at_all_is_stale(self) -> None:
+        pkg = self.root / "empty"
+        pkg.mkdir()
+        (pkg / "README.md").write_text("nothing here\n")
+        entry = {"path": str(pkg), "skills": []}
+        reason = sync.stale_global_registration(entry)
+        self.assertIsNotNone(reason)
+        self.assertIn("no longer contains an APM package", reason)
+
+    def test_root_level_skill_md_counts_as_a_package(self) -> None:
+        pkg = self.root / "single-skill"
+        pkg.mkdir()
+        (pkg / "SKILL.md").write_text("---\nname: single-skill\ndescription: x\n---\n")
+        entry = {"path": str(pkg), "skills": []}
+        self.assertIsNone(sync.stale_global_registration(entry))
+
+    def test_no_path_recorded_is_stale(self) -> None:
+        self.assertIsNotNone(sync.stale_global_registration({}))
 
 
 class StatusTests(SyncTestCase):
