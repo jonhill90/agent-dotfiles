@@ -415,6 +415,97 @@ class Sync:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(text, encoding="utf-8")
 
+    # -- skill-source atomicity (#9) ---------------------------------------
+    #
+    # `apm install -g` fetches from two remote, independently-failing
+    # sources (public jonhill90/skills, private jonhill90/skills-private).
+    # A failure partway through must not leave a harness with a partially
+    # overwritten skill set — see docs/evals.md-adjacent lesson from
+    # scripts/eval_arm.py: rename aside, never delete, restore on failure.
+    # Deployed skill content lives under two paths: ~/.claude/skills (APM's
+    # real files) and ~/.agents/skills (native for Pi/Codex/Copilot, either
+    # APM's own files or ensure_neutral_skills()'s symlinks into the former).
+    SKILL_DIRS = (Path(".claude/skills"), Path(".agents/skills"))
+
+    def backup_skills_dirs(self) -> dict[Path, Path]:
+        """Rename each existing skill dir aside; empty dict if none exist.
+
+        Renaming (not copying) is what makes the immediately-following
+        `apm install` see a clean, empty target — the same reason a
+        partial write from a prior failed attempt can never masquerade as
+        last-known-good.
+        """
+        backups: dict[Path, Path] = {}
+        for relative in self.SKILL_DIRS:
+            live = self.home / relative
+            if not live.is_dir():
+                continue
+            backup = live.with_name(live.name + ".bak")
+            if backup.exists():
+                shutil.rmtree(backup)
+            live.rename(backup)
+            backups[live] = backup
+        return backups
+
+    @staticmethod
+    def restore_skills_dirs(backups: dict[Path, Path]) -> None:
+        """Put every backed-up skill dir back, discarding whatever a failed
+        install left in its place. Never partial: each pair is independent,
+        so one harness's dir cannot block another's restore."""
+        for live, backup in backups.items():
+            if not backup.exists():
+                continue
+            if live.exists():
+                shutil.rmtree(live)
+            backup.rename(live)
+
+    @staticmethod
+    def discard_skills_backup(backups: dict[Path, Path]) -> None:
+        """Drop backups once the install they guarded against has succeeded."""
+        for backup in backups.values():
+            if backup.exists():
+                shutil.rmtree(backup)
+
+    def pinned_skill_sources(self) -> list[dict[str, str]]:
+        """Pinned remote skill sources from the global lockfile (#9), for
+        status/doctor reporting. Excludes the local agent-dotfiles entry
+        (no `resolved_commit` — it has no remote ref to pin).
+
+        Parsed with a small line-based reader rather than PyYAML: this
+        module is stdlib-only by design, and apm.lock.yaml's dependency
+        blocks are a flat, regular `- key: value` shape.
+        """
+        lockfile = self.home / ".apm" / "apm.lock.yaml"
+        if not lockfile.is_file():
+            return []
+        sources: list[dict[str, str]] = []
+        current: dict[str, str] = {}
+        for line in lockfile.read_text(encoding="utf-8").splitlines():
+            match = re.match(r"^- (\w+): (.*)$", line)
+            if match:
+                if current.get("resolved_commit"):
+                    sources.append(
+                        {
+                            "name": current.get("name", ""),
+                            "repo_url": current.get("repo_url", ""),
+                            "resolved_commit": current["resolved_commit"],
+                        }
+                    )
+                current = {match.group(1): match.group(2).strip("'\"")}
+                continue
+            match = re.match(r"^  (\w+): (.*)$", line)
+            if match and current:
+                current[match.group(1)] = match.group(2).strip("'\"")
+        if current.get("resolved_commit"):
+            sources.append(
+                {
+                    "name": current.get("name", ""),
+                    "repo_url": current.get("repo_url", ""),
+                    "resolved_commit": current["resolved_commit"],
+                }
+            )
+        return sources
+
     # -- settings ---------------------------------------------------------
 
     def merge_settings(self, fragment_name: str, live_path: Path) -> None:
@@ -689,6 +780,11 @@ class Sync:
         # populates it even when no other harness is detected yet
         (self.home / ".agents" / "skills").mkdir(parents=True, exist_ok=True)
         if not no_apm:
+            # Snapshot the last-good deployed skill set before touching two
+            # independently-failing remote sources (#9: public jonhill90/skills
+            # + private jonhill90/skills-private). A fetch failure from either
+            # must not leave a harness with a partially overwritten skill set.
+            skill_backups = self.backup_skills_dirs()
             skill_args = [
                 argument
                 for skill in roster_union(self.repo)
@@ -699,8 +795,10 @@ class Sync:
                 check=False,
             )
             if result.returncode != 0:
+                self.restore_skills_dirs(skill_backups)
                 print("ERROR: apm install failed; aborting apply")
                 return result.returncode
+            self.discard_skills_backup(skill_backups)
             # install does NOT reliably compile root files on fresh
             # machines (E16 failure 2026-07-13) — compile explicitly,
             # BEFORE teardown so stale unused-harness roots are removed.
@@ -742,6 +840,9 @@ class Sync:
             scoped = len(names) - len(shared)
             suffix = f" ({len(shared)} shared + {scoped} scoped)" if sections else ""
             print(f"[roster] {harness}: {len(names)} skill(s){suffix}")
+        for source in self.pinned_skill_sources():
+            short_sha = source["resolved_commit"][:8]
+            print(f"[source] {source['name']}: {source['repo_url']}@{short_sha}")
         drift = self.neutral_drift()
         if drift:
             print(f"[drift] ~/.agents/skills: unwanted {', '.join(drift)}")
@@ -939,6 +1040,23 @@ class Sync:
             )
         else:
             checks.append(("memory-vault-personal", (True, vault)))
+        sources = self.pinned_skill_sources()
+        if not sources:
+            checks.append(
+                (
+                    "skill-sources",
+                    (None, "no pinned skill sources (apm.lock.yaml absent or empty)"),
+                )
+            )
+        else:
+            for source in sources:
+                short_sha = source["resolved_commit"][:8]
+                checks.append(
+                    (
+                        f"skill-source-{source['name']}",
+                        (True, f"{source['repo_url']}@{short_sha}"),
+                    )
+                )
         fragment_file = self.mcp_fragment_file()
         if fragment_file.is_file():
             text = fragment_file.read_text(encoding="utf-8")

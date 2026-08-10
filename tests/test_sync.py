@@ -418,6 +418,164 @@ class RemoveTests(SyncTestCase):
         self.assertFalse((self.home / ".pi" / "agent" / "AGENTS.md").exists())
 
 
+class SkillSourceBackupTests(SyncTestCase):
+    """scripts/sync.py's snapshot/restore around `apm install -g` (#9): a
+    failed public or private skill-source fetch must not leave the
+    previously deployed skill set partially overwritten.
+    """
+
+    def test_backup_skills_dirs_snapshots_existing_content(self) -> None:
+        agents_skill = self.home / ".agents" / "skills" / "tmux" / "SKILL.md"
+        agents_skill.parent.mkdir(parents=True)
+        agents_skill.write_text("original agents tmux content\n")
+        claude_skill = self.home / ".claude" / "skills" / "tmux" / "SKILL.md"
+        claude_skill.parent.mkdir(parents=True)
+        claude_skill.write_text("original claude tmux content\n")
+
+        backups = self.syncer.backup_skills_dirs()
+
+        self.assertEqual(
+            set(backups), {self.home / ".agents" / "skills", self.home / ".claude" / "skills"}
+        )
+        for live, backup in backups.items():
+            self.assertTrue(backup.is_dir())
+            self.assertNotEqual(live, backup)
+            self.assertFalse(live.exists())  # renamed aside, not copied
+
+    def test_backup_skills_dirs_noop_when_nothing_deployed_yet(self) -> None:
+        self.assertEqual(self.syncer.backup_skills_dirs(), {})
+
+    def test_restore_skills_dirs_replaces_a_partial_write_with_the_backup(self) -> None:
+        agents_dir = self.home / ".agents" / "skills"
+        (agents_dir / "tmux").mkdir(parents=True)
+        (agents_dir / "tmux" / "SKILL.md").write_text("last-good\n")
+
+        backups = self.syncer.backup_skills_dirs()
+        # simulate a partial/bad write left behind by a failed install
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "partial-write.txt").write_text("garbage\n")
+
+        self.syncer.restore_skills_dirs(backups)
+
+        self.assertFalse((agents_dir / "partial-write.txt").exists())
+        self.assertEqual(
+            (agents_dir / "tmux" / "SKILL.md").read_text(), "last-good\n"
+        )
+
+    def test_discard_skills_backup_removes_the_snapshot(self) -> None:
+        agents_dir = self.home / ".agents" / "skills"
+        (agents_dir / "tmux").mkdir(parents=True)
+        (agents_dir / "tmux" / "SKILL.md").write_text("content\n")
+        backups = self.syncer.backup_skills_dirs()
+
+        self.syncer.discard_skills_backup(backups)
+
+        for backup in backups.values():
+            self.assertFalse(backup.exists())
+
+
+class ApplyInstallFailureRollbackTests(SyncTestCase):
+    def test_apply_restores_prior_skills_on_install_failure(self) -> None:
+        agents_dir = self.home / ".agents" / "skills"
+        (agents_dir / "tmux").mkdir(parents=True)
+        (agents_dir / "tmux" / "SKILL.md").write_text("last-good\n")
+
+        def runner(cmd, check=False):
+            if cmd[1] == "install":
+                # simulate a partial write left by the source that failed
+                agents_dir.mkdir(parents=True, exist_ok=True)
+                (agents_dir / "partial-write.txt").write_text("garbage\n")
+
+            class R:
+                returncode = 9 if cmd[1] == "install" else 0
+
+            return R()
+
+        self.syncer.runner = runner
+        self.assertEqual(self.syncer.apply(), 9)
+        self.assertFalse((agents_dir / "partial-write.txt").exists())
+        self.assertEqual(
+            (agents_dir / "tmux" / "SKILL.md").read_text(), "last-good\n"
+        )
+        self.assertFalse(self.syncer.state_file.exists())
+
+    def test_apply_discards_backup_after_successful_install(self) -> None:
+        agents_dir = self.home / ".agents" / "skills"
+        (agents_dir / "tmux").mkdir(parents=True)
+        (agents_dir / "tmux" / "SKILL.md").write_text("last-good\n")
+
+        def runner(cmd, check=False):
+            class R:
+                returncode = 0
+
+            return R()
+
+        self.syncer.runner = runner
+        self.assertEqual(self.syncer.apply(), 0)
+        leftovers = [
+            p for p in (self.home / ".agents").iterdir() if p.name != "skills"
+        ]
+        self.assertEqual(leftovers, [])
+
+
+class PinnedSourceReportingTests(SyncTestCase):
+    def test_pinned_skill_sources_reads_the_global_lockfile(self) -> None:
+        apm_dir = self.home / ".apm"
+        apm_dir.mkdir(parents=True)
+        (apm_dir / "apm.lock.yaml").write_text(
+            "lockfile_version: '1'\n"
+            "dependencies:\n"
+            "- repo_url: _local/repo\n"
+            "  name: agent-dotfiles\n"
+            "  source: local\n"
+            "- repo_url: jonhill90/skills\n"
+            "  name: skills-public\n"
+            "  resolved_commit: 069e2c475e875be1c23a31e7f5da08ffd58d655a\n"
+            "- repo_url: jonhill90/skills-private\n"
+            "  name: skills-private\n"
+            "  resolved_commit: b203b1ebf2c2eb35808443ba76cd22aadecf76e7\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            self.syncer.pinned_skill_sources(),
+            [
+                {
+                    "name": "skills-public",
+                    "repo_url": "jonhill90/skills",
+                    "resolved_commit": "069e2c475e875be1c23a31e7f5da08ffd58d655a",
+                },
+                {
+                    "name": "skills-private",
+                    "repo_url": "jonhill90/skills-private",
+                    "resolved_commit": "b203b1ebf2c2eb35808443ba76cd22aadecf76e7",
+                },
+            ],
+        )
+
+    def test_pinned_skill_sources_empty_when_no_lockfile(self) -> None:
+        self.assertEqual(self.syncer.pinned_skill_sources(), [])
+
+    def test_status_prints_a_source_line_per_pinned_dependency(self) -> None:
+        import contextlib
+        import io
+
+        apm_dir = self.home / ".apm"
+        apm_dir.mkdir(parents=True)
+        (apm_dir / "apm.lock.yaml").write_text(
+            "dependencies:\n"
+            "- repo_url: jonhill90/skills\n"
+            "  name: skills-public\n"
+            "  resolved_commit: 069e2c475e875be1c23a31e7f5da08ffd58d655a\n",
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.syncer.status()
+        self.assertIn(
+            "[source] skills-public: jonhill90/skills@069e2c47", buf.getvalue()
+        )
+
+
 class StatusTests(SyncTestCase):
     def test_status_skips_uninstalled_harnesses(self) -> None:
         # no harness dirs exist in the fresh fake home
