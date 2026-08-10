@@ -925,3 +925,71 @@ basic-memory MCP configs and permission allows purged, Claude Code plugins
 managed through the `enabledPlugins` fragment, and the declared MCP set
 projected by the wrapper. Other machines consolidate on their next
 `sync apply`.
+
+## 14. Supervisor/Worker Loop Mechanism (settled 2026-08-10)
+
+Design context and the measured figures below are recorded in full in
+`jonhill90/agent-dotfiles#22`; this section is the canonical citation
+point for future issues and should be cited rather than restated.
+
+### 14.1 Today's mechanism, and it is the only one
+
+Supervisor-to-worker handoff is **cooperative tmux `wait-for`**: the
+supervisor blocks on a shell call, and the worker's final action is
+`tmux wait-for -S <channel>`. That is the entire mechanism in active use
+today (#22 — used to review and merge `jonhill90/Hill90#871`).
+
+### 14.2 Four measured limits
+
+| # | Limit | Instrument |
+|---|---|---|
+| L1 | It blocks the supervisor, so lanes run serially rather than concurrently | Observed in the #871 review (#22) |
+| L2 | It is cooperative: a worker that crashes, wedges, or hits a usage limit never runs its final action, so the signal never arrives and the supervisor blocks forever. **This is the v4 defect class** — a usage-blocked pane that echoed the prompt marker got marked delivered without consuming the turn | #22, citing the v4 incident |
+| L3 | No timeout exists at the tmux layer: `man tmux` gives `wait-for [-L \| -S \| -U] channel` with no timeout option at all. Claude Code's Bash tool caps its own `timeout` at 600000 ms (10 minutes), so any worker task longer than that cannot be waited on in the foreground at all | `man tmux` (#22); Claude Code Bash tool `timeout` cap (#22) |
+| L4 | The signal carries no payload: `wait-for -S` transmits one bit. The verdict, test counts, and PR URL must be scraped from pane scrollback, which is lossy and racy — the signal has been observed arriving before the final message finished rendering, during the #871 review | Observed in the #871 review (#22) |
+
+### 14.3 Layered design, by failure mode
+
+The mechanism is layered by failure mode rather than replaced by a single
+alternative:
+
+| Layer | Mechanism | Addresses |
+|---|---|---|
+| Fast path | Cooperative `wait-for`, run under Bash `run_in_background` so the supervisor stays live and lanes can run concurrently | L1 |
+| Failure path | Harness-fired Claude Code Stop hooks, or `herdr agent wait` | L2 — this is what closes the v4 defect class |
+| Durability and payload | The v5 ledger: a signal is ephemeral, a ledger row survives a supervisor restart and can carry the payload | L2, L4 |
+| Backstop only | Cron as a dead-man stall detector: it notices a lane has been in the same state too long and escalates | Stall detection only — not a signal source |
+
+**Cron must never be the mechanism — that was the v1 bug.** Cron re-enters
+blind, re-derives context, and cannot distinguish "still working" from
+"wedged." Its role is limited to the backstop stall detector above; using
+it to drive the loop directly is prohibited, not merely discouraged.
+
+## 15. Transport Adapter Boundary (settled 2026-08-10)
+
+Design context and the measured figures below are recorded in full in
+`jonhill90/agent-dotfiles#23`; this section is the canonical citation
+point for future issues and should be cited rather than restated.
+
+### 15.1 What the core owns vs. what an adapter owns
+
+The portable core owns the ledger, ownership-safe transitions, assignment
+gating, and attention. A transport adapter owns only "deliver this prompt
+to this lane and report what came back." tmux and ACP (Agent Client
+Protocol) are the two worked examples; `herdr` is a candidate third,
+pending the open build-vs-adopt decision in #24.
+
+If protocol knowledge leaks into the core, durable state becomes coupled
+to one protocol's lifetime, and the next harness costs a rewrite instead
+of an adapter.
+
+### 15.2 Harness capability, measured on this machine 2026-08-10
+
+| Harness | Evidence |
+|---|---|
+| Copilot CLI | `copilot --help` → `--acp  Start as Agent Client Protocol server` (#23) |
+| Codex | `codex --help` → `exec`, `app-server`, `exec-server`, `remote-control` (#23) |
+| Claude Code | Streaming JSON IO, resumable sessions, background agents, hooks, remote control (#23) |
+
+All three first-class harnesses already expose a structured drive surface
+beyond typing into a terminal; #23 is the source for these figures.

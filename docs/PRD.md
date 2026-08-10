@@ -291,3 +291,17 @@ and `e33f08b`.
 | Timestamps | ISO 8601 with seconds, UTC, in frontmatter (`created`/`updated`) and log entries — minute precision collides for agent writers; answers YYYYMMDDHHMM-vs-HHMMSS: neither in filenames, seconds in metadata |
 | Temporal layer | Append-only `log.md` (OKF/Karpathy format) — cheapest temporal reasoning; shrinks the Graphiti gap |
 | Operations model | Karpathy ingest/query/lint; lint stays convention-only until evals show memory rot |
+
+### ACP as a transport adapter, not A2A (2026-08-10)
+
+Design context recovered from the Codex rollout at 2026-08-09T16:33Z and
+re-raised by Jon on 2026-08-10 (`jonhill90/agent-dotfiles#23`); the
+mechanism-side counterpart of this decision is recorded in `docs/SPEC.md`
+§15.
+
+| Decision | Choice |
+|---|---|
+| Frame | ACP (Agent Client Protocol), not A2A. ACP is LSP-like: a client drives a coding agent over structured messages, the same shape as an editor driving a language server. A2A is agent-to-agent service messaging — a different and heavier problem |
+| Why the frame matters | It decides what gets built: under ACP the supervisor is a client and each lane is an agent behind a protocol; under A2A the project would end up standing up services |
+| Standing rule | Do not build an A2A service merely to wrap a local CLI. A local process driven over stdio does not need a network service in front of it — if a proposal ends with "and then it listens on a port," re-read this rule |
+| Boundary | ACP is a transport adapter behind the portable core, not a replacement for it — the core keeps owning the ledger, ownership-safe transitions, assignment gating, and attention (`docs/SPEC.md` §15) |
