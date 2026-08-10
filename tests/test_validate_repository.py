@@ -450,3 +450,111 @@ class RosterResolutionTests(unittest.TestCase):
     def test_scoped_sections_are_checked_too(self) -> None:
         self._roster("github-cli\n\n[pi]\nvanished\n")
         self.assertTrue(validator.validate_roster_resolves(self.root))
+
+
+class NoLocalSkillsDirTests(unittest.TestCase):
+    """#9: skills are now sourced from jonhill90/skills and
+    jonhill90/skills-private via apm.yml, not vendored under skills/.
+    Every check that used to assume skills/ exists must degrade cleanly
+    (no crash, no spurious findings) when it does not."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "settings").mkdir(parents=True)
+
+    def test_discover_skill_dirs_is_empty_not_a_crash(self) -> None:
+        self.assertEqual(validator.discover_skill_dirs(self.root, None), [])
+
+    def test_description_tokens_by_harness_is_zero_everywhere(self) -> None:
+        (self.root / "settings" / "default-skills.txt").write_text(
+            "github-cli\n", encoding="utf-8"
+        )
+        totals = validator.description_tokens_by_harness(self.root)
+        self.assertTrue(totals)
+        self.assertTrue(all(value == 0 for value in totals.values()))
+
+    def test_validate_roster_resolves_is_silent_without_a_skills_dir(self) -> None:
+        (self.root / "settings" / "default-skills.txt").write_text(
+            "github-cli\nvanished\n", encoding="utf-8"
+        )
+        # No skills/ directory anywhere: unresolvable-by-design, not an error
+        # -- resolution now happens in the dependency repos' own CI.
+        self.assertEqual(validator.validate_roster_resolves(self.root), [])
+
+    def test_validate_static_context_does_not_crash(self) -> None:
+        # no skills/ anywhere: must not raise, regardless of other findings
+        validator.validate_static_context(self.root)
+
+
+class SkillSourcePinTests(unittest.TestCase):
+    """#9: apm.yml's remote skill-bundle dependencies must be pinned to an
+    immutable commit SHA, not a branch or tag name, so `apm install`
+    resolves reproducibly."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def _write_apm_yml(self, body: str) -> None:
+        (self.root / "apm.yml").write_text(body, encoding="utf-8")
+
+    def test_sha_pinned_dependency_is_silent(self) -> None:
+        self._write_apm_yml(
+            "name: agent-dotfiles\n"
+            "version: 0.1.0\n"
+            "dependencies:\n"
+            "  apm:\n"
+            "    - git: https://github.com/jonhill90/skills.git\n"
+            "      ref: 069e2c475e875be1c23a31e7f5da08ffd58d655a\n"
+            "      skills: [\"*\"]\n"
+            "      alias: skills-public\n"
+        )
+        self.assertEqual(validator.validate_skill_source_pins(self.root), [])
+
+    def test_branch_pinned_dependency_is_an_error(self) -> None:
+        self._write_apm_yml(
+            "name: agent-dotfiles\n"
+            "version: 0.1.0\n"
+            "dependencies:\n"
+            "  apm:\n"
+            "    - git: https://github.com/jonhill90/skills.git\n"
+            "      ref: main\n"
+            "      skills: [\"*\"]\n"
+            "      alias: skills-public\n"
+        )
+        findings = validator.validate_skill_source_pins(self.root)
+        self.assertTrue(findings)
+        self.assertIn("skills-public", findings[0].message)
+
+    def test_missing_ref_is_an_error(self) -> None:
+        self._write_apm_yml(
+            "name: agent-dotfiles\n"
+            "version: 0.1.0\n"
+            "dependencies:\n"
+            "  apm:\n"
+            "    - git: https://github.com/jonhill90/skills-private.git\n"
+            "      skills: [\"*\"]\n"
+            "      alias: skills-private\n"
+        )
+        findings = validator.validate_skill_source_pins(self.root)
+        self.assertTrue(findings)
+        self.assertIn("skills-private", findings[0].message)
+
+    def test_dependency_without_skills_key_is_ignored(self) -> None:
+        # not a skill-bundle dependency, so no ref-pin requirement applies
+        self._write_apm_yml(
+            "name: agent-dotfiles\n"
+            "version: 0.1.0\n"
+            "dependencies:\n"
+            "  apm:\n"
+            "    - git: https://github.com/jonhill90/something-else.git\n"
+            "      ref: main\n"
+            "      alias: not-a-skill-bundle\n"
+        )
+        self.assertEqual(validator.validate_skill_source_pins(self.root), [])
+
+    def test_no_apm_yml_is_silent(self) -> None:
+        self.assertEqual(validator.validate_skill_source_pins(self.root), [])

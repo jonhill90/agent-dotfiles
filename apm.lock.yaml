@@ -1,4 +1,24 @@
 lockfile_version: '1'
-generated_at: '2026-07-12T16:18:01.759713+00:00'
+generated_at: '2026-08-10T01:00:32.283090+00:00'
 apm_version: 0.24.1
-dependencies: []
+dependencies:
+- repo_url: jonhill90/skills
+  name: skills-public
+  host: github.com
+  resolved_commit: 069e2c475e875be1c23a31e7f5da08ffd58d655a
+  resolved_ref: 069e2c475e875be1c23a31e7f5da08ffd58d655a
+  version: 0.0.0
+  package_type: skill_bundle
+  content_hash: sha256:370863ff14829c45d4fd8d48aebf9e9702800fc016ed081988703e15020ff48d
+  skill_subset:
+  - '*'
+- repo_url: jonhill90/skills-private
+  name: skills-private
+  host: github.com
+  resolved_commit: b203b1ebf2c2eb35808443ba76cd22aadecf76e7
+  resolved_ref: b203b1ebf2c2eb35808443ba76cd22aadecf76e7
+  version: 0.0.0
+  package_type: skill_bundle
+  content_hash: sha256:ecf751ea01dd9737a05f0bf1f7c7b7794d1e07649c13c484bc9f2e10d2a705e0
+  skill_subset:
+  - '*'
