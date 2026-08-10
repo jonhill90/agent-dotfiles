@@ -392,7 +392,17 @@ def validate_roster_credit(root: Path) -> list[Finding]:
     """No default-roster skill may carry an unfinished verification promise."""
     manifest = root / "docs" / "provenance-manifest.md"
     if not manifest.is_file():
-        return []
+        # #29: nothing else in this validator checks SPEC §10.1 rule 5, so a
+        # moved/renamed/lost manifest must fail closed, not report clean.
+        return [
+            Finding(
+                "error",
+                manifest,
+                "provenance manifest is missing; SPEC §10.1 rule 5 "
+                "(no default-roster skill with an unfinished verification "
+                "promise) cannot be enforced without it",
+            )
+        ]
     roster = set(roster_union(root))
     findings: list[Finding] = []
     for line in manifest.read_text(encoding="utf-8").splitlines():
@@ -467,7 +477,17 @@ def validate_skill_source_pins(root: Path) -> list[Finding]:
     """
     apm_yml = root / "apm.yml"
     if not apm_yml.is_file():
-        return []
+        # #29 sweep: apm.yml is the sole record of the SHA-pin requirement
+        # itself, and nothing else in this validator checks it exists — a
+        # moved/renamed/lost apm.yml must fail closed, not report clean.
+        return [
+            Finding(
+                "error",
+                apm_yml,
+                "apm.yml is missing; skill-bundle dependency pins (#9) "
+                "cannot be checked without it",
+            )
+        ]
     findings: list[Finding] = []
     for dep in parse_skill_source_dependencies(root):
         if not dep.get("skills"):
