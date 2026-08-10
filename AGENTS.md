@@ -44,6 +44,13 @@ other two follow with no sync step.
   release/compatibility checks it needs for its own deployed static-context
   budget: `scripts/measure_e15.py`, `scripts/measure_context.py`, and their
   tests.
+- `docs/provenance-manifest.md` stays here even though 17 of its 61 rows
+  (per the #18 census) cite evidence that lives only in agent-evals: it is
+  a decision ledger, not an evidence store, and `validate_roster_credit`
+  in `scripts/validate_repository.py` is a live, executable consumer of
+  this exact path that enforces SPEC §10.1 rule 5. The roster it guards
+  (`settings/default-skills.txt`) is owned here and cannot move, so the
+  check that guards it needs the manifest here too. No split (#18).
 
 ## Canonical Layout
 
