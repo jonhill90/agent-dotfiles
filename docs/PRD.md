@@ -148,8 +148,9 @@ Every candidate is scored against:
 
 The dated working notes were temporary scaffolding and are preserved in git
 history. Their maintained conclusions live in
-[harness-engineering.md](harness-engineering.md), [memory.md](memory.md), and
-[evals.md](evals.md).
+[harness-engineering.md](harness-engineering.md) and [memory.md](memory.md).
+The eval methodology's conclusions now live in `docs/evals.md` in the
+private repository jonhill90/agent-evals, evidence unavailable publicly.
 
 1. **Distillation matrix.** For each source × harness layer × loop stage:
    what it recommends, token cost, portability, conflicts. Sources:

@@ -22,6 +22,13 @@ other two follow with no sync step.
   accumulate content.
 - Do not make installation of one skill inherit the complete personal workflow.
 - Keep project-specific and employer-specific material out of this repository.
+- Behavioral scenarios, counter-scenarios, harness runners, results and
+  transcripts, scoring and arming tools, and eval methodology belong to the
+  private jonhill90/agent-evals (evidence unavailable publicly)
+  repository, not here (#10). This repository retains only the narrow
+  release/compatibility checks it needs for its own deployed static-context
+  budget: `scripts/measure_e15.py`, `scripts/measure_context.py`, and their
+  tests.
 
 ## Canonical Layout
 
@@ -44,7 +51,7 @@ settings/                # wrapper-owned config fragments (claude, copilot, pi, 
                          # harness and enforces that on all four (SPEC §4.1)
 docs/
 scripts/
-tests/                   # unittest suite + evals/ (scenarios, harness, results)
+tests/                   # unittest suite for scripts/
 ```
 
 Projection is installer-owned (`apm install -g` + `scripts/sync.py apply`).

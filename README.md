@@ -56,8 +56,9 @@ hooks/           Canonical hook scripts, harness-agnostic
 settings/        Wrapper-owned config fragments (claude, copilot, pi, mcp)
                  plus default-skills.txt, the per-harness skill roster
 scripts/         Sync wrapper, repository validation, static-context measurement
-tests/           Unit suite plus evals/ (scenarios, counter-scenarios, harness, results)
-docs/            Living product, architecture, memory, and eval documentation
+tests/           Unit suite for scripts/ (behavioral evals live in the
+                 private jonhill90/agent-evals repository — see #10)
+docs/            Living product, architecture, and memory documentation
 .claude/         Claude-specific repo-development configuration and hooks
 .github/         GitHub Copilot instructions and repository automation
 ```
@@ -178,7 +179,8 @@ The behavioral layer is deliberately minimal: loop discipline lives in the
 canonical instructions, and skills are added only when a failing eval
 justifies them (baseline-first rule — see
 [docs/SPEC.md](docs/SPEC.md) §4). Each kept tool skill has acceptance
-checks under [tests/evals/acceptance/](tests/evals/acceptance/).
+checks under `tests/evals/acceptance/` in the private repository
+jonhill90/agent-evals, evidence unavailable publicly.
 
 ## Authoring Contract
 
