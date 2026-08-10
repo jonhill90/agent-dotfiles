@@ -331,6 +331,35 @@ def apm_dependency_block(text: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def skill_source_aliases(repo: Path) -> list[str]:
+    """Every `alias:` declared by a skill-bundle dependency (one that
+    carries a `skills:` key) in this repo's own apm.yml (#9's pinned
+    dependency shape) -- the same entries validate_repository.py's
+    parse_skill_source_dependencies() parses, re-read here rather than
+    imported: that module imports from this one (apm_dependency_block),
+    so the reverse import would cycle.
+
+    Empty apm.yml, no `dependencies.apm` block, or no skill-bundle entry
+    all return [] -- callers must treat that as "no local cache location
+    is known", not as "nothing to verify".
+    """
+    apm_yml = repo / "apm.yml"
+    if not apm_yml.is_file():
+        return []
+    block = apm_dependency_block(apm_yml.read_text(encoding="utf-8"))
+    block = "\n".join(
+        line for line in block.splitlines() if not line.strip().startswith("#")
+    )
+    aliases: list[str] = []
+    for entry in re.split(r"(?=^    - )", block, flags=re.M):
+        if not entry.strip() or not re.search(r"^\s*skills:", entry, re.M):
+            continue
+        match = re.search(r"^\s*alias:\s*(.+?)\s*$", entry, re.M)
+        if match:
+            aliases.append(match.group(1).strip("'\""))
+    return aliases
+
+
 # -- global APM manifest: stale local-package registrations (#14) ---------
 #
 # apm install -g is additive: every `apm install -g <path>` a machine has
@@ -1334,15 +1363,54 @@ class Sync:
         harnesses would load a third party's procedure, and its scripts,
         under a trusted name with every check green (#93).
 
+        The true source used to be `self.repo / "skills" / <name>`, but #9
+        removed `skills/` from this repository entirely — that comparison
+        was `source.is_file() == False` unconditionally, so this returned
+        `[]` no matter what was deployed (#35). Skill content now arrives
+        through the pinned APM dependencies declared in this repo's own
+        apm.yml (`dependencies.apm`, each carrying a `skills:` key and an
+        `alias:`); `apm install -g` resolves each into
+        `~/.apm/apm_modules/<alias>/skills/<name>/SKILL.md`, and that copy
+        is what the deployed `~/.agents/skills/<name>` was made from --
+        confirmed by diffing a live deployment against its cache entry.
+        That is the source of truth used here: unlike the pinned upstream
+        repos themselves, it needs no network at check time; unlike a hash
+        recorded at apply time, it needs no change to apply() (deployment-
+        critical code this fix does not touch).
+
+        Fails closed, not open, on the new path: a rostered name that *is*
+        deployed but whose source cannot be found under any declared alias
+        is reported as mismatched, same as a description mismatch would
+        be -- the whole point of #35 is that "cannot verify" must not
+        collapse to "assumed fine". A name with nothing deployed yet is
+        not an error -- that is `neutral_drift`'s and `apply()`'s job, not
+        this one's, and every machine that has never run `apply` would
+        otherwise show permanently red for skills it does not even have.
+
         Compared on the description, not the whole file: APM rewrites
         relative links in the body on install, so byte-comparison reports a
         false mismatch on a legitimately deployed skill.
         """
+        aliases = skill_source_aliases(self.repo)
+        cache_root = self.home / ".apm" / "apm_modules"
         mismatched: list[str] = []
         for name in neutral_union(self.repo):
             deployed = self.home / ".agents" / "skills" / name / "SKILL.md"
-            source = self.repo / "skills" / name / "SKILL.md"
-            if not deployed.is_file() or not source.is_file():
+            if not deployed.is_file():
+                continue
+            source = next(
+                (
+                    candidate
+                    for alias in aliases
+                    if (candidate := cache_root / alias / "skills" / name / "SKILL.md").is_file()
+                ),
+                None,
+            )
+            if source is None:
+                mismatched.append(
+                    f"{name} (source unlocatable under {cache_root}"
+                    f"/{{{', '.join(aliases) or 'no pinned skill sources in apm.yml'}}})"
+                )
                 continue
             if _description_of(deployed) != _description_of(source):
                 mismatched.append(name)

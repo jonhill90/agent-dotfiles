@@ -2326,6 +2326,20 @@ class SharedPathIdentityTests(SyncTestCase):
     rewrites relative links in the body when it installs, so byte-comparison
     reports a false mismatch on a legitimately deployed skill."""
 
+    ALIAS = "skills-public"
+
+    def _pin_alias(self) -> None:
+        (self.repo / "apm.yml").write_text(
+            "name: agent-dotfiles\nversion: 0.1.0\n"
+            "dependencies:\n"
+            "  apm:\n"
+            "    - git: https://github.com/jonhill90/skills.git\n"
+            "      ref: 069e2c475e875be1c23a31e7f5da08ffd58d655a\n"
+            "      skills: [\"*\"]\n"
+            f"      alias: {self.ALIAS}\n",
+            encoding="utf-8",
+        )
+
     def _deploy(self, name: str, description: str) -> None:
         d = self.home / ".agents" / "skills" / name
         d.mkdir(parents=True, exist_ok=True)
@@ -2335,7 +2349,7 @@ class SharedPathIdentityTests(SyncTestCase):
         )
 
     def _source(self, name: str, description: str, body: str = "body") -> None:
-        d = self.repo / "skills" / name
+        d = self.home / ".apm" / "apm_modules" / self.ALIAS / "skills" / name
         d.mkdir(parents=True, exist_ok=True)
         (d / "SKILL.md").write_text(
             f"---\nname: {name}\ndescription: {description}\n---\n\n{body}\n",
@@ -2343,6 +2357,11 @@ class SharedPathIdentityTests(SyncTestCase):
         )
 
     def test_substituted_skill_is_reported(self) -> None:
+        """#35 reproduction: a foreign SKILL.md planted under a trusted
+        rostered name, with the real source present in the local APM
+        cache under its pinned alias -- must be reported, not silently
+        cleared."""
+        self._pin_alias()
         (self.repo / "settings" / "default-skills.txt").write_text(
             "github-cli\n", encoding="utf-8"
         )
@@ -2352,6 +2371,7 @@ class SharedPathIdentityTests(SyncTestCase):
         self.assertEqual(mismatches, ["github-cli"])
 
     def test_matching_deployment_is_silent(self) -> None:
+        self._pin_alias()
         (self.repo / "settings" / "default-skills.txt").write_text(
             "github-cli\n", encoding="utf-8"
         )
@@ -2361,6 +2381,7 @@ class SharedPathIdentityTests(SyncTestCase):
 
     def test_body_differences_do_not_trip_it(self) -> None:
         """APM rewrites relative links on install; that is not substitution."""
+        self._pin_alias()
         (self.repo / "settings" / "default-skills.txt").write_text(
             "github-cli\n", encoding="utf-8"
         )
@@ -2369,8 +2390,41 @@ class SharedPathIdentityTests(SyncTestCase):
         self.assertEqual(sync.Sync(self.repo, self.home).neutral_identity(), [])
 
     def test_absent_skill_is_not_a_mismatch(self) -> None:
+        self._pin_alias()
         (self.repo / "settings" / "default-skills.txt").write_text(
             "github-cli\n", encoding="utf-8"
         )
         self._source("github-cli", "Manage GitHub via CLI.")
         self.assertEqual(sync.Sync(self.repo, self.home).neutral_identity(), [])
+
+    def test_unlocatable_source_is_reported_not_silently_cleared(self) -> None:
+        """The #35 design constraint: if the new source of truth (the local
+        APM cache, keyed by apm.yml's declared alias) cannot locate a
+        rostered, deployed skill's source at all -- no matching alias
+        pinned, or the cache entry missing -- that must fail closed like a
+        mismatch, not silently report clean the way the dead
+        `repo/skills` path used to."""
+        self._pin_alias()
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n", encoding="utf-8"
+        )
+        self._deploy("github-cli", "Manage GitHub via CLI.")
+        # Deliberately no self._source(): the cache entry the deployed copy
+        # should trace back to was never created (or was pruned).
+        mismatches = sync.Sync(self.repo, self.home).neutral_identity()
+        self.assertEqual(len(mismatches), 1)
+        self.assertIn("github-cli", mismatches[0])
+
+    def test_no_pinned_alias_but_deployed_skill_fails_closed(self) -> None:
+        """apm.yml declaring no skill-bundle dependency at all (no
+        `dependencies.apm` block) must not be read as "nothing to verify"
+        once a rostered name is actually deployed -- that is exactly the
+        #35 shape, just with the source location unconfigured instead of
+        merely absent."""
+        (self.repo / "settings" / "default-skills.txt").write_text(
+            "github-cli\n", encoding="utf-8"
+        )
+        self._deploy("github-cli", "Manage GitHub via CLI.")
+        mismatches = sync.Sync(self.repo, self.home).neutral_identity()
+        self.assertEqual(len(mismatches), 1)
+        self.assertIn("github-cli", mismatches[0])
