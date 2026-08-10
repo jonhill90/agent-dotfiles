@@ -140,6 +140,131 @@ deployed the public skills, then failed cloning the private one (`git
 checkout` exit 128), and `apply()` restored the prior 8-skill set
 byte-for-byte (sha256-verified) and returned the failing exit code.
 
+## Stale Global Registrations and Recovery
+
+`apm install -g` is additive: every machine that has ever run it carries a
+*global* manifest, `~/.apm/apm.yml`, distinct from this repo's own
+`apm.yml`. Every `apm install -g <path>` a machine has ever run — not just
+agent-dotfiles' own — adds a `path:`-registered entry there and leaves its
+content cached under `~/.apm/apm_modules/_local/<name>`. Neither is pruned
+when the source directory is deleted, moved, or its shape changes (a skill
+renamed or removed upstream). A real deployment surfaced exactly this
+(#11 → #14): two registrations pointed at deleted temp directories, and a
+third — a local checkout of `jonhill90/skills` registered before its #126
+restructuring — had three of its twelve originally-requested skill names
+(`az-devops`, `gh-cli`, `using-tmux`) renamed or deleted out from under it.
+`apm compile` does not fail on this; it silently accumulates cached
+content from every stale registration into whatever it compiles next. The
+Copilot legacy surface, `~/.copilot/copilot-instructions.md`, ended up
+with four consecutive copies of the same canonical instructions block,
+each carrying a `<!-- apm:source:NAME -->` comment naming a different
+stale registration.
+
+### Registration identity is full-path; cache and marker identity is basename-only
+
+**This mismatch is the reason recovery cannot be "just uninstall the exact
+stale path" (#15).** `~/.apm/apm.yml` distinguishes registrations by their
+full path, but `~/.apm/apm_modules/_local/<name>` and every compiled
+`<!-- apm:source:NAME -->` marker are keyed by `Path(local_path).name` —
+the basename alone. The real manifest that motivated #14 has exactly this:
+two *different* temp-directory registrations that both happen to end in a
+subdirectory literally named `repo`, sharing one cache slot,
+`_local/repo`, between two unrelated sources. This is not limited to two
+stale entries colliding with each other — a stale registration sharing a
+basename with a currently-legitimate one is exactly as unsafe, and so is
+two otherwise-fine registrations sharing one. `apm uninstall -g
+<exact-path>` operates on the full-path manifest entry; it does **not**
+by itself prove the basename-keyed cache slot or source marker now belongs
+cleanly to whichever registration is left. Treating a single exact-path
+uninstall as isolated recovery is false and is not what this repository
+does.
+
+**Detection, in `status` and `doctor`:**
+
+- `[stale-global] <path>: <reason>` in `status`, and a `stale-global-registrations`
+  check in `doctor` — one line per stale entry in `~/.apm/apm.yml`, naming
+  the exact path. A registration is stale when its source directory no
+  longer exists, when the source has no package markers at all (no
+  `apm.yml`, no root `SKILL.md`, no `skills/<name>/SKILL.md` bundle), or
+  when it is a bare skill-bundle registration (no `apm.yml` of its own)
+  whose requested `skills:` selection names something no longer present
+  in the bundle. **A registration with its own `apm.yml` is never flagged**
+  — a real, independent global package's manifest is authoritative about
+  itself; #14 requires not rejecting one just because its `skills/`
+  directory happens to differ from what was last requested. A `skills:`
+  value that cannot be parsed as a list (a hand-edited or foreign-tool
+  flow-style `skills: [a, b]`, or any other shape) fails closed the same
+  way, rather than crashing or being silently trusted.
+- `[basename-collision] <basename>: <path>, <path>, ...` in `status`, and a
+  `local-registration-basename-collisions` check in `doctor` — every
+  group of two or more registrations that resolve to the same
+  `Path(path).name`, named by the shared basename and every full path in
+  the group. Checked independently of staleness: the collision itself is
+  the hazard, whether or not either colliding registration would
+  individually be flagged stale.
+- `[source-blocks] <path>: <finding>` in `status`, and a
+  `compiled-root-sources` check in `doctor` — every compiled root file
+  (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.copilot/AGENTS.md`,
+  `~/.copilot/copilot-instructions.md`, `~/.pi/agent/AGENTS.md`) is
+  scanned for `apm:source` blocks. Zero blocks is normal for most of them
+  (they use a different, single-line marker). More than one block, or any
+  block not naming the current local package, is flagged by exact file
+  and source name.
+
+**`apply()` fails closed.** If `status`/`doctor` would report a stale
+global registration *or* a basename collision, `apply()` refuses to
+invoke `apm` at all — checked first, before even the skill-directory
+backup — and exits non-zero naming every stale path and every colliding
+group. It does not attempt to guess which registration is safe to ignore,
+and a collision-only state (neither registration individually stale)
+fails closed exactly the same as a stale-only state.
+
+### Recovery
+
+**Manual, reviewable, and only through APM's own mechanism — never
+arbitrary directory deletion, and never hand-edited `apm.yml` or
+`apm_modules/`.** The exact steps differ depending on what `status`/`doctor`
+reported:
+
+**No basename collision — a stale path stands alone.** Safe to evaluate
+and remove on its own:
+
+```bash
+apm uninstall -g <path> --dry-run   # review what it would remove
+apm uninstall -g <path>             # then actually remove it
+```
+
+**A basename collision is reported — evaluate and recover the whole group,
+not one path at a time:**
+
+1. **Snapshot first.** Back up `~/.apm/apm.yml` and
+   `~/.apm/apm_modules/_local/<shared-basename>/` before touching
+   anything, so the pre-recovery state is recoverable if a step below
+   goes wrong.
+2. **Dry-run every path in the group**, not just the one you believe is
+   stale — `apm uninstall -g <path> --dry-run` for each. Read every
+   output. The shared cache slot means a dry-run for one path may not
+   fully reflect what is actually cached there if another registration in
+   the group last wrote it.
+3. **Decide the group's outcome as a whole**: which paths are genuinely
+   gone or invalid, and which (if any) is the one you want to keep. Do
+   not assume the uninstall of one leaves the other's identity clean —
+   the shared basename means it may not.
+4. **Uninstall every path in the group** with `apm uninstall -g <path>`
+   (real, not dry-run) — including a path you intend to keep, if that is
+   the only way to guarantee the shared cache slot and `apm:source`
+   marker no longer carry another registration's stale content.
+5. **Reinstall the surviving, legitimate registration** (`apm install -g
+   <path>`) *before* running `apm compile` or `sync.py apply` again — the
+   basename's cache slot must be repopulated from the source you actually
+   want, not left empty or with residue from step 4.
+6. Re-run `sync.py doctor`. Confirm `stale-global-registrations`,
+   `local-registration-basename-collisions`, and `compiled-root-sources`
+   are all clean before running `apply()`.
+
+Never claim, and never assume, that removing one path out of a
+basename-colliding group is isolated to that path alone.
+
 ## Where a Skill Belongs
 
 Decide this before writing anything. Most skills do **not** belong in this
