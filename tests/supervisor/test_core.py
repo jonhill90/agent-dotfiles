@@ -146,13 +146,46 @@ class LedgerTest(unittest.TestCase):
             command="codex",
         )
 
+    def seed_source(self, task_id, summary="Review PR 870 without editing", source_state="OPEN"):
+        self._source_number = getattr(self, "_source_number", 869) + 1
+        self.ledger.reconstruct_task(
+            task_id=task_id,
+            source_kind="issue",
+            source_url=f"https://github.com/jonhill90/Hill90/issues/{self._source_number}",
+            source_ref="a" * 40,
+            summary=summary,
+            source_state=source_state,
+            status="created",
+            evidence=[],
+            status_marker=None,
+        )
+
     def assign(self, task_id="review-870"):
+        self.seed_source(task_id)
         return self.ledger.assign(
             task_id=task_id,
             lane="app-review",
             pane_nonce="nonce-22-a",
             summary="Review PR 870 without editing",
         )
+
+    def test_assignment_requires_a_reconstructed_open_github_source(self):
+        """Red: current assign() writes free-text summaries with no GitHub
+        source check at all -- nothing gates assignment on the GitHub-side
+        state actually permitting it."""
+        with self.assertRaisesRegex(ValueError, "reconstructed GitHub source"):
+            self.ledger.assign(
+                task_id="no-source-task", lane="app-review", pane_nonce="nonce-22-a", summary="No source"
+            )
+
+        self.seed_source("closed-task", source_state="CLOSED")
+        with self.assertRaisesRegex(ValueError, "source is not open"):
+            self.ledger.assign(
+                task_id="closed-task", lane="app-review", pane_nonce="nonce-22-a", summary="Closed source"
+            )
+
+        task = self.assign("open-task")
+        self.assertEqual("created", task["status"])
 
     def test_one_nonterminal_task_per_lane_and_bound_acceptance(self):
         task = self.assign()
@@ -199,19 +232,58 @@ class LedgerTest(unittest.TestCase):
         # A retired ambiguous task frees the lane for a genuinely new assignment.
         self.assign("review-872")
 
+    def test_completion_requires_the_owning_pane_incarnation(self):
+        """Red: complete() takes no pane_nonce at all -- any caller who knows
+        a task_id can complete it, regardless of which pane incarnation
+        actually owns the lane the task is bound to."""
+        self.assign()
+        self.ledger.mark_delivery_pending("review-870", pane_nonce="nonce-22-a")
+        self.ledger.mark_delivered("review-870", pane_nonce="nonce-22-a")
+        self.ledger.accept("review-870", pane_nonce="nonce-22-a")
+
+        # A different (impersonating) incarnation must not be able to complete
+        # a task it does not own.
+        with self.assertRaisesRegex(ValueError, "pane incarnation"):
+            self.ledger.complete("review-870", b"# Result\n\nDone.\n", pane_nonce="some-other-nonce")
+
+        completed = self.ledger.complete("review-870", b"# Result\n\nDone.\n", pane_nonce="nonce-22-a")
+        self.assertEqual("complete", completed["status"])
+
+    def test_lane_reregistration_is_rejected_while_an_outstanding_non_pending_task_exists(self):
+        """Red: register_lane does an unconditional INSERT ... ON CONFLICT
+        UPDATE with no check for an outstanding task bound to the old pane
+        incarnation -- re-registering silently rebinds a live task's
+        identity out from under it. `delivery_pending` is exempted: it has
+        its own reconciliation escape valve keyed off the task's own
+        pane_nonce (see `_reconcile_transition`), which #871 relies on to
+        survive a dead pane being re-registered."""
+        self.assign()
+        with self.assertRaisesRegex(ValueError, "outstanding task"):
+            self.ledger.register_lane(
+                lane="app-review",
+                pane_id="%23",
+                nonce="nonce-23-b",
+                harness="codex",
+                repo="/repo/app",
+                server_id="server-a",
+                session_id="$4",
+                command="codex",
+            )
+        self.assertEqual("nonce-22-a", self.ledger.get_lane("app-review")["nonce"])
+
     def test_completion_is_immutable_idempotent_and_event_is_exactly_once(self):
         self.assign()
         result = b"# Result\n\nNo findings.\n"
-        completed = self.ledger.complete("review-870", result)
+        completed = self.ledger.complete("review-870", result, pane_nonce="nonce-22-a")
         self.assertEqual("complete", completed["status"])
         self.assertEqual(hashlib.sha256(result).hexdigest(), completed["result_sha256"])
 
-        repeated = self.ledger.complete("review-870", result)
+        repeated = self.ledger.complete("review-870", result, pane_nonce="nonce-22-a")
         self.assertEqual(completed["result_sha256"], repeated["result_sha256"])
         events = self.ledger.list_events(task_id="review-870", event_type="completion")
         self.assertEqual(["completion:review-870"], [event["key"] for event in events])
         with self.assertRaisesRegex(ValueError, "immutable result"):
-            self.ledger.complete("review-870", b"different result\n")
+            self.ledger.complete("review-870", b"different result\n", pane_nonce="nonce-22-a")
 
     def test_completion_reconciles_each_injected_crash_point(self):
         result = b"# Evidence\n\nchecks passed\n"
@@ -222,8 +294,8 @@ class LedgerTest(unittest.TestCase):
                     self.ledger.cancel_open_task("app-review")
                 self.assign(task_id)
                 with self.assertRaisesRegex(RuntimeError, failpoint):
-                    self.ledger.complete(task_id, result, failpoint=failpoint)
-                recovered = self.ledger.complete(task_id, result)
+                    self.ledger.complete(task_id, result, pane_nonce="nonce-22-a", failpoint=failpoint)
+                recovered = self.ledger.complete(task_id, result, pane_nonce="nonce-22-a")
                 self.assertEqual("complete", recovered["status"])
                 events = self.ledger.list_events(task_id=task_id, event_type="completion")
                 self.assertEqual(1, len(events))
@@ -241,7 +313,7 @@ class LedgerTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "task disposition"):
             self.ledger.ack([event["key"]])
 
-        self.ledger.complete("review-870", b"# Result\n\nDone.\n")
+        self.ledger.complete("review-870", b"# Result\n\nDone.\n", pane_nonce="nonce-22-a")
         self.ledger.ack([event["key"]])
         self.assertEqual("acked", self.ledger.get_event(event["key"])["status"])
 
@@ -291,6 +363,9 @@ class LedgerTest(unittest.TestCase):
         self.assertNotEqual(codex_lane["nonce"], claude_lane["nonce"])
 
     def test_concurrent_assignments_leave_exactly_one_open_task(self):
+        self.seed_source("race-a", summary="Task race-a")
+        self.seed_source("race-b", summary="Task race-b")
+
         def assign(task_id):
             ledger = Ledger(Path(self.tempdir.name), clock=self.clock)
             try:
@@ -392,6 +467,11 @@ class TaskTableMigrationTest(unittest.TestCase):
         self.assertEqual("delivery_pending", pending["status"])
 
         # The one_open_task_per_lane index survived: a second open task on the same lane still fails.
+        ledger.reconstruct_task(
+            task_id="review-871", source_kind="issue",
+            source_url="https://github.com/jonhill90/Hill90/issues/871", source_ref="a" * 40,
+            summary="Second task", source_state="OPEN", status="created", evidence=[], status_marker=None,
+        )
         with self.assertRaisesRegex(ValueError, "outstanding task"):
             ledger.assign(task_id="review-871", lane="app-review", pane_nonce="nonce-22-a", summary="Second task")
 
@@ -448,6 +528,11 @@ class TaskTableMigrationTest(unittest.TestCase):
             lane="app-review", pane_id="%1", nonce="n", harness="codex", repo="/r",
             server_id="s", session_id="$1", command="codex",
         )
+        ledger.reconstruct_task(
+            task_id="t1", source_kind="issue",
+            source_url="https://github.com/jonhill90/Hill90/issues/1", source_ref="a" * 40,
+            summary="Do the thing", source_state="OPEN", status="created", evidence=[], status_marker=None,
+        )
         task = ledger.assign(task_id="t1", lane="app-review", pane_nonce="n", summary="Do the thing")
         self.assertEqual("created", task["status"])
         pending = ledger.mark_delivery_pending("t1", pane_nonce="n")
@@ -465,6 +550,12 @@ class DeliveryTimestampTest(unittest.TestCase):
         self.ledger.register_lane(
             lane="app-review", pane_id="%22", nonce="nonce-22-a", harness="codex", repo="/repo/app",
             server_id="server-a", session_id="$4", command="codex",
+        )
+        self.ledger.reconstruct_task(
+            task_id="review-870", source_kind="issue",
+            source_url="https://github.com/jonhill90/Hill90/issues/870", source_ref="a" * 40,
+            summary="Review PR 870 without editing", source_state="OPEN", status="created",
+            evidence=[], status_marker=None,
         )
         self.ledger.assign(
             task_id="review-870", lane="app-review", pane_nonce="nonce-22-a",
@@ -507,6 +598,12 @@ class ReconcileAfterReRegistrationTest(unittest.TestCase):
         self.ledger.register_lane(
             lane="app-review", pane_id="%22", nonce="nonce-dead", harness="codex", repo="/repo/app",
             server_id="server-a", session_id="$4", command="codex",
+        )
+        self.ledger.reconstruct_task(
+            task_id="review-870", source_kind="issue",
+            source_url="https://github.com/jonhill90/Hill90/issues/870", source_ref="a" * 40,
+            summary="Review PR 870 without editing", source_state="OPEN", status="created",
+            evidence=[], status_marker=None,
         )
         self.ledger.assign(
             task_id="review-870", lane="app-review", pane_nonce="nonce-dead",

@@ -35,10 +35,20 @@ part of this directory.
 - Completion results are immutable, limited to 64 KiB, hashed, and published
   with a deterministic `completion:<task-id>` event in the same database
   transaction as the terminal task transition.
-- An outstanding delivered task observed idle produces the persistent
-  `attention:<task-id>` event. It cannot be acknowledged until the task is
-  completed, failed, or cancelled, and notified events retry after their
-  deadline.
+- `assign` requires a reconstructed, open GitHub source record for the task
+  id; a task with no such record, or whose source is closed or already past
+  `created`, is refused before anything is sent to a pane.
+- `complete` requires the task's own recorded `pane_nonce`; a lane
+  incarnation cannot complete a task it does not own. Re-registering a lane
+  is refused while it has an outstanding task in any status other than
+  `delivery_pending` — that status alone has its own reconciliation path
+  keyed off the task's own `pane_nonce`, independent of the lane's current
+  one.
+- An outstanding delivered task observed idle, blocked, awaiting approval, or
+  in an unrecognized pane state produces a persistent `attention:<task-id>`
+  (idle) or `attention:<task-id>:<reason>` (blocked/approval/unknown) event.
+  It cannot be acknowledged until the task is completed, failed, or
+  cancelled, and notified events retry after their deadline.
 - Architecture notifications contain event IDs and result paths—not tmux
   scrollback or broad repository snapshots—and are marked notified only after
   the architecture harness is genuinely active.

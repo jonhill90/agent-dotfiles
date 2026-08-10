@@ -288,6 +288,35 @@ class Ledger:
             raise ValueError("lane registration fields must be non-empty")
         now = int(self.clock())
         with self._locked(), self._transaction() as connection:
+            current = connection.execute("SELECT * FROM lanes WHERE lane = ?", (lane,)).fetchone()
+            if current is not None and any(
+                current[field] != value
+                for field, value in (
+                    ("pane_id", pane_id),
+                    ("nonce", nonce),
+                    ("harness", harness),
+                    ("repo", repo),
+                    ("server_id", server_id),
+                    ("session_id", session_id),
+                    ("command", command),
+                )
+            ):
+                # A changed identity is a genuinely new incarnation. An
+                # outstanding task still bound to the old incarnation must not
+                # be silently rebound to it -- except `delivery_pending`,
+                # which has its own reconciliation escape valve keyed off the
+                # task's own recorded pane_nonce (`_reconcile_transition`),
+                # not the lane's current one. #871 depends on re-registration
+                # succeeding over a `delivery_pending` task to recover a dead
+                # pane; every other outstanding status has no such recovery
+                # path and would otherwise be orphaned by this rebind.
+                outstanding = connection.execute(
+                    "SELECT id FROM tasks WHERE lane = ? AND status NOT IN "
+                    "('complete', 'failed', 'cancelled', 'delivery_pending')",
+                    (lane,),
+                ).fetchone()
+                if outstanding is not None:
+                    raise ValueError(f"lane has an outstanding task: {outstanding['id']}")
             connection.execute(
                 """
                 INSERT INTO lanes(lane, pane_id, nonce, harness, repo, server_id,
@@ -425,6 +454,13 @@ class Ledger:
         now = int(self.clock())
         with self._locked(), self._transaction() as connection:
             self._verify_lane_nonce(connection, lane, pane_nonce)
+            source = connection.execute("SELECT * FROM source_tasks WHERE id = ?", (task_id,)).fetchone()
+            if source is None:
+                raise ValueError("task requires a reconstructed GitHub source")
+            if source["source_state"].upper() != "OPEN":
+                raise ValueError("GitHub source is not open")
+            if source["status"] != "created":
+                raise ValueError(f"GitHub source is already {source['status']}")
             existing = connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             if existing is not None:
                 if existing["lane"] == lane and existing["pane_nonce"] == pane_nonce and existing["summary"] == summary:
@@ -581,9 +617,15 @@ class Ledger:
         if failpoint == expected:
             raise RuntimeError(expected)
 
-    def complete(self, task_id, result, *, failpoint=None):
+    def complete(self, task_id, result, *, pane_nonce, failpoint=None):
         self._require_task_id(task_id)
         with self._locked():
+            with contextlib.closing(self._connect()) as probe:
+                existing = probe.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                if existing is None:
+                    raise ValueError("unknown task")
+                if existing["pane_nonce"] != pane_nonce:
+                    raise ValueError("pane incarnation does not match task")
             destination, digest = self._write_result(task_id, result)
             self._fail(failpoint, "after_result")
             now = int(self.clock())
@@ -591,6 +633,8 @@ class Ledger:
                 row = connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
                 if row is None:
                     raise ValueError("unknown task")
+                if row["pane_nonce"] != pane_nonce:
+                    raise ValueError("pane incarnation does not match task")
                 if row["status"] == "complete":
                     if row["result_sha256"] != digest:
                         raise ValueError("immutable result conflicts with completed task")
@@ -616,7 +660,16 @@ class Ledger:
                 row = connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             return self._dict(row)
 
-    def observe_idle(self, lane, *, pane_nonce):
+    def observe_attention(self, lane, *, pane_nonce, reason="idle"):
+        """Durably record that an outstanding task's lane needs attention.
+
+        `reason` names *why* (idle, blocked, approval, unknown). Idle keeps
+        the original unsuffixed key (`attention:<task>`) so existing
+        idle-triggered event consumers are unaffected; every other reason
+        gets its own key (`attention:<task>:<reason>`) so a lane that is
+        blocked and later becomes idle (or vice versa) is tracked as two
+        distinct durable events, not silently collapsed into one.
+        """
         now = int(self.clock())
         with self._locked(), self._transaction() as connection:
             self._verify_lane_nonce(connection, lane, pane_nonce)
@@ -629,7 +682,7 @@ class Ledger:
             ).fetchone()
             if task is None:
                 return None
-            key = f"attention:{task['id']}"
+            key = f"attention:{task['id']}" if reason == "idle" else f"attention:{task['id']}:{reason}"
             connection.execute(
                 """
                 INSERT OR IGNORE INTO events(key, type, task_id, status, created_at)
@@ -639,6 +692,9 @@ class Ledger:
             )
             event = connection.execute("SELECT * FROM events WHERE key=?", (key,)).fetchone()
         return self._dict(event)
+
+    def observe_idle(self, lane, *, pane_nonce):
+        return self.observe_attention(lane, pane_nonce=pane_nonce, reason="idle")
 
     def list_events(self, *, task_id=None, event_type=None):
         clauses = []
