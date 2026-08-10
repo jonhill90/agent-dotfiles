@@ -3,10 +3,13 @@
 ## Project
 
 `agent-dotfiles` is Jon's versioned personal harness for AI coding agents —
-dotfiles for agents. Portable Agent Skills remain individually installable;
-canonical instructions, hooks, agents, settings, and MCP declarations are the
-other managed layers. Product requirements live in `docs/PRD.md`; the
-technical design in `docs/SPEC.md`.
+dotfiles for agents. It owns canonical instructions, hooks, agents,
+settings, MCP declarations, install/sync behavior, and the skill *roster*
+(`settings/default-skills.txt`). Skill content is not vendored here: it is
+declared as two pinned `apm.yml` dependencies on `jonhill90/skills`
+(public) and `jonhill90/skills-private` (private, authenticated) — see
+"Skill Sources" in `README.md` (#9). Product requirements live in
+`docs/PRD.md`; the technical design in `docs/SPEC.md`.
 
 This file is the shared repository policy. `CLAUDE.md` and
 `.github/copilot-instructions.md` are committed **symlinks** to it, so each
@@ -15,7 +18,10 @@ other two follow with no sync step.
 
 ## Product Boundaries
 
-- Keep `skills/` portable and independently installable.
+- Skill content lives in `jonhill90/skills` (public) or
+  `jonhill90/skills-private` (private) — this repository declares them as
+  pinned dependencies and rosters names, it does not vendor a `skills/`
+  directory (#9).
 - Keep canonical content out of harness-owned directories.
 - Treat `.claude/` and `.github/` as repo-development configuration or
   repository automation; other harness-owned directories must not
@@ -33,14 +39,11 @@ other two follow with no sync step.
 ## Canonical Layout
 
 ```text
-apm.yml                  # APM package manifest (deploys the repo at user scope)
+apm.yml                  # APM package manifest — also declares the two pinned
+                         # skill-source dependencies (jonhill90/skills,
+                         # jonhill90/skills-private), each ref pinned to a SHA
+apm.lock.yaml            # resolved commit + content hash per dependency
 .apm/                    # APM source tree — symlinks into the canonical dirs
-skills/
-  <skill-name>/
-    SKILL.md
-    scripts/
-    references/
-    assets/
 instructions/
   global.instructions.md # canonical global agent instructions (≤200 lines)
   overlays/              # per-harness additions, wrapper-projected
@@ -58,30 +61,32 @@ Projection is installer-owned (`apm install -g` + `scripts/sync.py apply`).
 The former committed symlink matrix (`.claude/skills`, `.codex/skills`, …)
 is retired; validation errors if any reappear.
 
-## Skill Authoring
+## Skill Authoring and Sourcing
 
 Decide placement first — see "Where a Skill Belongs" in `README.md`. The
-§10.1 evidence bar governs the **default roster**, not every skill written.
-A project skill lives in that project, needs no eval, no scenario and no
-manifest row. A skill from someone else is reached with `npx skills use`
-or declared as a pinned dependency (SPEC §3.1); it is never vendored here.
+§10.1 evidence bar governs the **default roster**, not every skill
+written. A project skill lives in that project, needs no eval, no
+scenario and no manifest row. A skill from someone else is reached with
+`npx skills use` or declared as a pinned dependency (SPEC §3.1); it is
+never vendored here.
 
-- Use `skills/<name>/SKILL.md`.
-- Match the directory name and frontmatter `name`.
-- Use lowercase letters, digits, and hyphens; maximum 64 characters.
-- Include what the skill does and when it should trigger in `description`.
-- Keep portable frontmatter to `name` and `description` by default.
-- Use imperative instructions.
-- Keep `SKILL.md` under 500 lines.
-- Move detailed material to `references/` and link it directly from `SKILL.md`.
-- Put deterministic, repeated operations in tested scripts.
-- Do not add a README inside a skill directory.
-- Avoid harness-specific preprocessing syntax in portable skills.
-- Classify each skill as *model-invoked* (a reusable discipline the agent
-  should reach on its own) or *user-invoked* (a workflow reached
-  deliberately). Express the classification in `description` trigger
-  wording, not in frontmatter fields — the portable field set stays
-  `name` and `description`.
+**Authoring a skill's content happens in `jonhill90/skills` (public) or
+`jonhill90/skills-private` (private) — never in this repository (#9).**
+Each has its own `SKILL.md` authoring contract (name/directory match,
+portable frontmatter, 500-line cap, references/ for detail, deterministic
+scripts, imperative instructions, model-invoked vs. user-invoked framed in
+`description`) and its own validator/CI. Follow that repository's
+`AGENTS.md`, not this section, when writing skill content.
+
+**Rostering an existing skill happens here:**
+
+1. Add its name to `settings/default-skills.txt`.
+2. If it was just added upstream, bump that dependency's `ref:` in
+   `apm.yml` to the new commit — pinned refs never move on their own
+   (§9 reproducibility requirement; enforced by
+   `validate_skill_source_pins` in `scripts/validate_repository.py`).
+3. Run `python3 scripts/validate_repository.py` and
+   `python3 -m unittest discover -s tests -v`.
 
 Harness-specific extensions require an explicit compatibility note and must not
 replace the portable workflow.
@@ -123,9 +128,11 @@ Run before considering repository changes complete:
 ```bash
 python3 scripts/validate_repository.py
 python3 -m unittest discover -s tests -v
-npx skills add . --list
+apm lock -v          # resolves both pinned skill-source refs without deploying
 ```
 
+`npx skills add . --list` no longer applies here — this repository has no
+local `skills/` to enumerate (#9); it correctly reports "No skills found."
 Run language-specific tests when changing bundled scripts or tools.
 
 ## Recording Figures

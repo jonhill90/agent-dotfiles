@@ -133,8 +133,20 @@ Notes:
 
 ### 3.1 Skills
 
+**Ownership (2026-08-10, #9):** skill content moved out of this
+repository entirely, into the public `jonhill90/skills` and the private
+`jonhill90/skills-private`, each pinned in `apm.yml` as an object-form git
+dependency (`ref:` a commit SHA, `skills: ["*"]`). This repository no
+longer contains a `skills/` directory; `docs/AGENTS.md` and this section's
+mentions of `skills/` below describe the pre-#9 v1 design and are
+historical except where superseded by the ownership line above. Roster
+membership (`settings/default-skills.txt`) and the roster-enforcement
+mechanism (§4.1) are unchanged and still live here.
+
 - Canonical authoring unchanged (AGENTS.md policy: portable frontmatter,
-  <500 lines, references/, scripts/).
+  <500 lines, references/, scripts/) — but now enforced in
+  `jonhill90/skills`/`jonhill90/skills-private`'s own validators, not
+  `scripts/validate_repository.py` here.
 - **Deployment:** `apm install -g` from the repo (local path during
   development, `jonhill90/agent-dotfiles#<tag>` on other machines) copies
   skills to `~/.agents/skills/` and `~/.claude/skills/`. Pi reads
