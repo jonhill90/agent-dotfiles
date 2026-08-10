@@ -971,6 +971,10 @@ class Sync:
     def declared_mcp_servers(self) -> dict:
         fragment_file = self.mcp_fragment_file()
         if not fragment_file.is_file():
+            # Left as "nothing to check" rather than fixed closed, unlike
+            # #29 and #35 (#38): this input is git-tracked, checked out in
+            # the same clone sync.py runs from, so its absence is already
+            # visible via `git status` rather than silently disappearing.
             return {}
         return json.loads(fragment_file.read_text(encoding="utf-8")).get(
             "mcpServers", {}
