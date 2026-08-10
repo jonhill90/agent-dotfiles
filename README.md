@@ -112,15 +112,33 @@ dependencies:
 `repo_url@short-sha` for each, read from the deployed
 `~/.apm/apm.lock.yaml` — the same file `apm install -g` writes.
 
-**Atomicity:** a failed fetch from either source (unreachable, bad ref,
-auth failure) must not leave a harness with a partially overwritten skill
-set. `scripts/sync.py`'s `apply()` snapshots `~/.claude/skills` and
-`~/.agents/skills` before calling `apm install`, restores them verbatim on
-failure, and discards the snapshot on success — proven against a real
-broken private ref, not just a mock: `apm install` deployed the public
-skills, then failed cloning the private one (`git checkout` exit 128), and
-`apply()` restored the prior 8-skill set byte-for-byte (sha256-verified)
-and returned the failing exit code.
+**Atomicity — scoped to what is actually guaranteed.** `scripts/sync.py`'s
+`apply()` snapshots `~/.claude/skills` and `~/.agents/skills` (rename
+aside, never copy or delete) before calling `apm install -g`, and restores
+them verbatim if that specific step fails — whether `apm` returns a
+nonzero exit code *or* raises before returning a result at all (missing
+binary, OS error). The snapshot is discarded only once `apm install`
+itself has succeeded. This covers the two skill-content directories around
+that one step; it is not a whole-`apply()` transaction — root-instruction
+compilation has its own separate detach/restore (unchanged, pre-#9), and
+later `apply()` steps (settings merges, MCP merges, Pi projection,
+teardown) carry no rollback of their own.
+
+**Fail-closed on an unresolved backup.** If a previous `apply()` was
+interrupted before it could restore or discard its snapshot, a `.bak`
+survives — the only remaining last-known-good copy. The next `apply()`
+never overwrites or deletes it: it refuses to run `apm` at all and exits
+non-zero with the exact path and a recovery instruction.
+`python3 scripts/sync.py doctor` also flags an unresolved backup outside
+of an `apply()` attempt. Recover explicitly with
+`python3 scripts/sync.py apply --recover-skills-backup` (restores the
+backup over the live directory; last-known-good wins) once you've
+confirmed which copy is correct.
+
+Proven against a real broken private ref, not just a mock: `apm install`
+deployed the public skills, then failed cloning the private one (`git
+checkout` exit 128), and `apply()` restored the prior 8-skill set
+byte-for-byte (sha256-verified) and returned the failing exit code.
 
 ## Where a Skill Belongs
 

@@ -558,3 +558,87 @@ class SkillSourcePinTests(unittest.TestCase):
 
     def test_no_apm_yml_is_silent(self) -> None:
         self.assertEqual(validator.validate_skill_source_pins(self.root), [])
+
+
+class RealApmYmlShapeTests(unittest.TestCase):
+    """#9 review: validate_skill_source_pins silently discovered zero
+    dependencies against the real apm.yml, because it has a comment block
+    ahead of each dependency entry and the parser's regex required each
+    entry to start immediately after the previous one. Every fixture above
+    is comment-free and passed anyway -- this class pins the parser to the
+    real, comment-bearing shape, including the actual committed file."""
+
+    # Byte-for-byte the shape actually committed at repo root: a multi-line
+    # comment block, then each dependency, repeated, then a shallower `mcp:`
+    # line that must terminate the block.
+    REAL_SHAPE = (
+        "name: agent-dotfiles\n"
+        "version: 0.1.0\n"
+        "description: >-\n"
+        "  Jon Hill's agent dotfiles.\n"
+        "dependencies:\n"
+        "  apm:\n"
+        "    # Candidate public skills collection (jonhill90/skills#127, not yet\n"
+        "    # merged). Pinned to that PR branch's head commit rather than the\n"
+        "    # branch name: a branch ref moves, and #9 requires a reproducible,\n"
+        "    # independently-verifiable pin. Bump this SHA (and re-verify) once\n"
+        "    # #127 merges to main, then again on every subsequent skill change.\n"
+        "    - git: https://github.com/jonhill90/skills.git\n"
+        "      ref: 069e2c475e875be1c23a31e7f5da08ffd58d655a\n"
+        "      skills: [\"*\"]\n"
+        "      alias: skills-public\n"
+        "    # Private companion collection (#9). Pinned the same way. Currently\n"
+        "    # carries one harmless, non-rostered fixture (source-probe) proving\n"
+        "    # authenticated resolution; see skills-private's own PR.\n"
+        "    - git: https://github.com/jonhill90/skills-private.git\n"
+        "      ref: b203b1ebf2c2eb35808443ba76cd22aadecf76e7\n"
+        "      skills: [\"*\"]\n"
+        "      alias: skills-private\n"
+        "  mcp: []\n"
+    )
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def test_discovers_both_aliases_through_the_comment_blocks(self) -> None:
+        (self.root / "apm.yml").write_text(self.REAL_SHAPE, encoding="utf-8")
+        deps = validator.parse_skill_source_dependencies(self.root)
+        self.assertEqual(
+            {d["alias"] for d in deps}, {"skills-public", "skills-private"}
+        )
+        by_alias = {d["alias"]: d for d in deps}
+        self.assertEqual(
+            by_alias["skills-public"]["ref"],
+            "069e2c475e875be1c23a31e7f5da08ffd58d655a",
+        )
+        self.assertEqual(
+            by_alias["skills-private"]["ref"],
+            "b203b1ebf2c2eb35808443ba76cd22aadecf76e7",
+        )
+
+    def test_sha_pinned_real_shape_has_no_findings(self) -> None:
+        (self.root / "apm.yml").write_text(self.REAL_SHAPE, encoding="utf-8")
+        self.assertEqual(validator.validate_skill_source_pins(self.root), [])
+
+    def test_branch_pinned_real_shape_is_still_caught(self) -> None:
+        bad = self.REAL_SHAPE.replace(
+            "ref: b203b1ebf2c2eb35808443ba76cd22aadecf76e7", "ref: main"
+        )
+        (self.root / "apm.yml").write_text(bad, encoding="utf-8")
+        findings = validator.validate_skill_source_pins(self.root)
+        self.assertTrue(findings)
+        self.assertIn("skills-private", findings[0].message)
+
+    def test_against_the_actual_committed_apm_yml(self) -> None:
+        # No fixture at all -- the real file, comments and all. This is
+        # the test that would have caught the silent false negative.
+        repo_root = Path(__file__).resolve().parents[1]
+        deps = validator.parse_skill_source_dependencies(repo_root)
+        self.assertEqual(
+            {d["alias"] for d in deps}, {"skills-public", "skills-private"}
+        )
+        for dep in deps:
+            self.assertRegex(dep["ref"], r"^[0-9a-fA-F]{40}$")
+        self.assertEqual(validator.validate_skill_source_pins(repo_root), [])

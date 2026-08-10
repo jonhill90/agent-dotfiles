@@ -416,36 +416,81 @@ def validate_roster_credit(root: Path) -> list[Finding]:
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
+def _apm_dependency_block(text: str) -> str:
+    """Every line belonging to `dependencies: apm:`'s list, comments and
+    all, up to the next line dedented to two spaces or less (a sibling key
+    like `mcp:`, or end of the mapping). Indentation-based, not a fixed
+    line-shape regex — the caller may still contain full-line comments,
+    which this does not strip."""
+    match = re.search(r"^dependencies:\n(?:.*\n)*?  apm:\n", text, re.M)
+    if not match:
+        return ""
+    lines: list[str] = []
+    for line in text[match.end():].splitlines():
+        if line.strip() and (len(line) - len(line.lstrip(" "))) <= 2:
+            break  # dedented to a sibling key or back to top level
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+def parse_skill_source_dependencies(root: Path) -> list[dict[str, object]]:
+    """Every entry under apm.yml's `dependencies.apm`, as a dict of
+    whatever `key: value` pairs it declares, plus `skills` (bool: does
+    this entry declare a `skills:` key at all — i.e. is it a skill-bundle
+    dependency, not some other kind of APM dependency).
+
+    A small line-based reader, not a general YAML parser — apm.yml's
+    `dependencies.apm` list has a flat, regular `    - key: value` shape,
+    and this module stays usable on machines without PyYAML. Full-line
+    comments (this repository documents *why* each ref is pinned directly
+    above the entry) are stripped before splitting into entries: an
+    earlier version did not strip them, which broke the entry-boundary
+    regex on the very first real comment line and silently returned zero
+    entries against the actual committed apm.yml (#9 review) — every
+    fixture that exercised this function beforehand was comment-free and
+    passed regardless, which is why `RealApmYmlShapeTests` in
+    tests/test_validate_repository.py runs this against the literal
+    committed file, not just a synthetic string.
+    """
+    apm_yml = root / "apm.yml"
+    if not apm_yml.is_file():
+        return []
+    block = _apm_dependency_block(apm_yml.read_text(encoding="utf-8"))
+    block = "\n".join(
+        line for line in block.splitlines() if not line.strip().startswith("#")
+    )
+    entries = re.split(r"(?=^    - )", block, flags=re.M)
+    deps: list[dict[str, object]] = []
+    for entry in entries:
+        if not entry.strip():
+            continue
+        dep: dict[str, object] = {
+            "skills": bool(re.search(r"^\s*skills:", entry, re.M))
+        }
+        for key in ("git", "ref", "alias"):
+            match = re.search(rf"^\s*{key}:\s*(.+?)\s*$", entry, re.M)
+            if match:
+                dep[key] = match.group(1).strip("'\"")
+        deps.append(dep)
+    return deps
+
+
 def validate_skill_source_pins(root: Path) -> list[Finding]:
     """Every skill-bundle dependency in apm.yml (one that declares
     `skills:`) must be pinned to an immutable commit SHA, not a branch or
     tag name (#9). A moving ref makes `apm install` non-reproducible and
     silently changes what gets deployed between runs.
-
-    A small line-based reader, not a general YAML parser — apm.yml's
-    `dependencies.apm` list has a flat, regular `    - key: value` shape,
-    and this module stays usable on machines without PyYAML.
     """
     apm_yml = root / "apm.yml"
     if not apm_yml.is_file():
         return []
-    text = apm_yml.read_text(encoding="utf-8")
-    match = re.search(
-        r"^dependencies:\n(?:.*\n)*?  apm:\n((?:    -.*\n(?:      .*\n)*)*)",
-        text,
-        re.M,
-    )
-    if not match:
-        return []
-    entries = re.split(r"(?=^    - )", match.group(1), flags=re.M)
     findings: list[Finding] = []
-    for entry in entries:
-        if not entry.strip() or not re.search(r"^\s*skills:", entry, re.M):
+    for dep in parse_skill_source_dependencies(root):
+        if not dep.get("skills"):
             continue  # not a skill-bundle dependency; no pin requirement
-        alias_match = re.search(r"^\s*alias:\s*(\S+)", entry, re.M)
-        alias = alias_match.group(1) if alias_match else "(unnamed dependency)"
-        ref_match = re.search(r"^\s*ref:\s*(.+?)\s*$", entry, re.M)
-        raw_ref = ref_match.group(1).strip("'\"") if ref_match else ""
+        alias = dep.get("alias") or "(unnamed dependency)"
+        raw_ref = dep.get("ref") or ""
+        assert isinstance(raw_ref, str)
         if not raw_ref or not SHA_RE.match(raw_ref.lower()):
             findings.append(
                 Finding(

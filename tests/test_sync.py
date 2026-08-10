@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -53,6 +54,74 @@ class SyncTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
+
+
+class ApmSubprocessIsolationTests(SyncTestCase):
+    """A real incident during #9 review: an "isolated" Sync(home=...) test
+    run still drove real `apm` against the real machine's $HOME, because
+    subprocess calls resolve their own environment independently of
+    self.home. Every call the default runner makes must see
+    HOME=str(self.home), not the process's real environment -- otherwise
+    the `home=` constructor parameter is a lie for anything that shells
+    out, which is exactly what happened."""
+
+    def test_default_runner_passes_the_isolated_home_to_apm(self) -> None:
+        calls = []
+
+        def fake_subprocess_run(cmd, check=False, env=None):
+            calls.append((cmd, env))
+
+            class R:
+                returncode = 0
+
+            return R()
+
+        with mock.patch("sync.subprocess.run", fake_subprocess_run):
+            self.syncer.runner(["apm", "status"], check=False)
+
+        self.assertEqual(len(calls), 1)
+        _, env = calls[0]
+        self.assertIsNotNone(env)
+        self.assertEqual(env["HOME"], str(self.home))
+        self.assertNotEqual(env["HOME"], str(Path.home()))
+
+    def test_apply_never_launches_apm_against_the_real_home(self) -> None:
+        seen_homes = []
+
+        def fake_subprocess_run(cmd, check=False, env=None):
+            seen_homes.append(env.get("HOME") if env else None)
+
+            class R:
+                returncode = 0
+
+            return R()
+
+        with mock.patch("sync.subprocess.run", fake_subprocess_run):
+            self.syncer.apply()
+
+        self.assertTrue(seen_homes)  # install + compile both ran
+        for home in seen_homes:
+            self.assertEqual(home, str(self.home))
+            self.assertNotEqual(home, str(Path.home()))
+
+    def test_remove_never_launches_apm_against_the_real_home(self) -> None:
+        self.syncer.state["repo"] = str(self.repo)
+        seen_homes = []
+
+        def fake_subprocess_run(cmd, check=False, env=None):
+            seen_homes.append(env.get("HOME") if env else None)
+
+            class R:
+                returncode = 0
+
+            return R()
+
+        with mock.patch("sync.subprocess.run", fake_subprocess_run):
+            self.syncer.remove()
+
+        self.assertTrue(seen_homes)
+        for home in seen_homes:
+            self.assertEqual(home, str(self.home))
 
 
 class PiProjectionTests(SyncTestCase):
@@ -474,6 +543,107 @@ class SkillSourceBackupTests(SyncTestCase):
             self.assertFalse(backup.exists())
 
 
+class SkillBackupConflictTests(SyncTestCase):
+    """A `.bak` left by an interrupted prior apply is the only
+    last-known-good copy that exists. backup_skills_dirs() must never
+    overwrite or delete it -- it must fail closed instead (#9 review)."""
+
+    def test_never_deletes_an_existing_bak(self) -> None:
+        agents_dir = self.home / ".agents" / "skills"
+        (agents_dir / "tmux").mkdir(parents=True)
+        (agents_dir / "tmux" / "SKILL.md").write_text("current\n")
+        stale_backup = self.home / ".agents" / "skills.bak"
+        (stale_backup / "tmux").mkdir(parents=True)
+        (stale_backup / "tmux" / "SKILL.md").write_text("last-known-good\n")
+
+        with self.assertRaises(sync.SkillBackupConflict):
+            self.syncer.backup_skills_dirs()
+
+        # the only last-known-good copy must survive untouched
+        self.assertEqual(
+            (stale_backup / "tmux" / "SKILL.md").read_text(), "last-known-good\n"
+        )
+        # and the live dir must not have been renamed away either
+        self.assertEqual(
+            (agents_dir / "tmux" / "SKILL.md").read_text(), "current\n"
+        )
+
+    def test_undoes_a_partial_rename_before_raising(self) -> None:
+        # .claude/skills has no stale backup and renames cleanly first;
+        # .agents/skills DOES have one. The .claude rename must be undone
+        # rather than left half-applied when the whole call fails.
+        claude_dir = self.home / ".claude" / "skills"
+        (claude_dir / "tmux").mkdir(parents=True)
+        (claude_dir / "tmux" / "SKILL.md").write_text("claude-current\n")
+        agents_dir = self.home / ".agents" / "skills"
+        agents_dir.mkdir(parents=True)
+        (self.home / ".agents" / "skills.bak").mkdir(parents=True)
+
+        with self.assertRaises(sync.SkillBackupConflict):
+            self.syncer.backup_skills_dirs()
+
+        self.assertTrue(claude_dir.is_dir())
+        self.assertEqual(
+            (claude_dir / "tmux" / "SKILL.md").read_text(), "claude-current\n"
+        )
+        self.assertFalse((self.home / ".claude" / "skills.bak").exists())
+
+    def test_apply_fails_closed_without_running_apm(self) -> None:
+        agents_dir = self.home / ".agents" / "skills"
+        (agents_dir / "tmux").mkdir(parents=True)
+        (agents_dir / "tmux" / "SKILL.md").write_text("current\n")
+        stale_backup = self.home / ".agents" / "skills.bak"
+        (stale_backup / "tmux").mkdir(parents=True)
+        (stale_backup / "tmux" / "SKILL.md").write_text("last-known-good\n")
+
+        def runner(cmd, check=False):
+            raise AssertionError("apm must not run while a backup is unresolved")
+
+        self.syncer.runner = runner
+        rc = self.syncer.apply()
+
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(
+            (agents_dir / "tmux" / "SKILL.md").read_text(), "current\n"
+        )
+        self.assertEqual(
+            (stale_backup / "tmux" / "SKILL.md").read_text(), "last-known-good\n"
+        )
+
+    def test_recover_skills_backup_restores_last_known_good(self) -> None:
+        agents_dir = self.home / ".agents" / "skills"
+        (agents_dir / "tmux").mkdir(parents=True)
+        (agents_dir / "tmux" / "SKILL.md").write_text("broken-partial\n")
+        stale_backup = self.home / ".agents" / "skills.bak"
+        (stale_backup / "tmux").mkdir(parents=True)
+        (stale_backup / "tmux" / "SKILL.md").write_text("last-known-good\n")
+
+        rc = self.syncer.recover_skills_backup()
+
+        self.assertEqual(rc, 0)
+        self.assertFalse(stale_backup.exists())
+        self.assertEqual(
+            (agents_dir / "tmux" / "SKILL.md").read_text(), "last-known-good\n"
+        )
+
+    def test_recover_skills_backup_is_a_noop_without_one(self) -> None:
+        self.assertEqual(self.syncer.recover_skills_backup(), 0)
+
+    def test_doctor_flags_an_unresolved_skill_backup(self) -> None:
+        stale_backup = self.home / ".agents" / "skills.bak"
+        stale_backup.mkdir(parents=True)
+        checks = dict(self.syncer.doctor_checks(env={}))
+        self.assertIn("skill-backup-conflict", checks)
+        ok, message = checks["skill-backup-conflict"]
+        self.assertFalse(ok)
+        self.assertIn(str(stale_backup), message)
+
+    def test_doctor_is_silent_without_a_stale_backup(self) -> None:
+        checks = dict(self.syncer.doctor_checks(env={}))
+        ok, _ = checks["skill-backup-conflict"]
+        self.assertTrue(ok)
+
+
 class ApplyInstallFailureRollbackTests(SyncTestCase):
     def test_apply_restores_prior_skills_on_install_failure(self) -> None:
         agents_dir = self.home / ".agents" / "skills"
@@ -516,6 +686,108 @@ class ApplyInstallFailureRollbackTests(SyncTestCase):
             p for p in (self.home / ".agents").iterdir() if p.name != "skills"
         ]
         self.assertEqual(leftovers, [])
+
+
+class ApplyExceptionSafetyTests(SyncTestCase):
+    """launching apm can raise before returning any process result at all
+    (binary missing, permissions, OS error) -- not just return nonzero.
+    apply() must restore on every exception, not only a bad returncode
+    (#9 review)."""
+
+    def test_restores_skills_if_install_raises(self) -> None:
+        agents_dir = self.home / ".agents" / "skills"
+        (agents_dir / "tmux").mkdir(parents=True)
+        (agents_dir / "tmux" / "SKILL.md").write_text("last-good\n")
+
+        def runner(cmd, check=False):
+            if cmd[1] == "install":
+                raise FileNotFoundError("apm binary vanished mid-run")
+
+            class R:
+                returncode = 0
+
+            return R()
+
+        self.syncer.runner = runner
+        rc = self.syncer.apply()
+
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(
+            (agents_dir / "tmux" / "SKILL.md").read_text(), "last-good\n"
+        )
+        self.assertFalse((self.home / ".agents" / "skills.bak").exists())
+
+    def test_restores_root_files_if_compile_raises(self) -> None:
+        claude = self.home / ".claude" / "CLAUDE.md"
+        claude.parent.mkdir(parents=True)
+        original = APM_MARKER + "\nlast known good\n"
+        claude.write_text(original)
+
+        def runner(cmd, check=False):
+            if cmd[1] == "compile":
+                raise RuntimeError("compile crashed mid-run")
+
+            class R:
+                returncode = 0
+
+            return R()
+
+        self.syncer.runner = runner
+        rc = self.syncer.apply()
+
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(claude.read_text(), original)
+
+    def test_install_exception_does_not_reach_the_caller(self) -> None:
+        # A raised exception must become a reported failure, not propagate
+        # past apply() -- the caller (a cron job, a CLI invocation) needs a
+        # return code, not a crash mid-deployment.
+        def runner(cmd, check=False):
+            if cmd[1] == "install":
+                raise OSError("network unreachable")
+
+            class R:
+                returncode = 0
+
+            return R()
+
+        self.syncer.runner = runner
+        try:
+            rc = self.syncer.apply()
+        except Exception as exc:  # pragma: no cover - the assertion below fails first
+            self.fail(f"apply() propagated {exc!r} instead of returning a code")
+        self.assertIsInstance(rc, int)
+        self.assertNotEqual(rc, 0)
+
+    def test_compile_failure_return_code_still_restores_skills(self) -> None:
+        # compile failing after a successful install must not re-touch the
+        # already-committed skill set -- the skill backup was already
+        # discarded by then, and compile failure is a root-file concern.
+        agents_dir = self.home / ".agents" / "skills"
+        (agents_dir / "tmux").mkdir(parents=True)
+        (agents_dir / "tmux" / "SKILL.md").write_text("last-good\n")
+
+        def runner(cmd, check=False):
+            if cmd[1] == "install":
+                # a real successful install repopulates the directory;
+                # the fake must too, or the assertion below tests nothing
+                agents_dir.mkdir(parents=True, exist_ok=True)
+                (agents_dir / "tmux").mkdir(exist_ok=True)
+                (agents_dir / "tmux" / "SKILL.md").write_text("last-good\n")
+
+            class R:
+                returncode = 5 if cmd[1] == "compile" else 0
+
+            return R()
+
+        self.syncer.runner = runner
+        rc = self.syncer.apply()
+
+        self.assertEqual(rc, 5)
+        self.assertEqual(
+            (agents_dir / "tmux" / "SKILL.md").read_text(), "last-good\n"
+        )
+        self.assertFalse((self.home / ".agents" / "skills.bak").exists())
 
 
 class PinnedSourceReportingTests(SyncTestCase):
