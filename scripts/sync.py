@@ -453,11 +453,47 @@ def stale_global_registration(entry: dict[str, object]) -> str | None:
             "SKILL.md, or skills/<name>/SKILL.md)"
         )
     requested = entry.get("skills") or []
-    assert isinstance(requested, list)
+    if not isinstance(requested, list):
+        # parse_global_local_packages only parses the block-list shape
+        # apm's own emitter writes; a flow-style `skills: [a, b]` (or any
+        # other hand-edited or foreign-tool-written shape) is stored as a
+        # raw, unparsed string instead. Fail closed rather than trust it
+        # or crash — an `assert` here was the prior behaviour, which both
+        # raises uncontrolled and is compiled out entirely under -O
+        # (#15 review).
+        return (
+            f"skills: value could not be parsed as a list (got "
+            f"{type(requested).__name__}); treating as stale to fail closed"
+        )
     missing = sorted(name for name in requested if name not in bundle_names)
     if bundle_names and missing:
         return f"requested skill(s) no longer in source: {', '.join(missing)}"
     return None
+
+
+def basename_collisions(entries: list[dict[str, object]]) -> dict[str, list[str]]:
+    """Group every local registration's path by `Path(path).name`, and
+    return only the groups with more than one member (#15 review).
+
+    apm's local cache (`~/.apm/apm_modules/_local/<name>`) and its
+    compiled `apm:source` marker names are both keyed by basename only —
+    not the full path. `stale_global_registration()` classifies each
+    registration on its own; it cannot see that two *distinct* full paths
+    (or a distinct path and a legitimate one) share that one cache slot,
+    which is real and not hypothetical: the actual global manifest that
+    motivated #14 had two different stale temp-directory registrations
+    that both ended in `/repo`. `apm uninstall -g <exact-path>` for one
+    does not by itself prove the other's identity is untouched, so this
+    check exists independently of staleness — a collision between two
+    otherwise-legitimate registrations is exactly as unsafe.
+    """
+    by_basename: dict[str, list[str]] = {}
+    for entry in entries:
+        path = entry.get("path")
+        if not path or not isinstance(path, str):
+            continue
+        by_basename.setdefault(Path(path).name, []).append(path)
+    return {name: paths for name, paths in by_basename.items() if len(paths) > 1}
 
 
 class Sync:
@@ -755,6 +791,17 @@ class Sync:
             if reason:
                 findings.append((str(entry.get("path", "")), reason))
         return findings
+
+    def local_basename_collisions(self) -> dict[str, list[str]]:
+        """Every basename collision among the global manifest's local
+        registrations (#15) -- see basename_collisions()'s docstring for
+        why this is checked independently of stale_global_registrations().
+        """
+        manifest = self.home / ".apm" / "apm.yml"
+        if not manifest.is_file():
+            return {}
+        text = manifest.read_text(encoding="utf-8")
+        return basename_collisions(parse_global_local_packages(text))
 
     def compiled_root_source_findings(self, path: Path) -> list[str]:
         """Duplicate or foreign `apm:source` blocks in a compiled root
@@ -1065,15 +1112,31 @@ class Sync:
             # content from registrations whose source had moved, vanished,
             # or drifted. Checked first, ahead of even the skill backup.
             stale = self.stale_global_registrations()
-            if stale:
+            collisions = self.local_basename_collisions()
+            if stale or collisions:
                 print("ERROR: stale global APM registration(s), aborting apply before running apm:")
                 for path, reason in stale:
                     print(f"  {path}: {reason}")
+                for basename, paths in collisions.items():
+                    # A collision is reported even when neither path is
+                    # individually stale (#15): apm's cache and apm:source
+                    # markers are keyed by basename only, so two distinct
+                    # registrations sharing one are unsafe together
+                    # regardless of either one's own validity.
+                    print(
+                        f"  basename collision '{basename}': {', '.join(paths)} "
+                        f"share ~/.apm/apm_modules/_local/{basename}"
+                    )
                 print(
-                    "Recover with `apm uninstall -g <path> --dry-run` then "
-                    "`apm uninstall -g <path>` for each path above -- see "
-                    "README.md's Recovery section. Never delete apm_modules/ "
-                    "or apm.yml entries by hand."
+                    "Recovery is manual and reviewable -- see README.md's "
+                    "'Stale Global Registrations and Recovery' section. "
+                    "Never delete apm_modules/ or edit apm.yml by hand. If "
+                    "any path above is part of a basename collision, "
+                    "`apm uninstall -g <path>` for just that path does NOT "
+                    "prove the colliding path's cache/source identity is "
+                    "untouched -- evaluate and recover the whole collision "
+                    "group together, then reinstall any surviving "
+                    "registration before compiling again."
                 )
                 return 4
             # Snapshot the last-good deployed skill set before touching two
@@ -1160,6 +1223,12 @@ class Sync:
             print(f"[source] {source['name']}: {source['repo_url']}@{short_sha}")
         for path, reason in self.stale_global_registrations():
             print(f"[stale-global] {path}: {reason}")
+            issues += 1
+        for basename, paths in self.local_basename_collisions().items():
+            print(
+                f"[basename-collision] {basename}: "
+                f"{', '.join(paths)} share ~/.apm/apm_modules/_local/{basename}"
+            )
             issues += 1
         drift = self.neutral_drift()
         if drift:
@@ -1362,6 +1431,24 @@ class Sync:
                     if not stale_global
                     else "apply() will refuse to run until recovered — "
                     + "; ".join(f"{path}: {reason}" for path, reason in stale_global),
+                ),
+            )
+        )
+        collisions = self.local_basename_collisions()
+        checks.append(
+            (
+                "local-registration-basename-collisions",
+                (
+                    not collisions,
+                    "no basename collisions among local registrations"
+                    if not collisions
+                    else "apm's cache and apm:source markers are keyed by "
+                    "basename only, so these share identity — evaluate the "
+                    "whole group before removing any of it: "
+                    + "; ".join(
+                        f"{basename}: {', '.join(paths)}"
+                        for basename, paths in collisions.items()
+                    ),
                 ),
             )
         )
