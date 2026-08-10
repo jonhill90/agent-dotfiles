@@ -3,11 +3,23 @@
 Dotfiles for AI coding agents: one versioned repo that makes any machine,
 running any supported harness, behave like the same agent.
 
-Portable Agent Skills form the common core and remain individually
-installable. Canonical instructions, hooks, agents, settings, and MCP
-declarations are the other managed layers, deployed at user scope via APM
-plus a thin sync wrapper. Product requirements: [docs/PRD.md](docs/PRD.md);
-technical design: [docs/SPEC.md](docs/SPEC.md).
+Canonical instructions, hooks, agents, settings, and MCP declarations are
+managed here and deployed at user scope via APM plus a thin sync wrapper.
+Product requirements: [docs/PRD.md](docs/PRD.md); technical design:
+[docs/SPEC.md](docs/SPEC.md).
+
+**Four repositories, one harness (#9, #10):**
+
+| Repository | Owns |
+|---|---|
+| `jonhill90/agent-dotfiles` (this repo) | canonical instructions, hooks, agents, settings, MCP config, install/sync behavior, and the skill *roster* (`settings/default-skills.txt`) — not skill content |
+| [`jonhill90/skills`](https://github.com/jonhill90/skills) | portable public Agent Skills content, individually installable |
+| `jonhill90/skills-private` | portable private Agent Skills content, authenticated, consumed the same way |
+| `jonhill90/agent-evals` (private) | behavioral scenarios, counter-scenarios, harness runners, results/transcripts, scoring/arming tools, eval methodology |
+
+This repository declares the two skill collections as pinned `apm.yml`
+dependencies (see "Skill Sources" below) rather than vendoring skill
+content — it does not contain a `skills/` directory.
 
 ## Install the Harness
 
@@ -28,28 +40,34 @@ block to your shell profile, and sources `~/.zshrc.local` if present.
 
 ## Install Individual Skills
 
-Browse the collection and select individual skills:
+Skill content lives in [`jonhill90/skills`](https://github.com/jonhill90/skills)
+(public) and `jonhill90/skills-private` (private, authenticated), not here.
+Browse and select from the public collection directly:
 
 ```bash
-npx skills add jonhill90/agent-dotfiles
+npx skills add jonhill90/skills
+npx skills add jonhill90/skills --skill primer
 ```
 
-Install a specific skill:
+The private collection works identically, authenticated by whatever `git`
+already has configured for `github.com` (GitHub CLI's credential helper,
+an SSH key, or `GITHUB_APM_PAT`):
 
 ```bash
-npx skills add jonhill90/agent-dotfiles --skill primer
+npx skills add jonhill90/skills-private
 ```
 
 First-class harnesses: Claude Code, Codex, GitHub Copilot, Pi — all four
-sync-managed and eval-verified; breakage on any of them blocks release.
+sync-managed; breakage on any of them blocks release.
 Other Agent Skills-compatible harnesses may work through the same installer.
 
 ## Repository Model
 
 ```text
-apm.yml          APM package manifest (user-scope deployment)
+apm.yml          APM package manifest — also declares the two pinned skill-
+                 source dependencies (jonhill90/skills, jonhill90/skills-private)
+apm.lock.yaml    Resolved commit + content hash per dependency (committed)
 .apm/            APM source tree — symlinks into the canonical directories
-skills/          Portable Agent Skills source
 instructions/    Canonical global agent instructions + per-harness overlays
 agents/          Reusable agent definitions
 hooks/           Canonical hook scripts, harness-agnostic
@@ -64,10 +82,63 @@ docs/            Living product, architecture, and memory documentation
 ```
 
 Canonical content lives in the top-level directories. Deployment is
-installer-owned: `apm install -g` places skills/instructions/agents at
-user scope and `scripts/sync.py apply` covers what APM does not (Pi
-projection, settings merges, teardown). The committed symlink matrix is
-retired (SPEC §2).
+installer-owned: `apm install -g` resolves the two skill-source
+dependencies plus instructions/agents and places them at user scope;
+`scripts/sync.py apply` covers what APM does not (Pi projection, settings
+merges, teardown). The committed symlink matrix is retired (SPEC §2).
+
+## Skill Sources
+
+`apm.yml`'s `dependencies.apm` list declares two skill-bundle
+dependencies, each pinned to a commit SHA — never a branch or tag, so
+`apm install` resolves the same content every time
+(`scripts/validate_repository.py`'s `validate_skill_source_pins` enforces
+this):
+
+```yaml
+dependencies:
+  apm:
+    - git: https://github.com/jonhill90/skills.git
+      ref: <commit-sha>
+      skills: ["*"]
+      alias: skills-public
+    - git: https://github.com/jonhill90/skills-private.git
+      ref: <commit-sha>
+      skills: ["*"]
+      alias: skills-private
+```
+
+`python3 scripts/sync.py status` and `doctor` print the pinned
+`repo_url@short-sha` for each, read from the deployed
+`~/.apm/apm.lock.yaml` — the same file `apm install -g` writes.
+
+**Atomicity — scoped to what is actually guaranteed.** `scripts/sync.py`'s
+`apply()` snapshots `~/.claude/skills` and `~/.agents/skills` (rename
+aside, never copy or delete) before calling `apm install -g`, and restores
+them verbatim if that specific step fails — whether `apm` returns a
+nonzero exit code *or* raises before returning a result at all (missing
+binary, OS error). The snapshot is discarded only once `apm install`
+itself has succeeded. This covers the two skill-content directories around
+that one step; it is not a whole-`apply()` transaction — root-instruction
+compilation has its own separate detach/restore (unchanged, pre-#9), and
+later `apply()` steps (settings merges, MCP merges, Pi projection,
+teardown) carry no rollback of their own.
+
+**Fail-closed on an unresolved backup.** If a previous `apply()` was
+interrupted before it could restore or discard its snapshot, a `.bak`
+survives — the only remaining last-known-good copy. The next `apply()`
+never overwrites or deletes it: it refuses to run `apm` at all and exits
+non-zero with the exact path and a recovery instruction.
+`python3 scripts/sync.py doctor` also flags an unresolved backup outside
+of an `apply()` attempt. Recover explicitly with
+`python3 scripts/sync.py apply --recover-skills-backup` (restores the
+backup over the live directory; last-known-good wins) once you've
+confirmed which copy is correct.
+
+Proven against a real broken private ref, not just a mock: `apm install`
+deployed the public skills, then failed cloning the private one (`git
+checkout` exit 128), and `apply()` restored the prior 8-skill set
+byte-for-byte (sha256-verified) and returned the failing exit code.
 
 ## Where a Skill Belongs
 
@@ -76,7 +147,8 @@ repository, and nothing here should ever be copied into a project.
 
 | Situation | Where it goes | Evidence bar |
 |---|---|---|
-| Useful in every project, every day | this repo's roster | **applies** — §10.1 |
+| Useful in every project, every day, and shareable | author it in `jonhill90/skills`, roster it here (`settings/default-skills.txt`) | **applies** — §10.1 |
+| Useful every day but must not be public | author it in `jonhill90/skills-private`, roster it here the same way | **applies** — §10.1 |
 | Only true in one repository | that repo's `.claude/skills/` or `.agents/skills/` | none |
 | Needed once, or maintained by someone else | nothing installed — `npx skills use <package>@<skill>` | none |
 
@@ -182,23 +254,23 @@ justifies them (baseline-first rule — see
 checks under `tests/evals/acceptance/` in the private repository
 jonhill90/agent-evals, evidence unavailable publicly.
 
-## Authoring Contract
+## Authoring a New Skill
 
-Each skill lives at `skills/<name>/SKILL.md`:
+Skill content is authored in `jonhill90/skills` (public) or
+`jonhill90/skills-private` (private only) — never here. Each has its own
+`skills/<name>/SKILL.md` authoring contract and validator; see that
+repository's `AGENTS.md`.
 
-```text
-skills/example-skill/
-├── SKILL.md
-├── scripts/       Optional deterministic helpers
-├── references/    Optional detail loaded on demand
-└── assets/        Optional output resources
-```
+To roster a skill that already exists in one of those two repositories:
 
-Portable skills use `name` and `description` frontmatter. The directory name
-must match `name`. Keep the core instructions concise and move detail into
-directly linked references.
+1. Add its name to `settings/default-skills.txt` here.
+2. Bump the corresponding dependency's `ref:` in `apm.yml` if the skill
+   was just added upstream (pinned refs do not move on their own).
+3. Run `python3 scripts/validate_repository.py` — `validate_skill_source_pins`
+   confirms the ref is still a commit SHA, not a branch.
 
-Validate the repository:
+Validate this repository (roster, instructions, projections — not skill
+content, which is validated in its own repository):
 
 ```bash
 python3 scripts/validate_repository.py

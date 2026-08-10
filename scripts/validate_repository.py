@@ -219,6 +219,12 @@ def validate_skill(skill_dir: Path) -> list[Finding]:
 def discover_skill_dirs(root: Path, target: Path | None) -> list[Path]:
     if target is None:
         skills_root = root / "skills"
+        # #9: this repository no longer vendors skills — they are pinned
+        # apm.yml dependencies on jonhill90/skills and jonhill90/skills-private
+        # instead, each with its own validator and CI. No local skills/ is
+        # the expected steady state, not an error.
+        if not skills_root.is_dir():
+            return []
         return sorted(path for path in skills_root.iterdir() if path.is_dir())
 
     target = target.resolve()
@@ -294,6 +300,14 @@ def description_tokens_by_harness(root: Path) -> dict[str, float]:
             harness: load_default_skills(root, harness) for harness in HARNESSES
         }
     totals: dict[str, float] = {}
+    # #9: skill descriptions live in jonhill90/skills and
+    # jonhill90/skills-private now, not locally, so this repo can no longer
+    # compute the description-token component from disk. The live
+    # instrument is scripts/measure_e15.py, which reads the *deployed*
+    # ~/.claude/skills tree and is the authority for the §6 budget; this
+    # function's contribution collapses to 0 without a local skills/.
+    if not (root / "skills").is_dir():
+        return {harness: 0.0 for harness in HARNESSES}
     for harness, names in names_by_harness.items():
         description_bytes = 0
         for name in sorted(set(names)):
@@ -352,9 +366,16 @@ def validate_roster_resolves(root: Path) -> list[Finding]:
     Nothing checked this, so deleting a skill directory while leaving its
     roster line validated clean — and the wrapper would then derive disable
     entries for a skill that is not there. Same silent shape as #93.
+
+    #9: this repo no longer vendors skills/, so a roster name resolves via
+    the pinned apm.yml dependencies (jonhill90/skills,
+    jonhill90/skills-private) instead — each has its own validator and CI,
+    and `apm lock`/`apm install` is the mechanical proof of resolution, not
+    a local file check. Skip silently rather than flag every roster line
+    as unresolvable.
     """
     roster = root / "settings" / "default-skills.txt"
-    if not roster.is_file():
+    if not roster.is_file() or not (root / "skills").is_dir():
         return []
     return [
         Finding(
@@ -389,6 +410,97 @@ def validate_roster_credit(root: Path) -> list[Finding]:
                         "ship opt-in until the bar is cleared",
                     )
                 )
+    return findings
+
+
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _apm_dependency_block(text: str) -> str:
+    """Every line belonging to `dependencies: apm:`'s list, comments and
+    all, up to the next line dedented to two spaces or less (a sibling key
+    like `mcp:`, or end of the mapping). Indentation-based, not a fixed
+    line-shape regex — the caller may still contain full-line comments,
+    which this does not strip."""
+    match = re.search(r"^dependencies:\n(?:.*\n)*?  apm:\n", text, re.M)
+    if not match:
+        return ""
+    lines: list[str] = []
+    for line in text[match.end():].splitlines():
+        if line.strip() and (len(line) - len(line.lstrip(" "))) <= 2:
+            break  # dedented to a sibling key or back to top level
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+def parse_skill_source_dependencies(root: Path) -> list[dict[str, object]]:
+    """Every entry under apm.yml's `dependencies.apm`, as a dict of
+    whatever `key: value` pairs it declares, plus `skills` (bool: does
+    this entry declare a `skills:` key at all — i.e. is it a skill-bundle
+    dependency, not some other kind of APM dependency).
+
+    A small line-based reader, not a general YAML parser — apm.yml's
+    `dependencies.apm` list has a flat, regular `    - key: value` shape,
+    and this module stays usable on machines without PyYAML. Full-line
+    comments (this repository documents *why* each ref is pinned directly
+    above the entry) are stripped before splitting into entries: an
+    earlier version did not strip them, which broke the entry-boundary
+    regex on the very first real comment line and silently returned zero
+    entries against the actual committed apm.yml (#9 review) — every
+    fixture that exercised this function beforehand was comment-free and
+    passed regardless, which is why `RealApmYmlShapeTests` in
+    tests/test_validate_repository.py runs this against the literal
+    committed file, not just a synthetic string.
+    """
+    apm_yml = root / "apm.yml"
+    if not apm_yml.is_file():
+        return []
+    block = _apm_dependency_block(apm_yml.read_text(encoding="utf-8"))
+    block = "\n".join(
+        line for line in block.splitlines() if not line.strip().startswith("#")
+    )
+    entries = re.split(r"(?=^    - )", block, flags=re.M)
+    deps: list[dict[str, object]] = []
+    for entry in entries:
+        if not entry.strip():
+            continue
+        dep: dict[str, object] = {
+            "skills": bool(re.search(r"^\s*skills:", entry, re.M))
+        }
+        for key in ("git", "ref", "alias"):
+            match = re.search(rf"^\s*{key}:\s*(.+?)\s*$", entry, re.M)
+            if match:
+                dep[key] = match.group(1).strip("'\"")
+        deps.append(dep)
+    return deps
+
+
+def validate_skill_source_pins(root: Path) -> list[Finding]:
+    """Every skill-bundle dependency in apm.yml (one that declares
+    `skills:`) must be pinned to an immutable commit SHA, not a branch or
+    tag name (#9). A moving ref makes `apm install` non-reproducible and
+    silently changes what gets deployed between runs.
+    """
+    apm_yml = root / "apm.yml"
+    if not apm_yml.is_file():
+        return []
+    findings: list[Finding] = []
+    for dep in parse_skill_source_dependencies(root):
+        if not dep.get("skills"):
+            continue  # not a skill-bundle dependency; no pin requirement
+        alias = dep.get("alias") or "(unnamed dependency)"
+        raw_ref = dep.get("ref") or ""
+        assert isinstance(raw_ref, str)
+        if not raw_ref or not SHA_RE.match(raw_ref.lower()):
+            findings.append(
+                Finding(
+                    "error",
+                    apm_yml,
+                    f"{alias}: ref must be pinned to a 40-character commit "
+                    f"SHA, not {raw_ref or '(missing)'} — a branch or tag "
+                    "name is not reproducible",
+                )
+            )
     return findings
 
 
@@ -536,6 +648,7 @@ def validate(root: Path, target: Path | None = None) -> list[Finding]:
         findings.extend(validate_apm_skill_roster(root))
         findings.extend(validate_roster_credit(root))
         findings.extend(validate_roster_resolves(root))
+        findings.extend(validate_skill_source_pins(root))
         findings.extend(validate_privacy(root))
         findings.extend(validate_static_context(root))
 
