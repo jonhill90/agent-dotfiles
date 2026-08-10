@@ -63,7 +63,9 @@ settings/                # wrapper-owned config fragments (claude, copilot, pi, 
                          # harness and enforces that on all four (SPEC §4.1)
 docs/
 scripts/
-tests/                   # unittest suite for scripts/
+  supervisor/            # portable tmux-lane supervisor core, moved from
+                         # jonhill90/Hill90; the launchd adapter stays there
+tests/                   # unittest suite for scripts/, incl. tests/supervisor/
 ```
 
 Projection is installer-owned (`apm install -g` + `scripts/sync.py apply`).
