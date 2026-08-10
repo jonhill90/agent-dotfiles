@@ -27,7 +27,8 @@ and MCP declarations are deployed at user scope by APM plus a thin wrapper
 (`scripts/sync.py`).
 
 The GitHub repository is **`jonhill90/agent-dotfiles`**. The local checkout
-directory is `Skills`, which matters — see Traps.
+directory is `agent-dotfiles` — see Traps for a sibling directory that has
+caused confusion.
 
 Read in this order: `AGENTS.md` (repo policy — this is the one that governs how
 you work), `README.md` (where a skill belongs), `docs/PRD.md` (intent),
@@ -65,9 +66,9 @@ python3 scripts/sync.py doctor             # expect: 8 [pass], 0 [FAIL]
 npx skills add . --list                    # expect: 12 skills enumerated
 ```
 
-Re-run at `84db88b` (PRs #113 and #114 merged): all five produce exactly that.
+Re-run at `84db88b` (PRs jonhill90/skills#113 and jonhill90/skills#114 merged): all five produce exactly that.
 An independent reviewer confirmed the same five at the previous commit with 198
-tests; #114 added two. If your count is 200 and rising, that is expected.
+tests; jonhill90/skills#114 added two. If your count is 200 and rising, that is expected.
 
 ### Two things in this repo spend Jon's money or change his machine
 
@@ -97,9 +98,9 @@ overstated it — here it is with the numbers a reviewer could actually confirm.
 |---|---|---|
 | **Disk / execution** — read the fixture, run the code | `e06`, `e11`, `sd-c1`, `sd-c2`, `ftf-c1`, `sc-c1` | Instrument breaks loudly: blank verdicts, INVALID runs, false **FAIL**s. Caught, then re-run. |
 | **Text** — read the terminal, match words | `e17`, `e18`, `e19` | False **PASS**es that survive, and they point toward the conclusion the matcher's author expected. |
-| Disk-first, text fallback | `e20` (since #114), `ftf-c2` | — |
+| Disk-first, text fallback | `e20` (since jonhill90/skills#114), `ftf-c2` | — |
 
-`e20` was converted by **#114**: it now returns PASS when `.agents/skills/` or
+`e20` was converted by **jonhill90/skills#114**: it now returns PASS when `.agents/skills/` or
 `skills-lock.json` exists in the fixture, and only falls back to the text
 matcher for a run that looked and proposed without installing. That is the
 pattern the rest of this section argues for, already demonstrated — copy it for
@@ -148,9 +149,16 @@ create-skill  failing-test-first  github-cli  linear
 memory-conventions  obsidian  safe-deletion  tmux
 ```
 
-Twelve skills exist in `skills/`. Four are published but deliberately out of
-the roster: `primer`, `close-the-loop`, `dispatching-subagents`,
-`sanity-check`.
+**Stale as of 2026-08-10 (#9):** this repository no longer has a `skills/`
+directory — skill content moved to `jonhill90/skills` (public) and
+`jonhill90/skills-private`, consumed as pinned `apm.yml` dependencies. The
+line below describing "twelve skills in `skills/`" describes the pre-split
+layout; the count and the four opt-in names were not re-verified against
+the new source repositories for this note.
+
+Twelve skills existed in `skills/` before the split. Four were published but
+deliberately out of the roster: `primer`, `close-the-loop`,
+`dispatching-subagents`, `sanity-check`.
 
 Static context (`measure_e15.py`) at `84db88b`:
 
@@ -172,17 +180,17 @@ One live measurement exists (`docs/evals.md`, single run, 2026-07-29): **Pi
 the first draft of this file quoted four inflated figures and a range with no
 source. Claude Code alone carries ~14 bundled skills (~1,758 tokens) the
 disk-based script cannot see; `measure_e15.py` now prints a `NOT COUNTED ABOVE`
-section naming its blind spots. Issue #95 carries the unresolved half: what §6
+section naming its blind spots. Issue jonhill90/skills#95 carries the unresolved half: what §6
 is actually for.
 
 ## Open work — 7 issues, none blocking
 
 | # | State | Honest read |
 |---|---|---|
-| #95 | milestone | Half done. `measure_e15.py` now names its blind spots; its second "Done when" bullet is unmet — `validate_repository.py:302` still swallows unresolved names. Deciding what §6 *means* is a judgement call, not a task. |
-| #96 | milestone | `name-only` is real — one of four `skillOverrides` values — and unbuilt. It optimises ~490 tokens while ~1,758 sit untouched behind `disableBundledSkills`. |
-| #97 | parked | Rejected design for managing foreign skills. At least one of its five rejection arguments is undercut by this repo's own later finding that `npx skills use` does not install. Revisit trigger: a foreign skill actually landing. |
-| #52–#55 | parked | Memory-design questions behind explicit triggers. Leave them. |
+| jonhill90/skills#95 | milestone | Half done. `measure_e15.py` now names its blind spots; its second "Done when" bullet is unmet — `validate_repository.py:302` still swallows unresolved names. Deciding what §6 *means* is a judgement call, not a task. |
+| jonhill90/skills#96 | milestone | `name-only` is real — one of four `skillOverrides` values — and unbuilt. It optimises ~490 tokens while ~1,758 sit untouched behind `disableBundledSkills`. |
+| jonhill90/skills#97 | parked | Rejected design for managing foreign skills. At least one of its five rejection arguments is undercut by this repo's own later finding that `npx skills use` does not install. Revisit trigger: a foreign skill actually landing. |
+| jonhill90/skills#52–jonhill90/skills#55 | parked | Memory-design questions behind explicit triggers. Leave them. |
 
 None of these issues has comments. Where this file says "reviewers judged X",
 that is unrecorded conversation, not an artifact you can go read.
@@ -190,13 +198,13 @@ that is unrecorded conversation, not an artifact you can go read.
 Not on the tracker:
 
 - **Stale figures across `docs/`** — plugin token counts from before two
-  plugins were disabled, phase markers, superseded numbers. **#113 fixed a
+  plugins were disabled, phase markers, superseded numbers. **jonhill90/skills#113 fixed a
   batch** (status lines, opt-in lists, case tables, and `docs/evals.md`'s
   live-context figures, which now read 3.8k/24.7k/30.4k/62.1k). How many remain
   is unknown: there is **no inventory and no checker**, and the "~40" this file
   once quoted was arithmetic on a round number. Build the list before quoting a
   count.
-- **Redesign `e17`–`e19` to be disk-scored.** `e20` is done (#114); these three
+- **Redesign `e17`–`e19` to be disk-scored.** `e20` is done (jonhill90/skills#114); these three
   are the remainder, and they are the ones carrying the provisional
   instruction-sentence evidence.
 - **Phase 3** (Windows/WSL, Linux) is unstarted; Jon has two Macs, so it is a
@@ -209,7 +217,7 @@ Not on the tracker:
   (nothing enters the roster on credit): no skill-rung run of E18 exists on any
   column, and its counter-scenario runs are invalid (3 of 16). Putting it back is
   Jon's call, not an eval question. `SPEC.md:341`, `provenance-manifest.md:59`.
-  Note that #114 added `tests/evals/counter/sanity-check.md`, so the
+  Note that jonhill90/skills#114 added `tests/evals/counter/sanity-check.md`, so the
   counter-scenario is now *specified* — C1 tests whether the discipline changes
   the answer, not whether an opinion was sought. It has not been *run*. That is
   the measurement that would settle the skill's status, and it costs money.
@@ -254,11 +262,11 @@ to re-confirm.
 **Behaviourally one of four.** The E20 baseline is **8 FAIL out of 8** across
 all four columns — not one run looked for an existing skill. (The prompt-delivery
 guard added later that day would have made a re-scored baseline read 7 FAIL /
-1 INVALID; #113 recorded that as a note on the results file, where it belongs.
+1 INVALID; jonhill90/skills#113 recorded that as a note on the results file, where it belongs.
 The first draft of this handoff quoted the counterfactual as if it were the
 measurement. The recorded result is 8 FAIL.) A sentence in the canonical
 instructions fixed Claude Code (PASS ×3). Codex FAILs ×3 — re-measured after
-defect 29, never quota-blocked, and #113 corrected the results file's old
+defect 29, never quota-blocked, and jonhill90/skills#113 corrected the results file's old
 "quota-blocked" header. Pi 1 of 3, Copilot unmeasured. The next rung is a
 *targeted* sentence, which worked on E17 and E18 where a generic one did not —
 and that is an eval run, so ask Jon first.
@@ -270,10 +278,15 @@ without two siblings), and **Pi gates project skills behind Project Trust**
 
 ## Traps
 
-- **The checkout directory is named `Skills`.** Any matcher touching that word
-  matches the working path (`…/Personal-Skills/…`). It has caused five false
-  PASSes. The *repository* is `agent-dotfiles`, so searching repo metadata for
-  "Skills" finds nothing.
+- **A sibling checkout is named `Skills`, one directory over from this repo's
+  `agent-dotfiles`.** Pre-split, this repository's own working path contained
+  the word "Skills" (`…/Personal-Skills/…`), and any matcher touching that
+  word matched it — that caused five false PASSes. Post-split, `Skills` is
+  the checkout of the separate `jonhill90/skills` repository (#9), not this
+  one, but the hazard is not gone: a matcher for "skills" can still hit that
+  sibling directory's path, or this repo's own `settings/default-skills.txt`.
+  Searching this repository's metadata for "Skills" finds nothing — the
+  *repository* is `agent-dotfiles`.
 - **A harness's startup banner is in the transcript.** `available skills`,
   `1. Yes, continue`, `Update Available` all appear before the prompt. Match
   the live tail, never the whole capture.
@@ -340,11 +353,11 @@ agents arrive with deletion energy and act on it.
    markers and defect totals, and diff each against its source. This is the
    only substantial task here that is unblocked, free, and specified. Start by
    reconciling `docs/evals.md`'s live-context figures against this file.
-3. **Audit the four recent correction PRs** — #111 (nine claims) and #112
-   (fifteen defects) = the 24 fixed on 2026-07-29, then #113 (stale status
-   lines, opt-in lists, case tables) and #114 (E20 on disk, criteria for
+3. **Audit the four recent correction PRs** — jonhill90/skills#111 (nine claims) and jonhill90/skills#112
+   (fifteen defects) = the 24 fixed on 2026-07-29, then jonhill90/skills#113 (stale status
+   lines, opt-in lists, case tables) and jonhill90/skills#114 (E20 on disk, criteria for
    caseless scenarios). Three times last week a fix introduced a new defect
-   nearby, and #113/#114 have had no adversarial read at all. This is free —
+   nearby, and jonhill90/skills#113/jonhill90/skills#114 have had no adversarial read at all. This is free —
    read the diffs, not the behaviour.
 4. **Then talk to Jon** about the eval apparatus and about whether `e17`–`e19`
    get redesigned before anything else is measured.

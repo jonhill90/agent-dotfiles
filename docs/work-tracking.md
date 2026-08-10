@@ -70,7 +70,7 @@ reliably preserve them.
 ## Historical `AI-###` references
 
 Work was tracked in Linear (workspace `jonhill90`, team `AI`) for about a
-day. Commit messages and PR bodies from #44–#50 carry `Refs AI-259`
+day. Commit messages and PR bodies from jonhill90/skills#44–jonhill90/skills#50 carry `Refs AI-259`
 style references. An `AI-` autolink is registered on the repository so
 those keep resolving:
 
@@ -86,14 +86,14 @@ no gain. The Linear issues are closed, not deleted.
 |---|---|---|
 | AI-259 | — | P2-M4 (completed before migration) |
 | AI-262 | — | V9 (resolved before migration) |
-| AI-260 | #56 | P2-M5 |
-| AI-261 | #57 | P2-M6 |
-| AI-263 | #58 | V10 |
-| AI-264 | #51 | Parked: tmux (V7) |
-| AI-265 | #52 | Parked: typed relations |
-| AI-266 | #53 | Parked: Graphiti |
-| AI-267 | #54 | Parked: memory lint |
-| AI-268 | #55 | Parked: fact-schema type enum |
+| AI-260 | jonhill90/skills#56 | P2-M5 |
+| AI-261 | jonhill90/skills#57 | P2-M6 |
+| AI-263 | jonhill90/skills#58 | V10 |
+| AI-264 | jonhill90/skills#51 | Parked: tmux (V7) |
+| AI-265 | jonhill90/skills#52 | Parked: typed relations |
+| AI-266 | jonhill90/skills#53 | Parked: Graphiti |
+| AI-267 | jonhill90/skills#54 | Parked: memory lint |
+| AI-268 | jonhill90/skills#55 | Parked: fact-schema type enum |
 
 ## Verify writes
 

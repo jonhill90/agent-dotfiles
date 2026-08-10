@@ -150,7 +150,7 @@ content cached under `~/.apm/apm_modules/_local/<name>`. Neither is pruned
 when the source directory is deleted, moved, or its shape changes (a skill
 renamed or removed upstream). A real deployment surfaced exactly this
 (#11 → #14): two registrations pointed at deleted temp directories, and a
-third — a local checkout of `jonhill90/skills` registered before its #126
+third — a local checkout of `jonhill90/skills` registered before its jonhill90/skills#126
 restructuring — had three of its twelve originally-requested skill names
 (`az-devops`, `gh-cli`, `using-tmux`) renamed or deleted out from under it.
 `apm compile` does not fail on this; it silently accumulates cached
