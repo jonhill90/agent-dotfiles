@@ -379,6 +379,15 @@ class RosterCreditTests(unittest.TestCase):
         )
         self.assertEqual(validator.validate_roster_credit(self.root), [])
 
+    def test_missing_manifest_is_an_error(self) -> None:
+        """#29: a moved/renamed/lost manifest must not silently disable
+        SPEC §10.1 rule 5 enforcement. Rule 5 has no other check backing
+        it, so losing the manifest must fail closed, not report clean."""
+        # setUp() creates docs/ but never writes provenance-manifest.md.
+        findings = validator.validate_roster_credit(self.root)
+        self.assertTrue(findings)
+        self.assertEqual(findings[0].level, "error")
+
 
 class SkillLengthTests(unittest.TestCase):
     """AGENTS.md caps SKILL.md at 500 lines and nothing enforced it, so
@@ -556,8 +565,14 @@ class SkillSourcePinTests(unittest.TestCase):
         )
         self.assertEqual(validator.validate_skill_source_pins(self.root), [])
 
-    def test_no_apm_yml_is_silent(self) -> None:
-        self.assertEqual(validator.validate_skill_source_pins(self.root), [])
+    def test_missing_apm_yml_is_an_error(self) -> None:
+        """#29 sweep: apm.yml is the only record of which skill-bundle
+        dependencies must be SHA-pinned (#9's reproducibility requirement).
+        Nothing else in this validator checks that apm.yml exists, so a
+        moved/renamed/lost apm.yml must fail closed, not report clean."""
+        findings = validator.validate_skill_source_pins(self.root)
+        self.assertTrue(findings)
+        self.assertEqual(findings[0].level, "error")
 
 
 class RealApmYmlShapeTests(unittest.TestCase):
