@@ -1059,6 +1059,84 @@ class Sync:
         )
         return pattern.sub("", text)
 
+    @staticmethod
+    def _deployed_overlay_body(text: str) -> str:
+        """The overlay body a deployed root file currently carries, or ""
+        if it carries none — the inverse of the block `apply_overlays`
+        writes, so it can be compared directly against `overlay_body`."""
+        match = re.search(
+            re.escape(OVERLAY_BEGIN) + r"\n\n(.*?)\n\n" + re.escape(OVERLAY_END),
+            text,
+            re.S,
+        )
+        return match.group(1) if match else ""
+
+    def instructions_drift(self) -> list[str]:
+        """Deployed instructions/overlays whose content disagrees with the
+        repository (#36).
+
+        `sync.py` had real drift detection for skills only
+        (`neutral_drift`/`neutral_identity`) — nothing compared deployed
+        *instructions* against the repo, so `status` could report `0
+        issue(s)` while `instructions/overlays/copilot.md` had moved on
+        `main` and the deployed copy had not. Mirrors #35/#37's fix
+        rather than inventing a second mechanism: compare deployed content
+        against a source that exists at check time, offline, with no
+        change to `apply()`.
+
+        Scope is deliberately the overlay, not the compiled core. The core
+        portion of each `HARNESS_ROOT_FILES` entry is written by `apm
+        compile`, which this check cannot reproduce offline without
+        running `apm` — the same reason #37 rejected an apply-time hash
+        manifest as a source of truth here. The overlay is different: it
+        is appended by `apply_overlays` itself, deterministically, from
+        `overlay_body(repo, harness)` alone, so it can be recomputed and
+        compared without touching `apply()` or the network.
+
+        Copilot reads `copilot-instructions.md`, not `AGENTS.md` — a
+        wrapper bug of exactly this kind was already caught once by an
+        eval (see `HARNESS_ROOT_FILES`). Iterating every path in
+        `HARNESS_ROOT_FILES`, not just one per harness, is what makes that
+        distinction load-bearing here rather than assumed away.
+
+        A root file that does not exist yet is skipped, not reported —
+        that is "never applied", which is `neutral_drift`'s and
+        `apply()`'s job, not this one's. Pi is handled separately: its
+        root file is written directly by `project_pi()` (core + overlay,
+        no APM compile step), so the *whole* file is reproducible offline
+        and compared whole — except when it is hand-authored (no
+        `SYNC_MARKER`), which `project_pi()` itself already refuses to
+        touch.
+        """
+        drifted: list[str] = []
+        for harness, rels in HARNESS_ROOT_FILES.items():
+            expected = overlay_body(self.repo, harness)
+            for rel in rels:
+                path = self.home / rel
+                if not path.is_file():
+                    continue
+                deployed = self._deployed_overlay_body(
+                    path.read_text(encoding="utf-8")
+                )
+                if deployed != expected:
+                    drifted.append(str(path))
+        pi_path = self.home / ".pi" / "agent" / "AGENTS.md"
+        if pi_path.is_file():
+            text = pi_path.read_text(encoding="utf-8")
+            if SYNC_MARKER in text:
+                core = strip_frontmatter(
+                    (self.repo / "instructions" / "global.instructions.md").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                overlay = (self.repo / "instructions" / "overlays" / "pi.md").read_text(
+                    encoding="utf-8"
+                )
+                expected_pi = f"{SYNC_MARKER}\n\n{core.strip()}\n\n{overlay.strip()}\n"
+                if text != expected_pi:
+                    drifted.append(str(pi_path))
+        return sorted(drifted)
+
     def apply_overlays(self) -> list[Path]:
         """Append each harness's overlay to its APM-compiled root file.
 
@@ -1283,6 +1361,9 @@ class Sync:
                 issues += 1
             else:
                 print(f"[ok] {path}")
+        for path in self.instructions_drift():
+            print(f"[drift] {path}: deployed content does not match the repo")
+            issues += 1
         for relative in COMPILED_ROOT_FILES:
             path = self.home / relative
             for finding in self.compiled_root_source_findings(path):
@@ -1465,6 +1546,20 @@ class Sync:
             (
                 "neutral-roster-drift",
                 (not (drift or untracked or substituted), message),
+            )
+        )
+        instructions_drift = self.instructions_drift()
+        checks.append(
+            (
+                "instructions-drift",
+                (
+                    not instructions_drift,
+                    "deployed instructions/overlays match the repo"
+                    if not instructions_drift
+                    else "deployed content does not match the repo, run "
+                    "`sync.py apply` to refresh: "
+                    + ", ".join(instructions_drift),
+                ),
             )
         )
         checks.append(

@@ -2428,3 +2428,125 @@ class SharedPathIdentityTests(SyncTestCase):
         mismatches = sync.Sync(self.repo, self.home).neutral_identity()
         self.assertEqual(len(mismatches), 1)
         self.assertIn("github-cli", mismatches[0])
+
+
+class ProjectedInstructionsDriftTests(SyncTestCase):
+    """Skills had real drift detection (`neutral_drift`/`neutral_identity`);
+    nothing compared deployed *instructions* against the repo, so a change
+    like #27's to `instructions/overlays/copilot.md` could reach `main`
+    while the deployed copy stayed stale and `status`/`doctor` stayed green
+    (#36). Mirrors #37's shape: compare deployed content against a source
+    that exists at check time, offline, with no change to `apply()`."""
+
+    def _overlay(self, name: str, body: str) -> None:
+        d = self.repo / "instructions" / "overlays"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{name}.md").write_text(body, encoding="utf-8")
+
+    def _deployed_root(self, rel: Path, overlay_text: str | None) -> Path:
+        path = self.home / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = "core instructions\n"
+        if overlay_text is not None:
+            text += (
+                "\n" + sync.OVERLAY_BEGIN + "\n\n" + overlay_text
+                + "\n\n" + sync.OVERLAY_END + "\n"
+            )
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_stale_overlay_is_reported(self) -> None:
+        """#36 reproduction: the repo's overlay moved on but the deployed
+        copy still carries the old text."""
+        self._overlay("copilot", "# Copilot Overlay\n\nnew rule.\n")
+        path = self._deployed_root(sync.HARNESS_ROOT_FILES["copilot"][0], "old rule.")
+        drifted = sync.Sync(self.repo, self.home).instructions_drift()
+        self.assertEqual(drifted, [str(path)])
+
+    def test_matching_deployment_is_silent(self) -> None:
+        self._overlay("copilot", "# Copilot Overlay\n\nthe rule.\n")
+        self._deployed_root(sync.HARNESS_ROOT_FILES["copilot"][0], "the rule.")
+        self.assertEqual(
+            sync.Sync(self.repo, self.home).instructions_drift(), []
+        )
+
+    def test_copilot_instructions_md_is_checked_independently_of_agents_md(self) -> None:
+        """Copilot reads copilot-instructions.md, not AGENTS.md — a wrapper
+        bug of exactly this kind was already caught once by an eval. A
+        fresh AGENTS.md must not mask a stale copilot-instructions.md."""
+        self._overlay("copilot", "# Copilot Overlay\n\nnew rule.\n")
+        agents_md, copilot_instructions = sync.HARNESS_ROOT_FILES["copilot"]
+        self._deployed_root(agents_md, "new rule.")
+        stale = self._deployed_root(copilot_instructions, "old rule.")
+        drifted = sync.Sync(self.repo, self.home).instructions_drift()
+        self.assertEqual(drifted, [str(stale)])
+
+    def test_never_applied_root_file_is_not_reported(self) -> None:
+        """A machine that has never run `apply` has no deployed root file
+        at all — that is `apply()`'s job to fill in, not this check's to
+        flag; `status`/`doctor` already report it as missing separately."""
+        self._overlay("copilot", "# Copilot Overlay\n\nnew rule.\n")
+        self.assertEqual(
+            sync.Sync(self.repo, self.home).instructions_drift(), []
+        )
+
+    def test_emptied_overlay_still_present_on_disk_is_reported(self) -> None:
+        """The repo's overlay was emptied (should project nothing) but the
+        deployed root file still carries the old block — a stale apply
+        that a teardown-on-next-apply would fix, and this check must not
+        stay silent about it in the meantime."""
+        self._overlay("copilot", "# Copilot Overlay\n\nIntentionally empty.\n")
+        path = self._deployed_root(sync.HARNESS_ROOT_FILES["copilot"][0], "old rule.")
+        drifted = sync.Sync(self.repo, self.home).instructions_drift()
+        self.assertEqual(drifted, [str(path)])
+
+    def _write_pi_root(self, text: str) -> Path:
+        pi_dir = self.home / ".pi" / "agent"
+        pi_dir.mkdir(parents=True, exist_ok=True)
+        path = pi_dir / "AGENTS.md"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_stale_pi_root_is_reported(self) -> None:
+        path = self._write_pi_root(f"{sync.SYNC_MARKER}\n\nstale core\n\nstale overlay\n")
+        drifted = sync.Sync(self.repo, self.home).instructions_drift()
+        self.assertEqual(drifted, [str(path)])
+
+    def test_matching_pi_root_is_silent(self) -> None:
+        core = sync.strip_frontmatter(
+            (self.repo / "instructions" / "global.instructions.md").read_text(
+                encoding="utf-8"
+            )
+        )
+        overlay = (self.repo / "instructions" / "overlays" / "pi.md").read_text(
+            encoding="utf-8"
+        )
+        self._write_pi_root(
+            f"{sync.SYNC_MARKER}\n\n{core.strip()}\n\n{overlay.strip()}\n"
+        )
+        self.assertEqual(sync.Sync(self.repo, self.home).instructions_drift(), [])
+
+    def test_hand_authored_pi_root_is_not_reported(self) -> None:
+        """No SYNC_MARKER means project_pi() itself refuses to touch the
+        file; this check must not manage what apply() would not."""
+        self._write_pi_root("hand-authored content, no marker\n")
+        self.assertEqual(sync.Sync(self.repo, self.home).instructions_drift(), [])
+
+    def test_status_reports_the_drift_as_an_issue(self) -> None:
+        self._overlay("copilot", "# Copilot Overlay\n\nnew rule.\n")
+        self._deployed_root(sync.HARNESS_ROOT_FILES["copilot"][0], "old rule.")
+        self.assertEqual(sync.Sync(self.repo, self.home).status(), 1)
+
+    def test_doctor_reports_the_drift(self) -> None:
+        self._overlay("copilot", "# Copilot Overlay\n\nnew rule.\n")
+        path = self._deployed_root(sync.HARNESS_ROOT_FILES["copilot"][0], "old rule.")
+        checks = dict(sync.Sync(self.repo, self.home).doctor_checks(env={}))
+        ok, detail = checks["instructions-drift"]
+        self.assertFalse(ok)
+        self.assertIn(str(path), detail)
+
+    def test_doctor_is_clean_when_nothing_deployed(self) -> None:
+        checks = dict(sync.Sync(self.repo, self.home).doctor_checks(env={}))
+        ok, detail = checks["instructions-drift"]
+        self.assertTrue(ok)
+        self.assertIn("match the repo", detail)
