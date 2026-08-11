@@ -1,0 +1,59 @@
+Harness: Claude (Sonnet, general-purpose subagent, model=haiku tier)
+Prompt: prompt-adversarial.txt
+
+---
+
+# Documentation Layout Review: The Five-Way Split Is Unwarranted
+
+**The core problem:** The five-way split is cargo cult architecture—an accretion, not a design. Adopting it would degrade the coherence of agent-dotfiles and create busywork for agent-evals.
+
+## Why This Pattern Fails
+
+**1. It breaks the information graph.** agent-dotfiles's current layout reveals that these are 12 tightly coupled documents describing one system. PRD.md pairs with SPEC.md. The provenance-manifest.md cites and cross-references multiple other files. hierarchy-naming-57.md leads to naming decisions embedded in SPEC.md. The project's test suite (`test_cross_repo_references.py`) validates these links—a design choice reflecting the fact that interdependence is a feature, not a bug. Scattering files into `docs/decisions/`, `docs/architecture/`, `docs/product/` hides these relationships and signals they're independent when they're not.
+
+**2. It imposes retrospective labels on a system not designed for categorization.** Where does SPEC.md live? It's architecture *and* reference. Is provenance-manifest.md a decision or a reference? Is hierarchy-naming-57.md a decision, research artifact, or policy? The categories don't fit; they're imposed. The current flat layout doesn't lie—it admits ambiguity. The split forces false certainty.
+
+**3. The scale argument collapses.** The fifth repo emerged from 26 decision files and 22 runbooks—an order of magnitude larger. agent-dotfiles has 12 files. That's not a scale problem; it's a search problem that subdirectories don't solve (grep or an index does). agent-evals is *one file*. Splitting one file into a directory structure is peak absurdity.
+
+**4. It orphans cross-reference validation.** The project runs tests that check links and citations. A split risks breaking these checks or making them fragile—now tests must know about 5+ locations instead of 1. The flat layout makes the validation cheap; the split makes it a maintenance burden.
+
+**5. It signals false independence.** Flat docs/ with a TOC (or frontmatter tags in each file) says "these are related, explore as a unit." A split into 5 directories says "these are separate concerns that live in separate places." That's false here.
+
+## Proposed Alternative
+
+Keep both repositories' layouts flat. Add structure via:
+
+1. **docs/README.md** (or docs/INDEX.md): A navigation guide grouping files by reader concern, linking PRD→SPEC, showing that migration-audit.md and hierarchy-naming-57.md are decision artifacts, etc.
+2. **Frontmatter in each .md**: Title, audience, related-files (array), topic-tags.
+3. **Validation**: Extend test suite to check that related-files references exist and are bidirectional.
+4. **Git history as narrative**: Major decisions and their evolution live in commit history—that's what version control is for.
+
+## Concrete Layout for agent-dotfiles
+
+```
+docs/
+  INDEX.md                      # Navigation guide; links files by reader intent
+  PRD.md                        # Product requirements (links to SPEC.md)
+  SPEC.md                       # Technical design (links to PRD.md, policy docs)
+  handoff.md                    # Living "current state"
+  harness-engineering.md        # Deployment model
+  loop-engineering.md           # Unattended work pattern
+  memory.md                     # Memory vault contract
+  migration-audit.md            # Decision artifact
+  provenance-manifest.md        # Decision ledger (links to policy docs)
+  supervisor-disposition.md     # Comparison doc (decision artifact)
+  work-tracking.md              # Issue tracker scope
+  agent-engineering-lineage.md  # Glossary
+  hierarchy-naming-57.md        # Research leading to decision (links to SPEC.md)
+```
+
+## Concrete Layout for agent-evals
+
+```
+docs/
+  evals.md                      # One file; no split until this grows
+```
+
+**Bottom line:** The five-way split optimizes for some hypothetical future state where agent-dotfiles has 50+ docs with minimal overlap. It sacrifices clarity and cross-reference integrity for a problem that doesn't exist. The flat layout with an index and frontmatter solves the real problems (navigation, grouping, change discovery) without the overhead.
+
+(subagent_tokens: 22172, duration_ms: 25195)

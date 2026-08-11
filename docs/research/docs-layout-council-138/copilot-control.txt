@@ -1,0 +1,20 @@
+**Verdict: No, for both.**
+
+**agent-dotfiles / agent-evals: don't adopt the five-way split.**
+
+The fifth repo's category split is a symptom, not a design — it "accreted" from an agent writing one file at a time with no taxonomy in mind, and even its author only cites it as the origin of a *question*, not a recommendation. A split into architecture/decisions/product/runbooks/reference is optimized for a repo with dozens of files needing browsable buckets (4+26+2+22+7 = 61 files). agent-dotfiles has 12 files and agent-evals has 1. Imposing five subdirectories on 12 files (mean ~2.4 files/folder) adds navigation overhead without solving a real discoverability problem — flat docs/ with descriptive filenames already lets someone `ls docs/` and read the whole map in seconds.
+
+More importantly, agent-dotfiles' files don't cleanly map onto that taxonomy. Several are cross-cutting by design: `supervisor-disposition.md` is explicitly a non-decision (a comparison that "does not pick a winner") — it's neither `decisions/` nor pure `architecture/`. `hierarchy-naming-57.md` is research-then-application-then-decision in one document — splitting it would fragment a single argument across three folders. `handoff.md` is a living doc that's rewritten, not archival — it doesn't fit `decisions/` (append-only ledger) or `reference/` (stable). Forcing these into the fifth repo's bins would misfile more than it clarifies, and agent-evals' single file obviously needs no taxonomy at all.
+
+If growth ever justifies revisiting this, do it by demonstrated need (e.g., decisions genuinely accumulating as an append-only ledger — `provenance-manifest.md` and `migration-audit.md` already function that way informally) rather than pre-adopting a structure that arose by accident elsewhere.
+
+**skills / skills-private: don't add a docs/ directory.**
+
+Both are narrowly scoped as skill-content collections (AGENTS.md, README.md, scripts/, skills/, tests/) with no docs/ today. AGENTS.md and README.md already carry whatever contributor/usage documentation such a repo needs. Adding a docs/ tree — let alone a five-category one built for a much larger, differently-shaped repo — would import structure with no corresponding content, inviting empty or near-empty folders and taxonomy debates before there's any documentation to organize. If either repo later develops product/architecture-level docs beyond what a top-level README can hold, start flat (as agent-dotfiles and agent-evals do) and only subdivide when file count and category friction actually demand it.
+
+
+
+Changes    +0 -0
+AI Credits 9.02 (15s)
+Tokens     ↑ 32.4k (32.4k written) • ↓ 923 (31 reasoning)
+Resume     copilot --resume=79124e7d-a82e-4bcf-94c8-711f42b1782d

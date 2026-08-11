@@ -1,0 +1,28 @@
+Harness: Claude (Sonnet, general-purpose subagent, model=haiku tier)
+Prompt: prompt-blind.txt
+
+---
+
+**1. Subdivide dir-a into five categories:**
+
+- **decisions/** – doc-4 (deployment boundary decision), doc-8 (ongoing decision ledger), doc-9 (comparative analysis to inform decisions)
+- **operations/** – doc-3 (current operational state), doc-5 (recurring procedure guidelines)
+- **specifications/** – doc-2 (technical design spec), doc-6 (subsystem data contract)
+- **governance/** – doc-1 (project charter/ownership), doc-10 (tracker scope and authority)
+- **research/** – doc-7 (migration audit trail), doc-11 (external vocabulary reference), doc-12 (external research + validation + naming)
+
+Grouping rationale: These collections serve distinct purposes in the project lifecycle. Decisions are live records requiring evidence and updates; operations are runbooks; specifications are contracts; governance defines authority; research is investigation and reference. A reader looking for "how do we decide things here" or "what are the current procedures" benefits from not scanning all twelve documents.
+
+**2. Keep dir-b flat.**
+
+One document remains flat. No subdivision needed.
+
+**3. No documentation holding area for dir-c and dir-d.**
+
+Both are pure-content repositories. They already have README and contributor instructions. Until there is actual content to organize (design rationale, decision records, research on subsystem comparisons, etc.), creating an empty `docs/` folder is premature and signals documentation that doesn't exist. When such documents emerge—from design reviews, architectural decisions, or investigations—create the area then.
+
+**4. Subdivision threshold: 5–6 documents.**
+
+1–3 documents remain flat; readers can scan a short list quickly. At 4–5, flat still works but grouping starts paying dividends. By 6–8, flat becomes a usability cost; readers must remember *which* document answers their question. At 12, subdivision is essential. The threshold depends on document similarity: twelve similar runbooks could stay flat; twelve mixed-purpose documents (as in dir-a) must subdivide.
+
+(subagent_tokens: 22181, duration_ms: 17295)

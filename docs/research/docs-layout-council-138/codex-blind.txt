@@ -1,0 +1,108 @@
+OpenAI Codex v0.147.0
+--------
+workdir: /private/tmp/council138
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: low
+reasoning summaries: none
+session id: 019ff21e-20f1-70f3-a90a-c9cfcba2d327
+--------
+user
+You are designing a documentation directory layout from scratch. Below are four content collections, each belonging to a different software repository. Directory and repository names have been replaced with neutral labels so you must reason from the content of each document, not from recognizing a familiar naming convention.
+
+REPO dir-a — one flat holding area, 12 documents:
+- doc-1 (307 lines) — states requirements/goals for the whole project; who owns it, what it supersedes
+- doc-2 (1037 lines) — technical design spec; tracks implementation status, milestones, open items
+- doc-3 (378 lines) — "living document, rewritten not appended to"; current state as of a specific date; has a banner marking part of it stale
+- doc-4 (124 lines) — records a deployment model and boundaries decided after a dated investigation; cites commit hashes as evidence
+- doc-5 (336 lines) — position on how to run a specific recurring kind of work; explicitly a "sibling" to doc-4; distilled from an external, unversioned research corpus
+- doc-6 (54 lines) — a short contract for one subsystem (where its data lives, what governs it)
+- doc-7 (31 lines) — audit table recording historical selection decisions made during a one-time migration; author notes what was and was not migrated
+- doc-8 (87 lines) — successor to doc-7; ongoing decision ledger (adopt/adapt/author/reject) with sources, closed only by evidence in a separate test-results directory
+- doc-9 (451 lines) — a comparison of two subsystems, written to be "decide-ready" for a human; explicitly does not pick a winner
+- doc-10 (117 lines) — defines what the issue tracker is and, explicitly, what it is not; says two other documents are canonical over it
+- doc-11 (224 lines) — a glossary of external vocabulary with citations; explicitly "not a methodology"
+- doc-12 (393 lines) — a research document: external research first, then checked against this project's own behavior, then a naming decision at the end
+
+REPO dir-b — one flat holding area, 1 document:
+- doc-13 (229 lines) — defines what a test suite measures and its selection rule for what gets tested
+
+REPO dir-c — no such holding area at all. Contains only: agent-instructions file, contributor-instructions file, README, a scripts folder, a content folder (the product itself — reusable skill definitions), a tests folder.
+
+REPO dir-d — same shape as dir-c: no holding area, agent-instructions file, README, scripts folder, content folder, tests folder.
+
+QUESTIONS:
+1. For dir-a: would you group these 12 documents into subdirectories, or keep them in one flat list? If you would subdivide, propose category names based on what you see above (not on any convention you might recognize) and assign each doc-N to one.
+2. For dir-b, at 1 document: subdirectories or flat?
+3. For dir-c and dir-d: should they have a documentation holding area at all, given they contain no docs currently and are pure content repositories?
+4. At what document count would your answer to #1 change?
+
+Under 500 words.
+
+codex
+1. **dir-a: subdivide.** Twelve documents is enough that a flat list will hide intent, especially because the documents are not all the same kind. I would group by decision function, not by repo convention:
+
+- **project-direction**
+  - doc-1: project requirements/goals, ownership, supersession
+  - doc-3: living current-state document with stale banner
+  - doc-10: issue tracker definition and boundaries
+
+- **architecture-decisions**
+  - doc-4: deployment model and boundaries from investigation
+  - doc-5: recurring work model, sibling to doc-4
+  - doc-6: subsystem contract
+  - doc-12: external research plus project behavior check plus naming decision
+
+- **implementation-planning**
+  - doc-2: technical design spec with status, milestones, open items
+
+- **migration-and-selection-records**
+  - doc-7: historical one-time migration selection audit
+  - doc-8: successor ongoing decision ledger
+
+- **research-and-comparisons**
+  - doc-9: decide-ready comparison that does not choose
+  - doc-11: cited external vocabulary glossary, explicitly not methodology
+
+There is some overlap, especially doc-12 and doc-9. I would place doc-12 under decisions because it ends in a naming decision; doc-9 stays in research because it deliberately stops before deciding.
+
+2. **dir-b: keep flat.** One document does not justify a directory taxonomy. A single holding area with doc-13 is clearer than a premature category.
+
+3. **dir-c and dir-d: no documentation holding area yet.** If the repositories currently contain only instructions, README, scripts, product content, and tests, adding an empty docs area creates structure without evidence. The README and contributor/agent instructions are enough until there are actual long-form docs to house.
+
+4. **Threshold:** my answer changes around **6 to 8 substantial documents**, or earlier if there are clearly different document jobs: requirements, decisions, research, migration records, specs, operations. At 12 docs with mixed lifecycle and authority, I would definitely subdivide.
+tokens used
+13,705
+1. **dir-a: subdivide.** Twelve documents is enough that a flat list will hide intent, especially because the documents are not all the same kind. I would group by decision function, not by repo convention:
+
+- **project-direction**
+  - doc-1: project requirements/goals, ownership, supersession
+  - doc-3: living current-state document with stale banner
+  - doc-10: issue tracker definition and boundaries
+
+- **architecture-decisions**
+  - doc-4: deployment model and boundaries from investigation
+  - doc-5: recurring work model, sibling to doc-4
+  - doc-6: subsystem contract
+  - doc-12: external research plus project behavior check plus naming decision
+
+- **implementation-planning**
+  - doc-2: technical design spec with status, milestones, open items
+
+- **migration-and-selection-records**
+  - doc-7: historical one-time migration selection audit
+  - doc-8: successor ongoing decision ledger
+
+- **research-and-comparisons**
+  - doc-9: decide-ready comparison that does not choose
+  - doc-11: cited external vocabulary glossary, explicitly not methodology
+
+There is some overlap, especially doc-12 and doc-9. I would place doc-12 under decisions because it ends in a naming decision; doc-9 stays in research because it deliberately stops before deciding.
+
+2. **dir-b: keep flat.** One document does not justify a directory taxonomy. A single holding area with doc-13 is clearer than a premature category.
+
+3. **dir-c and dir-d: no documentation holding area yet.** If the repositories currently contain only instructions, README, scripts, product content, and tests, adding an empty docs area creates structure without evidence. The README and contributor/agent instructions are enough until there are actual long-form docs to house.
+
+4. **Threshold:** my answer changes around **6 to 8 substantial documents**, or earlier if there are clearly different document jobs: requirements, decisions, research, migration records, specs, operations. At 12 docs with mixed lifecycle and authority, I would definitely subdivide.

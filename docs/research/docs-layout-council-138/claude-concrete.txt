@@ -1,0 +1,20 @@
+Harness: Claude (Sonnet, general-purpose subagent, model=haiku tier)
+Prompt: prompt-concrete.txt
+
+---
+
+1. **Stay at docs/ top level.** The 2026-07-13 removal of docs/research/ explicitly flattened the structure by distilling subdivided content into living top-level docs; reintroducing subdirectories reverses that precedent.
+
+2. **Stay at docs/ top level.** Precedent: agent-dotfiles keeps historical and reference material flat (not segregated). Migration-audit remains as a companion to provenance-manifest at the same level.
+
+3. **Stay at docs/ top level.** Precedent: the flat structure is established. Reference/glossary content is not cordoned into docs/reference/ in this repo, and the 2026-07-13 removal suggests avoiding subdivision.
+
+4. **Stay in agent-evals/docs/.** Single files live efficiently at top level. No action needed; this is already at the appropriate level of organization.
+
+5. **skills and skills-private should NOT gain docs/ directories.** The 2026-08-09 removal was deliberate and strategic — these repos are "standalone public skill collections," not documentation projects. The removal stripped "agent-dotfiles harness machinery" to focus on skill content alone. Flip only if: the mission shifts to become documentation+skills projects instead of skills-only, or if embedded documentation in the skills themselves proves insufficient and a formal docs/ layer becomes necessary to organize reference or runbook material *native to skill authoring* (not harness machinery).
+
+6. **Reintroducing subdirectories contradicts precedent.** The 2026-07-13 removal of docs/research/ was explicit: its content was "distilled into living documentation" at the flat level. The commit title ("Finish v1 PRD and acceptance") frames this as a maturation decision — moving from exploratory subdivisions to stable, flat canonical docs. Reversing this direction now would contradict that closure, unless a new class of material emerges (e.g., agent-eval methodology docs) that genuinely does not fit the current flat model. The pattern in the fifth repo (architecture, decisions, product, runbooks, reference) is cited as "accreted" — unintentional — not a model to adopt here.
+
+**Summary:** agent-dotfiles established a deliberate flat structure in July 2026 by consolidating and removing research subdivisions. Consistency argues for keeping it flat and not reintroducing subdirectories. The skills repos removed docs/ entirely for the same reason — focus. agent-evals' single file is already optimal. The flat structure is the operative precedent, not the five-way split in the unrelated repo.
+
+(subagent_tokens: 22464, duration_ms: 20307)
