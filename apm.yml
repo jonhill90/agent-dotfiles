@@ -7,20 +7,24 @@ description: >-
   thin sync wrapper (see docs/SPEC.md).
 dependencies:
   apm:
-    # Candidate public skills collection (jonhill90/skills#127, not yet
-    # merged). Pinned to that PR branch's head commit rather than the
-    # branch name: a branch ref moves, and #9 requires a reproducible,
-    # independently-verifiable pin. Bump this SHA (and re-verify) once
-    # #127 merges to main, then again on every subsequent skill change.
+    # Public skills collection. Pinned to a commit rather than a branch
+    # name: a branch ref moves, and #9 requires a reproducible,
+    # independently-verifiable pin. Bump this SHA (and re-verify) on every
+    # subsequent skill change.
+    #
+    # This comment previously said "jonhill90/skills#127, not yet merged"
+    # and instructed a bump once it merged. #127 merged on 2026-08-10; the
+    # pin sat at that PR branch's head for the rest of the day, so the
+    # instruction outlived the condition it described (#20).
     - git: https://github.com/jonhill90/skills.git
-      ref: 069e2c475e875be1c23a31e7f5da08ffd58d655a
+      ref: 0ebaf91e6b2adc7ab2ac6e9aa86c8ddb099afd94
       skills: ["*"]
       alias: skills-public
     # Private companion collection (#9). Pinned the same way. Currently
     # carries one harmless, non-rostered fixture (source-probe) proving
     # authenticated resolution; see skills-private's own PR.
     - git: https://github.com/jonhill90/skills-private.git
-      ref: b203b1ebf2c2eb35808443ba76cd22aadecf76e7
+      ref: 6c19c64dddd0681cb36f7f7ae5bde7ae8dcbdec7
       skills: ["*"]
       alias: skills-private
   mcp: []

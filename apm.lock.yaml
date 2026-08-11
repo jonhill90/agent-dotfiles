@@ -1,24 +1,24 @@
 lockfile_version: '1'
-generated_at: '2026-08-10T01:00:32.283090+00:00'
+generated_at: '2026-08-11T03:05:01.051408+00:00'
 apm_version: 0.24.1
 dependencies:
 - repo_url: jonhill90/skills
   name: skills-public
   host: github.com
-  resolved_commit: 069e2c475e875be1c23a31e7f5da08ffd58d655a
-  resolved_ref: 069e2c475e875be1c23a31e7f5da08ffd58d655a
+  resolved_commit: 0ebaf91e6b2adc7ab2ac6e9aa86c8ddb099afd94
+  resolved_ref: 0ebaf91e6b2adc7ab2ac6e9aa86c8ddb099afd94
   version: 0.0.0
   package_type: skill_bundle
-  content_hash: sha256:370863ff14829c45d4fd8d48aebf9e9702800fc016ed081988703e15020ff48d
+  content_hash: sha256:e6893514ab32e3b51da81ce0a90cccfa62fc0d8cd5bae420d019eb3db1bce15a
   skill_subset:
   - '*'
 - repo_url: jonhill90/skills-private
   name: skills-private
   host: github.com
-  resolved_commit: b203b1ebf2c2eb35808443ba76cd22aadecf76e7
-  resolved_ref: b203b1ebf2c2eb35808443ba76cd22aadecf76e7
+  resolved_commit: 6c19c64dddd0681cb36f7f7ae5bde7ae8dcbdec7
+  resolved_ref: 6c19c64dddd0681cb36f7f7ae5bde7ae8dcbdec7
   version: 0.0.0
   package_type: skill_bundle
-  content_hash: sha256:ecf751ea01dd9737a05f0bf1f7c7b7794d1e07649c13c484bc9f2e10d2a705e0
+  content_hash: sha256:411bf1cfc72b536f13ef207375cbed9aeabbcf52e424591d3401a3236efe3985
   skill_subset:
   - '*'
