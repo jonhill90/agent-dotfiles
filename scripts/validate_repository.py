@@ -59,6 +59,11 @@ DEFAULT_APM_SKILLS = {
     "obsidian",
     "safe-deletion",
     "tmux",
+    "close-the-loop",
+    "dispatching-subagents",
+    "primer",
+    "sanity-check",
+    "supervised-lane-loop",
 }
 # Retired at M3: installer-owned projection (APM + scripts/sync.py)
 # replaced the committed symlink matrix. Their presence is now an error.

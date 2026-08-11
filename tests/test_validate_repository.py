@@ -219,20 +219,27 @@ class StaticContextBudgetTests(unittest.TestCase):
 
 
 class ApmPackageRosterTests(unittest.TestCase):
-    def test_benched_skills_are_not_in_default_apm_package(self) -> None:
+    def test_unrecognised_skills_are_rejected_from_default_apm_package(self) -> None:
+        # The roster file and DEFAULT_APM_SKILLS are a two-place assertion;
+        # this proves they cannot drift apart silently.
+        #
+        # The canary used to be "primer", which broke the moment primer was
+        # rostered on 2026-08-10 — the test asserted a specific bench
+        # membership rather than the drift property it exists to protect.
+        # A synthetic name cannot be rostered, so it cannot rot the same way.
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             settings = root / "settings"
             settings.mkdir()
             (settings / "default-skills.txt").write_text(
-                "\n".join(sorted(validator.DEFAULT_APM_SKILLS | {"primer"}))
+                "\n".join(sorted(validator.DEFAULT_APM_SKILLS | {"not-a-real-skill"}))
             )
 
             findings = validator.validate_apm_skill_roster(root)
 
         self.assertTrue(
             any(
-                "unexpected default-package skills: primer" in finding.message
+                "unexpected default-package skills: not-a-real-skill" in finding.message
                 for finding in findings
             )
         )
