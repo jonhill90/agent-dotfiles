@@ -14,10 +14,11 @@ as alternatives. The decision in front of Jon is therefore narrower than
 
 Every number below was produced by running a command in a disposable worktree
 at `34f0cc3` (`feat(watchdog): say when the live copy is behind main (#100)`)
-on 2026-08-11, or by reading a file, and is labelled **measured**. Anything
-labelled **inferred** is arithmetic, a reading of code that was not executed,
-or a prediction. Per `AGENTS.md`, no figure here is quoted for a set that was
-not enumerated.
+on 2026-08-11, or by reading a file, and is labelled **measured** — except
+where a figure names a different commit inline, which §5.B does for the greps
+added after that pin. Anything labelled **inferred** is arithmetic, a reading
+of code that was not executed, or a prediction. Per `AGENTS.md`, no figure
+here is quoted for a set that was not enumerated.
 
 Read-only on behaviour, as the brief required: `cli.py tick`, `sensor`,
 `assign`, `notify` and `reconstruct` were never run. `--help` and `status`
@@ -279,8 +280,8 @@ pass the assignment gate (§2.1).**
   gating, and attention"; `docs/PRD.md`'s ACP boundary row, which cites §15
   while restating that same claim; and `docs/loop-engineering.md`, which
   cites both §14 and §15 and additionally names "the v5 ledger" directly as
-  part of the estate's durability story (lines 37-39, 43, 137). Deleting the
-  ledger without amending all four leaves canonical docs describing a
+  part of the estate's durability story (lines 33, 37-39, 43, 137). Deleting
+  the ledger without amending all four leaves canonical docs describing a
   component that does not exist. **This is the hidden cost of the delete
   path** and it is not optional — closer to a small doc-consistency pass
   across two SPEC sections and two downstream documents than to amending one
@@ -294,23 +295,62 @@ pass the assignment gate (§2.1).**
 
 ### B. Adopt the ledger; retire the shell path
 
-Everything below is **inferred** from reading the code; none of it was
-attempted.
+The documentation-amendment cost below — the one #109 found undercounted on
+path A — is **measured**, and is stated here rather than under the inferred
+material that follows it.
 
-- **Documentation-amendment cost, checked for the same defect as path A:
-  none found.** `docs/SPEC.md`, `docs/PRD.md` and `docs/loop-engineering.md`
-  never name any of the eight shell-supervisor files (`watchdog.sh`
-  `lanes.sh` `dispatch.sh` `claim.sh` `notify.sh` `inbox.sh` `worktree.sh`
-  `director-inbox.sh`) or the phrase "shell supervisor" (**measured**,
-  `grep -n -i "watchdog\|dispatch.sh\|lanes.sh\|claim.sh\|shell supervisor"
-  docs/SPEC.md docs/PRD.md docs/loop-engineering.md` — no hits). The
-  cooperative `tmux wait-for` mechanism SPEC §14.1 and §14.3's fast-path row
-  describe lives in `scripts/supervisor/lane-done.sh`, which is neither one
-  of the eight nor the ledger's (**measured**, `grep -rln "wait-for"
-  scripts/supervisor/*.sh` → only `lane-done.sh`; §2 already establishes the
-  ledger has none). Retiring the shell path therefore does not leave any
-  canonical doc describing a component that no longer exists, unlike
-  deleting the ledger.
+- **At the name level, nothing to amend.** No canonical doc names any of the
+  eight shell-supervisor files — `watchdog.sh` `lanes.sh` `dispatch.sh`
+  `claim.sh` `notify.sh` `inbox.sh` `worktree.sh` `director-inbox.sh`, the
+  inventory *as #16 lists it* — nor the phrase "shell supervisor"
+  (**measured** at `1112b9b`, and re-run against this paper's `34f0cc3` pin
+  with the same result: no hits, exit 1). All eight names are in the command,
+  so the command establishes the claim:
+
+  ```sh
+  grep -n -i "watchdog\|lanes\.sh\|dispatch\.sh\|claim\.sh\|notify\.sh\|inbox\.sh\|worktree\.sh\|director-inbox\.sh\|shell supervisor" \
+    docs/SPEC.md docs/PRD.md docs/loop-engineering.md
+  ```
+
+  Path A's four citations are all name-level citations of "the ledger"; path
+  B has no citation of that kind to amend.
+- **At the level path A was actually charged with, two rows of SPEC §14.3.**
+  The grep above answers *"does a doc say `watchdog.sh`?"* #109's finding was
+  about the harder question — *"does a doc describe a component that would no
+  longer exist?"* — and §6's own table answers it for two rows of the same
+  §14.3 table whose third row is what makes the ledger a path-A cost:
+  - **Backstop** (`docs/SPEC.md:1003`, "Cron as a dead-man stall detector"):
+    §6 maps this row to `watchdog.sh` + the LaunchAgent, and `watchdog.sh` is
+    one of the eight. Retire the shell path and the row describes a layer
+    with no implementation.
+  - **Fast path** (`docs/SPEC.md:1000`, backgrounded cooperative `wait-for`):
+    §6 maps this row to `loop-tick.md:45`. The mechanism itself lives in
+    `scripts/supervisor/lane-done.sh` (**measured**, `grep -rln "wait-for"
+    scripts/supervisor/*.sh` → only that file; §2 establishes the ledger has
+    none), which is in neither column — but its only non-test caller in the
+    tree is `scripts/supervisor/loop-tick.md`, the shell supervisor's own
+    loop (**measured**, `grep -rn "lane-done" .`). Retire the shell path and
+    `lane-done.sh` either goes with it or survives as a script nothing calls,
+    which is §7.3's named defect family. Either way `docs/SPEC.md:979-981`
+    ("That is the entire mechanism in active use today") is left describing
+    something that is not.
+
+  **Stated plainly, because it moves the comparison:** path B's amendment
+  cost is two rows of one SPEC table, against path A's four locations across
+  three documents. Still the smaller of the two — but not zero, and the gap
+  between the paths is narrower than the name-level grep alone would suggest.
+  Reading that grep as *"path B has no amendment cost"* is the same undercount
+  #109 caught on path A, pointing the other way.
+- **On "the eight":** that is #16's inventory, not the directory. At
+  `1112b9b`, `scripts/supervisor/` holds **11** `.sh` files (**measured**,
+  `ls -1 scripts/supervisor/*.sh`); `advance-live.sh`, `would-revert.sh` and
+  `lane-done.sh` all post-date #16's list. Retiring "the shell path" and
+  retiring "the eight" are different acts, and both bullets above turn on the
+  difference.
+
+Everything below this line is **inferred** from reading the code; none of it
+was attempted.
+
 - A `hill90-supervisor`-equivalent entry point has to exist, be installed, and
   be named something this repository owns.
 - Every dispatchable issue needs a hand-authored marker in its body, or the
