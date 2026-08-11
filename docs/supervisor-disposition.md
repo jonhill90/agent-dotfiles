@@ -271,10 +271,20 @@ pass the assignment gate (§2.1).**
 - **Loses:** 2,137 lines and 81 passing tests, including the two properties
   the ledger genuinely owns — non-resendable ambiguous delivery, and
   ownership-safe completion — plus the only ACP transport in the estate.
-- **Requires:** amending `docs/SPEC.md` §14.3, which names "the v5 ledger" as
-  the layer that addresses L2 and L4. Deleting it without amending §14.3
-  leaves the SPEC describing a component that does not exist. **This is the
-  hidden cost of the delete path** and it is not optional.
+- **Requires:** amending every canonical citation of "the ledger" as the
+  durability layer, not just one. That is at least four locations: `docs/SPEC.md`
+  §14.3, which names "the v5 ledger" as the layer that addresses L2 and L4;
+  `docs/SPEC.md` §15, which independently and canonically asserts "the
+  portable core owns the ledger, ownership-safe transitions, assignment
+  gating, and attention"; `docs/PRD.md`'s ACP boundary row, which cites §15
+  while restating that same claim; and `docs/loop-engineering.md`, which
+  cites both §14 and §15 and additionally names "the v5 ledger" directly as
+  part of the estate's durability story (lines 37-39, 43, 137). Deleting the
+  ledger without amending all four leaves canonical docs describing a
+  component that does not exist. **This is the hidden cost of the delete
+  path** and it is not optional — closer to a small doc-consistency pass
+  across two SPEC sections and two downstream documents than to amending one
+  section.
 - **Gains:** the estate's largest instance of its own named defect family
   disappears, and `scripts/supervisor/` starts describing only what runs.
 - **Guardrail:** `AGENTS.md` and `safe-deletion` both require looking before
