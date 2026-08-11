@@ -1,0 +1,46 @@
+# The five-way split is an artifact, not a design
+
+**It wasn't designed — it accreted.** The prompt says so directly: nobody chose this taxonomy; an agent built the repo file-at-a-time over months and the categories are whatever fell out of that process. A pattern with no author has no rationale you can interrogate. "It exists" is not evidence it's correct — it's evidence of path dependence. Citing it as a "candidate convention" backdates intent onto an accident.
+
+**The category boundaries are already failing in the source repo.** `product/` requires an explicit "Historical" banner on both its files — meaning the folder name is actively lying about current relevance and needs a patch on every file to correct it. `decisions/` has 26 files with no visible decision about *when* a decision graduates out of "decision" into "architecture" or "reference" — so it's a bucket that grows by inertia, sorted by genre-of-origin, not by ongoing utility. That's the definition of an unexamined artifact.
+
+**It solves a scale problem agent-dotfiles and agent-evals don't have.** Five directories exist to subdivide 61 files. agent-evals has *one file*. Giving it `docs/architecture/`, `docs/decisions/`, `docs/product/`, `docs/runbooks/`, `docs/reference/` to hold a single 229-line file is pure ceremony — five empty folders as a monument to a taxonomy that has nothing to sort.
+
+**agent-dotfiles' 12 files don't actually map onto those five buckets cleanly.** Try it: `supervisor-disposition.md` is explicitly *undecided* ("does not pick a winner") — is that `decisions/`? No — a decision folder holding a non-decision corrupts the folder's one invariant. `migration-audit.md` and `hierarchy-naming-57.md` are historical-audit-then-decision hybrids — neither `decisions/` nor `reference/` cleanly. `handoff.md` is explicitly *living* and rewritten, the opposite of every other genre here (append-only decisions, static specs) — no bucket in the five-way split is designed to hold a document whose entire nature is "not accumulating." Forcing these in means renaming reality to fit borrowed folders, backwards from good design.
+
+**skills/ and skills-private/ prove docs/ subdivision isn't even universal for this owner.** They have *no* docs/ directory at all — because they're pure content repos where AGENTS.md/README.md suffice. Importing a 5-folder docs taxonomy into agent-dotfiles while its sibling repos have zero docs/ folders creates inconsistency across the owner's own repos in the name of consistency with an unrelated fifth repo.
+
+**Better alternative — sort by document *behavior*, not by genre-of-origin, since agent-dotfiles' real fault line is living vs. append-only vs. static:**
+
+```
+agent-dotfiles/
+  docs/
+    current/
+      handoff.md
+    design/
+      PRD.md
+      SPEC.md
+      harness-engineering.md
+      loop-engineering.md
+      memory.md
+      work-tracking.md
+      loop-engineering.md
+    decisions/
+      provenance-manifest.md
+      supervisor-disposition.md      # keep it here but note "unresolved" in its own header, don't fake a verdict
+    research/
+      migration-audit.md
+      agent-engineering-lineage.md
+      hierarchy-naming-57.md
+
+agent-evals/
+  docs/
+    evals.md          # stays flat — one file needs no taxonomy
+```
+
+
+
+Changes    +0 -0
+AI Credits 9.31 (18s)
+Tokens     ↑ 32.5k (32.5k written) • ↓ 1.2k
+Resume     copilot --resume=8c327b1b-bf45-4376-a17b-1b07f1e8b496

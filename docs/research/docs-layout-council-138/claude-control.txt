@@ -1,0 +1,26 @@
+Harness: Claude (Sonnet, general-purpose subagent, model=haiku tier)
+Prompt: prompt-control.txt
+
+---
+
+# Verdict: No adoption recommended at this time.
+
+The five-way split in repo 5 is not a suitable model for agent-dotfiles and agent-evals because it is accidental, not deliberate, and solves a scale problem neither currently has.
+
+**Evidence against adoption:**
+
+1. **Unintentional origin.** The fifth repo's structure "accreted while an AI coding agent built the repo, one file at a time"—it was not designed. Prescribing accidental layout to other repos inverts the causal logic: you should split structure only when you have demonstrated friction, not copy someone else's post-hoc solution.
+
+2. **Premature categorization.** agent-dotfiles has 12 files; the fifth repo has 61 spread across five directories. The navigation problem does not exist in agent-dotfiles yet. Introducing a split now adds friction (deeper paths, more cognitive overhead finding a file) without solving a real problem.
+
+3. **Self-describing filenames.** agent-dotfiles already uses semantic naming: `hierarchy-naming-57.md` clearly signals "decision about naming," `provenance-manifest.md` is obviously a decision ledger, `loop-engineering.md` names its purpose. The flat structure is navigable because names carry meaning. This is superior to burying `hierarchy-naming-57.md` in `docs/decisions/` and losing the specificity.
+
+4. **agent-evals is mono-document.** A single file (`evals.md`) has no categorization problem. A `docs/` split is not just premature; it is actively hostile to minimal repos.
+
+5. **skills and skills-private are content libraries.** They contain skill definitions and tests, not architectural or design documentation. Adding a `docs/` directory would be organizational cargo cult—repos without a narrative documentation need have no reason to acquire one.
+
+**Correct timing:** Reorganize when you hit one of these thresholds: 30+ files in flat docs/, demonstrated difficulty finding documents, or stakeholder feedback that the structure is hard to navigate. Until then, flat structure with semantic filenames is simpler and more durable.
+
+**If agent-dotfiles ever grows:** Design the split intentionally for its specific needs—decision artifacts separate from research, perhaps—rather than copying the accidental pattern.
+
+(subagent_tokens: 22069, duration_ms: 19139)

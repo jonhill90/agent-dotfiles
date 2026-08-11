@@ -1,0 +1,33 @@
+You are reviewing documentation layout across a set of related repositories. Read the corpus below, then answer.
+
+Four related git repositories, all owned by the same person, are being reviewed for documentation layout.
+
+REPO agent-dotfiles — flat docs/, 12 files, all at top level under docs/:
+- PRD.md (307 lines) — product requirements
+- SPEC.md (1037 lines) — technical design spec
+- handoff.md (378 lines) — living "current state" doc, rewritten not appended to
+- harness-engineering.md (124 lines) — deployment model / harness boundaries
+- loop-engineering.md (336 lines) — position doc on running unattended agent work
+- memory.md (54 lines) — memory vault contract
+- migration-audit.md (31 lines) — historical audit of a skill migration, table of decisions
+- provenance-manifest.md (87 lines) — decision ledger (adopt/adapt/author/reject) citing sources
+- supervisor-disposition.md (451 lines) — decide-ready comparison of two subsystems, "does not pick a winner"
+- work-tracking.md (117 lines) — defines the issue tracker and what it is not
+- agent-engineering-lineage.md (224 lines) — glossary/reference of external vocabulary with citations
+- hierarchy-naming-57.md (393 lines) — research doc: external research, then applied to this repo, then a naming decision
+
+REPO agent-evals — flat docs/, 1 file:
+- evals.md (229 lines) — defines what the eval suite measures
+
+REPO skills — NO docs/ directory. Top level: AGENTS.md, CLAUDE.md, README.md, scripts/, skills/, tests/. It is a public collection of skill content only.
+
+REPO skills-private — NO docs/ directory. Top level: AGENTS.md, README.md, scripts/, skills/, tests/. Same shape as skills, private/authenticated.
+
+A fifth, related repo (not in scope for this review, cited only as the origin of the pattern under question) uses:
+docs/architecture/ (4 files), docs/decisions/ (26 files), docs/product/ (2 files, both carrying an explicit "Historical" banner), docs/runbooks/ (22 files), docs/reference/ (7 files).
+Nobody deliberately designed that five-way split; it accreted while an AI coding agent built the repo, one file at a time, over several months.
+
+
+QUESTION: Is a docs/{architecture,decisions,product,runbooks,reference} split (the fifth repo's pattern) a good documentation layout, and should the first two repos (agent-dotfiles, agent-evals) adopt it? Should skills and skills-private add a docs/ directory in this style?
+
+Give a direct verdict and your reasoning in under 400 words.

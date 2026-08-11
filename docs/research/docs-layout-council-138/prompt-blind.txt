@@ -1,0 +1,30 @@
+You are designing a documentation directory layout from scratch. Below are four content collections, each belonging to a different software repository. Directory and repository names have been replaced with neutral labels so you must reason from the content of each document, not from recognizing a familiar naming convention.
+
+REPO dir-a — one flat holding area, 12 documents:
+- doc-1 (307 lines) — states requirements/goals for the whole project; who owns it, what it supersedes
+- doc-2 (1037 lines) — technical design spec; tracks implementation status, milestones, open items
+- doc-3 (378 lines) — "living document, rewritten not appended to"; current state as of a specific date; has a banner marking part of it stale
+- doc-4 (124 lines) — records a deployment model and boundaries decided after a dated investigation; cites commit hashes as evidence
+- doc-5 (336 lines) — position on how to run a specific recurring kind of work; explicitly a "sibling" to doc-4; distilled from an external, unversioned research corpus
+- doc-6 (54 lines) — a short contract for one subsystem (where its data lives, what governs it)
+- doc-7 (31 lines) — audit table recording historical selection decisions made during a one-time migration; author notes what was and was not migrated
+- doc-8 (87 lines) — successor to doc-7; ongoing decision ledger (adopt/adapt/author/reject) with sources, closed only by evidence in a separate test-results directory
+- doc-9 (451 lines) — a comparison of two subsystems, written to be "decide-ready" for a human; explicitly does not pick a winner
+- doc-10 (117 lines) — defines what the issue tracker is and, explicitly, what it is not; says two other documents are canonical over it
+- doc-11 (224 lines) — a glossary of external vocabulary with citations; explicitly "not a methodology"
+- doc-12 (393 lines) — a research document: external research first, then checked against this project's own behavior, then a naming decision at the end
+
+REPO dir-b — one flat holding area, 1 document:
+- doc-13 (229 lines) — defines what a test suite measures and its selection rule for what gets tested
+
+REPO dir-c — no such holding area at all. Contains only: agent-instructions file, contributor-instructions file, README, a scripts folder, a content folder (the product itself — reusable skill definitions), a tests folder.
+
+REPO dir-d — same shape as dir-c: no holding area, agent-instructions file, README, scripts folder, content folder, tests folder.
+
+QUESTIONS:
+1. For dir-a: would you group these 12 documents into subdirectories, or keep them in one flat list? If you would subdivide, propose category names based on what you see above (not on any convention you might recognize) and assign each doc-N to one.
+2. For dir-b, at 1 document: subdirectories or flat?
+3. For dir-c and dir-d: should they have a documentation holding area at all, given they contain no docs currently and are pure content repositories?
+4. At what document count would your answer to #1 change?
+
+Under 500 words.

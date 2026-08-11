@@ -1,0 +1,18 @@
+1. Stay at top level. It's explicitly a live "does not pick a winner" comparison, not a settled decision or historical record — subdirectories in this corpus (per the 5th repo's pattern) are for accreted/historical/reference content, not active decide-ready docs.
+
+2. Move to a `docs/decisions/` (or similarly named archival) subdirectory. It's explicitly historical and superseded by provenance-manifest.md, matching the pattern where superseded/historical material gets separated from living docs rather than left flat beside its replacement.
+
+3. Move to a `docs/reference/` subdirectory. It's explicitly a glossary of external vocabulary with citations, not methodology or active guidance — the "reference" category (mirrored in the 5th repo) exists precisely for this kind of cited-lookup material.
+
+4. No — leave evals.md at docs/ top level. A single-file docs/ has no organizational problem to solve; introducing subdirectories for one file would be pure ceremony with no second file to disambiguate from.
+
+5. No, neither should gain a docs/ now. The removal was a deliberate, reasoned act (stripping non-native harness machinery to make the repo a standalone public collection), and skills-private mirrors that shape already. It would flip only if the repos started accumulating genuinely repo-native design/requirements content (not agent-dotfiles machinery) that no longer fit in README/AGENTS.md/CLAUDE.md — i.e., a new, distinct need, not a reversal of the original reasoning.
+
+6. It's consistent, not a reversal — the 2026-07-13 change removed docs/research/ specifically because it was *temporary* research meant to be distilled into living flat docs; it wasn't a rejection of subdirectories in general. Introducing docs/decisions/ or docs/reference/ now is for a different purpose (archiving superseded/historical material and separating cited-glossary reference content), not for holding temporary research-in-progress, so the two aren't in tension.
+
+
+
+Changes    +0 -0
+AI Credits 8.88 (10s)
+Tokens     ↑ 32.9k (32.9k written) • ↓ 653
+Resume     copilot --resume=46afa616-c5ee-4f00-9ad5-1a06047e6fef

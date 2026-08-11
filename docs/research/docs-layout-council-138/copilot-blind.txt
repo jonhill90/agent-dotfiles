@@ -1,0 +1,44 @@
+## 1. dir-a: subdivide
+
+12 docs with distinct functions justify categories. Proposed:
+
+**`charter/`** — project-level, rarely-changing authority docs
+- doc-1 (requirements/goals, ownership)
+- doc-10 (defines tracker scope, defers to two canonical docs)
+
+**`design/`** — living technical specs
+- doc-2 (design spec, tracks status/milestones)
+- doc-3 (living current-state doc, banner for stale parts)
+
+**`decisions/`** — dated, evidence-backed calls with a paper trail
+- doc-4 (deployment model decision, cites commits)
+- doc-5 (sibling policy doc, distilled from external research)
+- doc-6 (short subsystem contract)
+- doc-7 (migration audit ledger — historical/closed)
+- doc-8 (successor ledger — ongoing, closed by test evidence)
+
+**`analysis/`** — comparative/explanatory material for humans, not directives
+- doc-9 (comparison, explicitly non-prescriptive)
+- doc-11 (glossary, explicitly "not a methodology")
+- doc-12 (research → validation → naming decision)
+
+Rationale: doc-7/doc-8 are a linked pair (predecessor/successor ledger) and belong together; doc-4/doc-5 are explicitly called "siblings" in the source and belong together; doc-9/doc-11/doc-12 share a "reference material, not a mandate" character; doc-1/doc-10 are both about defining scope/authority at the whole-project level. This groups by *function* (authoritative charter vs. living spec vs. decision record vs. reference analysis), not by topic, since topics vary widely across the 12.
+
+## 2. dir-b: flat
+
+One document doesn't warrant a subdirectory — the file *is* the category. Creating a folder around a single file adds a navigation hop with no organizing benefit. Flat.
+
+## 3. dir-c and dir-d: no holding area
+
+Both are pure content repos (skill definitions) with instructions, README, scripts, content, tests — no existing docs. Adding an empty `docs/` speculatively creates a directory with no content to justify its existence and no evidence anyone will populate it. If documentation needs later emerge (e.g., a design rationale for the skill format), create it then, sized to what actually exists — don't pre-provision structure for a hypothetical.
+
+## 4. Threshold for changing #1
+
+Roughly **4–5 documents** with genuinely distinct functions is where subdividing starts paying for itself; below that, a flat list is more scannable than a folder tree with mostly-single-file folders. The dir-a case (12 docs, 4 clearly different functional roles, at least one explicit "sibling"/"successor" relationship) is well past that threshold. Conversely, if dir-a's 12 docs were all the *same kind* of thing (e.g., 12 independent audit ledgers), I'd keep them flat regardless of count — subdivision should track functional distinctness, not raw document count.
+
+
+
+Changes    +0 -0
+AI Credits 9.15 (16s)
+Tokens     ↑ 32.5k (32.5k written) • ↓ 1.0k (27 reasoning)
+Resume     copilot --resume=c21205fd-5ab5-4d7a-b27f-ed3a8c86d12e
