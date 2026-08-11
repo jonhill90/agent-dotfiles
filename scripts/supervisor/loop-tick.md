@@ -400,14 +400,20 @@ scripts/supervisor/lane-done.sh <window-index> ad102-lane-rename-on-completion a
 # blocked while it waits
 ```
 
-`lane-done.sh` blocks on `wait-for -L` and renames to `free-<n>` only when it
-returns, and only if the window still carries the exact name it was
-dispatched with — if it doesn't, someone already handled it, or the lane was
-redispatched while the waiter was still up, and renaming now would steal the
-new name. Needs no pane inspection, so it cannot mistake an approval prompt
-for completion. It has the same open limit `wait-for` itself has (SPEC §14.2
-L3 — no timeout): a worker that crashes or wedges before its final action
-leaves the waiter blocked forever, same as today.
+`lane-done.sh` blocks on bare `wait-for` — the counterpart of the worker's
+`-S`, and **not** `wait-for -L`, which is the unrelated lock primitive and
+returns immediately on a channel nobody has locked (#108) — and renames to
+`free-<n>` only when it returns, and only if the window still carries the
+exact name it was dispatched with. If it doesn't, someone already handled it,
+or the lane was redispatched while the waiter was still up, and renaming now
+would steal the new name. Needs no pane inspection, so it cannot mistake an
+approval prompt for completion. It has the same open limit `wait-for` itself
+has (SPEC §14.2 L3 — no timeout): a worker that crashes or wedges before its
+final action leaves the waiter blocked forever, same as today.
+
+Channel names are a flat global namespace on the tmux server with no enforced
+uniqueness — any `-S` on the same string releases the waiter, whoever sent it.
+Tie the channel to the issue number, as every example here does.
 
 The window list then answers "what is going on" at a glance: anything named
 `free-N` is available, anything else is in flight and says what it is doing.
