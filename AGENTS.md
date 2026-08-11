@@ -200,11 +200,23 @@ Rules:
   files under `$HOME` and reports declared state; `/context` reports what
   the model was actually sent, free, on Claude Code only; `claude plugin
   details <name>` prices one plugin, free; `measure_context.py` asks all
-  four harnesses and bills for it. Its codex column is known unreliable
-  (#44: 19,501 -> 40,981, 2.1x, on two runs against an identical deployed
-  state, cause unconfirmed) — the script marks that column UNRELIABLE on
-  every row; do not cite a codex figure from it as measured until #44
-  closes.
+  four harnesses and bills for it. Read its codex column with care (#44):
+  codex's `turn.completed.input_tokens` is the turn's *cumulative* input
+  across every model request it took, so a probe turn where the agent
+  called a tool first reports a billing sum, not a context size. Measured
+  2026-08-11 over three runs: the per-request context was identical
+  (19,787) every time while the reported total was 62,674 / 41,816 /
+  41,872. The original 19,501 -> 40,981 swing is consistent with that
+  mechanism — 19,501 is within 1.4% of the measured context — but those
+  payloads predate #103 and are gone, so applying it to them is inference,
+  not a reading. The script now blanks that column for a multi-request
+  turn rather than printing the sum, so a codex figure that prints is a
+  real one-request reading. That makes the column honest, not yet usable:
+  the deployed session-start memory rule makes the probe use tools on most
+  runs, so expect it to be blank, and read the real number from the first
+  `token_count` event's `last_token_usage` in that thread's rollout log
+  under `$CODEX_HOME/sessions`. Until the script reads that field itself
+  (#44), a codex figure is a per-run reading, not a column you can diff.
 - A prediction, a counterfactual, and a re-score are not results. Record
   them where they belong — as a note on the results file, not as the
   result.
