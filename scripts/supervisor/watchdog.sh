@@ -53,6 +53,12 @@ COOLDOWN=600        # no more than one restart per 10 minutes
 MAX_RESTARTS=3      # ...and no more than this many
 ESCALATE_WINDOW=3600 # ...within this window, or stop and escalate
 
+# Credentials + NOTIFY_SCRIPT for the escalate path. Sourced here so the
+# LaunchAgent needs no secrets inlined in its plist.
+ENVFILE="${NOTIFY_ENV:-$STATE/notify.env}"
+# shellcheck source=/dev/null
+if [ -r "$ENVFILE" ]; then set -a; . "$ENVFILE"; set +a; fi
+
 now=$(date +%s)
 iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
@@ -166,6 +172,12 @@ fi
 if [ "$recent" -ge "$MAX_RESTARTS" ]; then
   report escalate "restarted $recent times in ${ESCALATE_WINDOW}s and it keeps dying — NOT restarting again, needs a human"
   log "ESCALATE: $recent restarts in ${ESCALATE_WINDOW}s; leaving the loop down deliberately"
+  # Reach a human. ONLY here -- never on working, waiting_on_jon, cooling_down
+  # or restarted. Deduplicated to one message per escalate episode by
+  # watchdog_notify.py, because a watchdog that messages every tick gets muted
+  # and a muted channel is indistinguishable from no channel.
+  python3 "$HERE/watchdog_notify.py" >/dev/null 2>&1 \
+    || log "NOTIFY FAILED — escalation did not reach a human"
   exit 0
 fi
 

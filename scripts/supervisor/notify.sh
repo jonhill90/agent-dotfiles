@@ -25,6 +25,12 @@ STATE="$HOME/.local/state/agent-dotfiles-supervisor"
 LOG="$STATE/notify.log"
 SUBJECT="${1:-agent needs you}"
 BODY="${2:-}"
+# Credentials live in an untracked 0600 env file, never in this script, never
+# in the repo, never in the LaunchAgent plist. NOTIFY_ENV overrides the path.
+ENVFILE="${NOTIFY_ENV:-$STATE/notify.env}"
+# shellcheck source=/dev/null
+if [ -r "$ENVFILE" ]; then set -a; . "$ENVFILE"; set +a; fi
+
 iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 log() { printf '%s %s\n' "$iso" "$*" >>"$LOG"; }
 
