@@ -70,6 +70,81 @@ want_contains "drain warns about the malformed line" "malformed" "$(cat "$D/stde
 want_contains "the malformed line survives the drain verbatim" \
   '{"at": "bad", "read": false, "tex' "$(cat "$D/box.jsonl")"
 
+# --- non-object JSON value: preserved verbatim, does not jam read/drain ----
+# `[1,2,3]`, a bare string, or a number all parse fine and pass `r is not
+# None`, then crash on `r.get("read")` unless routed through the same
+# preserve-verbatim path a malformed line takes (#90 finding 2).
+rm -f "$D/box.jsonl"
+run post "legit message" >/dev/null
+printf '[1,2,3]\n' >> "$D/box.jsonl"
+out=$(run drain 2>"$D/stderr.txt"); rc=$?
+want_exit "drain does not crash on a non-object JSON value" "$rc" 0
+want_contains "drain still surfaces the well-formed message" "legit message" "$out"
+want_contains "drain warns about the non-object value" "not a JSON object" "$(cat "$D/stderr.txt")"
+want_contains "the non-object line survives the drain verbatim" '[1,2,3]' "$(cat "$D/box.jsonl")"
+out2=$(run read 2>"$D/stderr2.txt"); rc2=$?
+want_exit "a subsequent read does not crash either" "$rc2" 0
+
+# --- kill mid-write: drain's rewrite is atomic, a kill leaves the box intact
+# Patch a copy of the script to write the first line to the temp file, sleep,
+# then SIGKILL it there -- before the second line is written and before the
+# atomic os.replace() over the box. If drain truncated the box in place
+# instead of write-temp-then-rename, this is exactly the window that leaves
+# the box empty with nothing on stderr (#90 finding 1).
+rm -f "$D/box.jsonl"
+run post "keep-1" >/dev/null
+run post "keep-2" >/dev/null
+before=$(cat "$D/box.jsonl")
+SLOW2="$D/slow-drain-write.sh"
+patch_rc=0
+python3 - "$INBOX" "$SLOW2" <<'PY' || patch_rc=$?
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+text = open(src).read()
+marker = (
+    '            for line in out_lines:\n'
+    '                handle.write(line + "\\n")\n'
+    '        os.replace(tmp, box)'
+)
+replacement = (
+    '            for _i, line in enumerate(out_lines):\n'
+    '                handle.write(line + "\\n")\n'
+    '                handle.flush()\n'
+    '                if _i == 0:\n'
+    '                    import time; time.sleep(1)\n'
+    '        os.replace(tmp, box)'
+)
+assert marker in text, "drain write-loop marker not found -- script shape changed"
+assert text.count(marker) == 1, "drain write-loop marker not unique -- script shape changed"
+open(dst, "w").write(text.replace(marker, replacement, 1))
+PY
+if [ "$patch_rc" -ne 0 ]; then
+  # If the write-temp-then-rename shape is gone, the marker this patch
+  # depends on is gone too, and silently doing nothing here would report a
+  # trivial "before == after" pass -- exactly the false-green shape #90
+  # finding 3 is about. Fail loudly instead of skipping quietly.
+  bad "a kill mid-write leaves the box exactly as it was" \
+    "setup could not patch $INBOX for this test (patch script exited $patch_rc) -- treating as a failure, not a skip"
+  bad "keep-1 survives a kill mid-write" "skipped: patch setup failed"
+  bad "keep-2 survives a kill mid-write" "skipped: patch setup failed"
+else
+  DIRECTOR_INBOX="$D/box.jsonl" bash "$SLOW2" drain >/dev/null 2>&1 &
+  drain_pid=$!
+  sleep 0.3
+  # `drain_pid` is the bash wrapper; the actual write happens in the python3
+  # child it spawned via heredoc, and killing the parent alone leaves that
+  # child running to finish the sleep and complete the write, contaminating
+  # every test that runs after this one. Kill the child first.
+  child_pid=$(pgrep -P "$drain_pid" 2>/dev/null)
+  kill -9 $child_pid "$drain_pid" 2>/dev/null
+  wait "$drain_pid" 2>/dev/null
+  after=$(cat "$D/box.jsonl")
+  [ "$before" = "$after" ] && ok "a kill mid-write leaves the box exactly as it was" \
+    || bad "a kill mid-write leaves the box exactly as it was" "before:$before"$'\n'"after:$after"
+  want_contains "keep-1 survives a kill mid-write" "keep-1" "$after"
+  want_contains "keep-2 survives a kill mid-write" "keep-2" "$after"
+fi
+
 # --- two concurrent posts: both survive -------------------------------------
 rm -f "$D/box.jsonl"
 run post "concurrent-a" >/dev/null &
@@ -85,28 +160,43 @@ lines=$(grep -c . "$D/box.jsonl")
   || bad "both concurrent posts landed as two lines" "$final"
 
 # --- post racing drain: the post survives -----------------------------------
-# Patch a copy of the script to sleep after taking the lock, inside drain's
-# read-modify-write, so a concurrent post has a real window to land in.
+# Patch a copy of the script to sleep AFTER drain has finished reading (rows
+# and pending are already a fixed in-memory snapshot) and BEFORE it writes
+# that snapshot out -- the actual read-modify-write window a concurrent post
+# can land in. A sleep placed before the read (right after the lock is taken,
+# as this sub-test used to do) proves nothing: any post that lands during it
+# is still picked up by the read that follows, lock or no lock, so the
+# sub-test would pass even with the race protection fully reverted. See #90
+# finding 3 -- mutation testing found this exact sub-test load-bearing on
+# nothing.
 rm -f "$D/box.jsonl"
 run post "msg-1" >/dev/null
 SLOW="$D/slow-drain.sh"
-python3 - "$INBOX" "$SLOW" <<'PY'
+patch_rc=0
+python3 - "$INBOX" "$SLOW" <<'PY' || patch_rc=$?
 import sys
 src, dst = sys.argv[1], sys.argv[2]
 text = open(src).read()
-marker = 'fcntl.flock(lockfile, fcntl.LOCK_EX)\n\n    # Each entry'
-replacement = 'fcntl.flock(lockfile, fcntl.LOCK_EX)\n    import time; time.sleep(1)\n\n    # Each entry'
-assert marker in text, "drain locking marker not found -- script shape changed"
+marker = 'if mode == "drain":'
+replacement = 'import time; time.sleep(1)\n    if mode == "drain":'
+assert marker in text, "drain mode marker not found -- script shape changed"
+assert text.count(marker) == 1, "drain mode marker not unique -- script shape changed"
 open(dst, "w").write(text.replace(marker, replacement, 1))
 PY
-DIRECTOR_INBOX="$D/box.jsonl" bash "$SLOW" drain > "$D/drain_out.txt" 2>&1 &
-drain_pid=$!
-sleep 0.3
-run post "msg-2 racing the drain" > "$D/post_out.txt" 2>&1
-wait "$drain_pid"
-final=$(cat "$D/box.jsonl")
-want_contains "the racing drain still reports msg-1" "msg-1" "$(cat "$D/drain_out.txt")"
-want_contains "the post racing drain survives in the file" "msg-2 racing the drain" "$final"
+if [ "$patch_rc" -ne 0 ]; then
+  bad "the racing drain still reports msg-1" \
+    "setup could not patch $INBOX for this test (patch script exited $patch_rc) -- treating as a failure, not a skip"
+  bad "the post racing drain survives in the file" "skipped: patch setup failed"
+else
+  DIRECTOR_INBOX="$D/box.jsonl" bash "$SLOW" drain > "$D/drain_out.txt" 2>&1 &
+  drain_pid=$!
+  sleep 0.3
+  run post "msg-2 racing the drain" > "$D/post_out.txt" 2>&1
+  wait "$drain_pid"
+  final=$(cat "$D/box.jsonl")
+  want_contains "the racing drain still reports msg-1" "msg-1" "$(cat "$D/drain_out.txt")"
+  want_contains "the post racing drain survives in the file" "msg-2 racing the drain" "$final"
+fi
 
 rm -rf "$D"
 

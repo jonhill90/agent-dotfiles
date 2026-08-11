@@ -26,7 +26,9 @@
 # Drain marks rather than deletes: a message the supervisor read is still
 # readable afterwards, because losing the record of an instruction is worse
 # than re-reading one. The same reasoning applies to a line that fails to
-# parse -- it is preserved verbatim with a warning on stderr, never dropped.
+# parse, or that parses to something other than a JSON object -- both are
+# preserved verbatim with a warning on stderr, never dropped, and never
+# allowed to crash a later read/drain (#90).
 #
 # post/read/drain all take the same exclusive lock (via Python's fcntl,
 # since `flock(1)` isn't available on macOS) around the file, and drain holds
@@ -36,6 +38,12 @@
 # script in this repo locks a jsonl file; this one does because the box is
 # read-modify-written by drain, not just appended -- the failure mode that
 # locking exists for.
+#
+# drain's rewrite writes to a temp file in the same directory and
+# os.replace()s it over the box, rather than truncating the box in place.
+# os.replace is atomic on POSIX, so a kill mid-write (SIGKILL, OOM, host
+# restart) leaves the original box untouched instead of half-written or
+# empty (#90).
 
 set -uo pipefail
 STATE="${SUPERVISOR_STATE:-$HOME/.local/state/agent-dotfiles-supervisor}"
@@ -61,7 +69,7 @@ PY
   read|drain)
     [ -s "$BOX" ] || { echo "(no director messages)"; exit 0; }
     python3 - "$BOX" "$LOCK" "${1}" <<'PY'
-import fcntl, json, sys
+import fcntl, json, os, sys
 
 box, lock, mode = sys.argv[1], sys.argv[2], sys.argv[3]
 
@@ -69,15 +77,17 @@ with open(lock, "a") as lockfile:
     fcntl.flock(lockfile, fcntl.LOCK_EX)
 
     # Each entry is (raw_line, parsed_dict_or_None). A line that fails to
-    # parse keeps its raw text and a None marker, so it survives drain's
-    # rewrite unchanged instead of being silently dropped.
+    # parse, or that parses to something other than a JSON object (a list,
+    # a string, a number -- anything without .get()), keeps its raw text and
+    # a None marker, so it survives drain's rewrite unchanged instead of
+    # being silently dropped or crashing every read/drain after it (#90).
     rows = []
     for lineno, raw in enumerate(open(box), start=1):
         line = raw.rstrip("\n")
         if not line.strip():
             continue
         try:
-            rows.append((line, json.loads(line)))
+            parsed = json.loads(line)
         except ValueError:
             print(
                 f"director-inbox: malformed line {lineno} in {box}, "
@@ -85,6 +95,16 @@ with open(lock, "a") as lockfile:
                 file=sys.stderr,
             )
             rows.append((line, None))
+            continue
+        if not isinstance(parsed, dict):
+            print(
+                f"director-inbox: malformed line {lineno} in {box} "
+                f"(not a JSON object), preserved verbatim: {line!r}",
+                file=sys.stderr,
+            )
+            rows.append((line, None))
+            continue
+        rows.append((line, parsed))
 
     pending = [r for _, r in rows if r is not None and not r.get("read")]
     if not pending:
@@ -101,9 +121,11 @@ with open(lock, "a") as lockfile:
             else:
                 r["read"] = True
                 out_lines.append(json.dumps(r))
-        with open(box, "w") as handle:
+        tmp = box + ".tmp"
+        with open(tmp, "w") as handle:
             for line in out_lines:
                 handle.write(line + "\n")
+        os.replace(tmp, box)
 PY
     ;;
   *) echo "usage: director-inbox.sh {post <msg>|read|drain}" >&2; exit 1 ;;
