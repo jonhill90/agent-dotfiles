@@ -50,6 +50,33 @@ SUPERVISOR_WINDOW="${LANES_SUPERVISOR_WINDOW:-1}"
 # footer drops to MINUTE granularity past 60s, so a live turn can go ~60s
 # without changing a single byte.
 HUNG_AFTER="${LANES_HUNG_AFTER:-180}"
+# Footer chrome that means "this pane is waiting on a human keystroke".
+#
+# The first version of this probe matched only `Enter to select`, inferred from
+# a single example. Review of #124 drove a real Claude Code pane (v2.1.220)
+# through four genuine prompts and only ONE of them says that:
+#
+#   folder trust     Enter to confirm · Esc to cancel
+#   /model           Enter to set as default · s to use this session only · Esc to cancel
+#   bash permission  Esc to cancel · Tab to amend · ctrl+e to explain
+#   /theme           Enter to select · Esc to cancel
+#
+# All three of the misses read `free`, including the bash tool-permission
+# approval -- the commonest blocking event a supervised lane hits, and the one
+# the whole state exists for. `Esc to cancel` is the substring common to all
+# four; it is what every dismissible dialog paints.
+#
+# A false positive here is worse than the bug -- it makes a lane permanently
+# undispatchable -- so this was checked in the other direction too, against the
+# same live pane: idle at the prompt, text typed but unsent, the `/` command
+# popup, the `@` file popup, `?` shortcuts, and a running turn. None of those
+# last lines contain the marker; they end in `⏸ manual mode on · ...`,
+# `/keybindings to customize`, or `esc to interrupt`.
+#
+# `Enter to select` is kept as a second marker, not as the only one: it costs
+# nothing and covers any menu that paints a selection footer without an Esc
+# line. Anything added here must be observed on a real pane first, not inferred.
+BLOCKED_MARKERS='Esc to cancel|Enter to select'
 
 if ! tmux has-session -t "$SESSION" 2>/dev/null; then
   echo "lanes: session '$SESSION' does not exist" >&2
@@ -105,15 +132,14 @@ emit_rows() {
       # Copilot pane was classified `hung` because that string appeared in its
       # scrollback. Report what is known and refuse to invent the rest.
       state=unknown
-    elif grep -qF 'Enter to select' <<<"$pane"; then
-      # A selection menu, not idle: the agent is waiting on a human, not on
-      # work. Must be decided before free, since that is the classification
-      # it is stealing from. Match the harness's own chrome (the footer
-      # "Enter to select · .../ Esc to cancel"), not the option text -- that
-      # is model-authored and varies per prompt. And match only the status
-      # line above, the same fix #65 required for the busy probe: an
-      # exact-match sweep over scrollback caught a lane merely displaying
-      # the phrase, not showing it.
+    elif grep -qE "$BLOCKED_MARKERS" <<<"$pane"; then
+      # An interactive prompt, not idle: the agent is waiting on a human, not
+      # on work. Must be decided before free, since that is the classification
+      # it is stealing from. Match the harness's own footer chrome, not the
+      # option text -- that is model-authored and varies per prompt. And match
+      # only the status line above, the same fix #65 required for the busy
+      # probe: an exact-match sweep over scrollback caught a lane merely
+      # displaying the phrase, not showing it.
       state=blocked
     elif ! grep -q 'esc to interrupt' <<<"$pane"; then
       state=free
