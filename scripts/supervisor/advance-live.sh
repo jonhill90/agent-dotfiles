@@ -68,6 +68,27 @@ log() { mkdir -p "$(dirname "$LOG")" 2>/dev/null; printf '%s %s\n' "$(date -u +%
 fail() { log "FAIL: $*"; echo "advance-live: $*" >&2; exit 1; }
 skip() { log "SKIP: $*"; echo "advance-live: $*"; exit 0; }
 
+# `git status --porcelain` on LIVE. Read fresh every call -- never cache the
+# result, because every caller of this exists to catch LIVE changing out
+# from under an earlier read.
+dirty_status() { git -C "$LIVE" status --porcelain 2>&1; }
+
+# Re-derive the watchdog's tick age from $WATCHDOG_STATUS on disk. Echoes
+# the age in seconds and returns 0, or returns 1 with nothing echoed if the
+# file, its checked: line, or the timestamp is unreadable. Never reuse a
+# prior call's result -- same reasoning as dirty_status above.
+watchdog_age() {
+  local line epoch now
+  [ -f "$WATCHDOG_STATUS" ] || return 1
+  line=$(grep -m1 '^checked:' "$WATCHDOG_STATUS" 2>/dev/null | sed 's/^checked:  *//')
+  [ -n "$line" ] || return 1
+  epoch=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$line" +%s 2>/dev/null \
+        || date -u -d "$line" +%s 2>/dev/null)
+  [ -n "$epoch" ] || return 1
+  now=$(date -u +%s)
+  echo $((now - epoch))
+}
+
 git -C "$LIVE" rev-parse --git-dir >/dev/null 2>&1 || fail "not a git worktree: $LIVE"
 
 cur=$(git -C "$LIVE" rev-parse HEAD 2>/dev/null) || fail "cannot read HEAD in $LIVE"
@@ -83,17 +104,28 @@ if [ "$cur" = "$target" ] || [ "$behind" -eq 0 ]; then
   exit 0
 fi
 
+# --- dirty guard: refuse rather than advance over someone's live edits ----
+# Borrows worktree.sh's `guard`/`done` rule: uncommitted changes in a
+# worktree are someone's unfinished work, not garbage. The reason this has
+# to be a refusal and not a courtesy check: `git checkout --detach` does
+# NOT discard a working-tree edit that doesn't conflict with the incoming
+# diff -- it silently carries the edit forward. A dirty LIVE plus a
+# checkout that otherwise succeeds reports ADVANCED and lands the right sha
+# in `git log`, while the file actually on disk and executing is old
+# content plus a local edit that nothing recorded. No stash: a stash
+# sitting on the loop's own advancement guard is state nobody would go
+# looking for. Refuse and report loudly instead.
+dirty=$(dirty_status)
+if [ -n "$dirty" ]; then
+  fail "live worktree $LIVE has uncommitted changes -- refusing to advance a dirty tree, not stashing it
+$dirty"
+fi
+
 # --- race gate: only advance in the window right after a tick -----------
 if [ ! -f "$WATCHDOG_STATUS" ]; then
   skip "no watchdog status at $WATCHDOG_STATUS -- watchdog has not ticked from $LIVE yet, not advancing this pass"
 fi
-checked_line=$(grep -m1 '^checked:' "$WATCHDOG_STATUS" 2>/dev/null | sed 's/^checked:  *//')
-[ -n "$checked_line" ] || skip "no checked: line in $WATCHDOG_STATUS -- not advancing this pass"
-checked_epoch=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$checked_line" +%s 2>/dev/null \
-              || date -u -d "$checked_line" +%s 2>/dev/null)
-[ -n "$checked_epoch" ] || skip "cannot parse watchdog checked: timestamp '$checked_line' -- not advancing this pass"
-now=$(date -u +%s)
-age=$((now - checked_epoch))
+age=$(watchdog_age) || skip "no readable checked: timestamp in $WATCHDOG_STATUS -- not advancing this pass"
 safe_until=$((TICK_INTERVAL - SAFETY_BUFFER))
 if [ "$age" -lt 0 ] || [ "$age" -gt "$safe_until" ]; then
   skip "watchdog last ticked ${age}s ago, outside the 0-${safe_until}s post-tick window -- not advancing this pass"
@@ -136,6 +168,24 @@ if ! { printf '%s\n' "$cur" >"$tmp" && mv -f "$tmp" "$ROLLBACK"; }; then
   fail "could not record rollback target $cur to $ROLLBACK -- not advancing"
 fi
 
+# --- re-check BOTH guards IMMEDIATELY before the mutation -----------------
+# Same discipline watchdog.sh applies to its own busy check right before it
+# sends: "the earlier check is stale by several seconds." Here it is stale
+# by however long `git worktree add` and the candidate's own watchdog.sh
+# smoke test took to run -- both variable-duration, several subprocesses --
+# which is long enough for LIVE to have been edited, or for the post-tick
+# window to have closed. Re-read state fresh; do not reuse $dirty or $age
+# from above.
+dirty=$(dirty_status)
+if [ -n "$dirty" ]; then
+  fail "live worktree $LIVE became dirty while the smoke test ran -- refusing to advance, not stashing it
+$dirty"
+fi
+age=$(watchdog_age) || skip "watchdog status became unreadable while the smoke test ran -- not advancing this pass"
+if [ "$age" -lt 0 ] || [ "$age" -gt "$safe_until" ]; then
+  skip "watchdog tick window closed while the smoke test ran (recheck age ${age}s, outside the 0-${safe_until}s window) -- not advancing this pass"
+fi
+
 # --- advance --------------------------------------------------------------
 if ! git -C "$LIVE" checkout --detach "$target" >>"$LOG" 2>&1; then
   fail "checkout to $target failed in $LIVE -- live worktree left at $cur, rollback recorded at $ROLLBACK"
@@ -144,6 +194,18 @@ fi
 newsha=$(git -C "$LIVE" rev-parse HEAD 2>/dev/null)
 if [ "$newsha" != "$target" ]; then
   fail "post-checkout HEAD ($newsha) does not match target ($target) in $LIVE -- inconsistent, check by hand; rollback target $cur recorded at $ROLLBACK"
+fi
+
+# A matching sha is not proof of a clean result: `git checkout --detach`
+# updates HEAD even when it silently carried a working-tree edit forward
+# alongside it, which is exactly what the dirty guards above exist to catch
+# earlier. This is the backstop in case something dirtied LIVE in the
+# instant between the re-check above and this checkout -- a result this
+# script reports must actually be clean, not just at the right sha.
+post_status=$(dirty_status)
+if [ -n "$post_status" ]; then
+  fail "post-checkout $LIVE is dirty even though HEAD reached $target -- the checkout carried forward a local edit; do not trust this as a clean advance, rollback target $cur recorded at $ROLLBACK
+$post_status"
 fi
 
 log "ADVANCED $LIVE from $cur to $target ($behind commit(s))"
