@@ -96,9 +96,12 @@ def parse_codex(payload: str) -> int | None:
     static context is the *first* request's figure, which was identical
     (19,787) in all three runs — the context is stable; the reading was not.
 
-    That is the whole of #44: the two original runs differed only in whether
-    the agent ran one shell command before answering "hi". 19,501 was a
-    one-request turn (correct, by luck); 40,981 was a two-request turn.
+    #44's original 19,501 / 40,981 pair is *consistent with* this mechanism
+    but was not measured under it: those payloads predate the capture added
+    in #103, they were taken from a different working directory, and they
+    are gone. 19,501 sits within 1.4% of the measured one-request context,
+    and 40,981 halves to a plausible two-request turn — inference, not a
+    reading. The mechanism itself is measured, on the three runs above.
 
     So this parser returns the total only when the turn took exactly one
     model request, and `None` otherwise. A blank column is the honest
@@ -166,7 +169,8 @@ _CODEX_MESSAGE_ITEMS = frozenset({"agent_message", "reasoning", "user_message"})
 
 
 def codex_request_count(payload: str) -> int:
-    """How many model requests this turn took — the unit #44 actually varied.
+    """An upper bound on the model requests this turn took — the unit #44
+    actually varied.
 
     A trivial prompt is supposed to produce one request, whose `input_tokens`
     is the static context. But if the agent calls a tool first, the tool's
@@ -175,9 +179,19 @@ def codex_request_count(payload: str) -> int:
     runs took 3, 2 and 2 requests and reported 62,674, 41,816 and 41,872 for
     a context that never moved off 19,787.
 
-    Counted as: one request per non-message item (each tool call round), plus
-    one for each terminal `turn.completed` — with a floor of 1 so a stream
-    with no items at all still counts as the single request that produced it.
+    Counted as: one per non-message item (each tool call), plus one for each
+    terminal `turn.completed` — with a floor of 1 so a stream with no items
+    at all still counts as the single request that produced it.
+
+    That is a bound, not a count: it counts tool *calls*, and if codex ever
+    issues several in one assistant step their outputs return in a single
+    follow-up request, so the total would overstate. It did not on the three
+    2026-08-11 runs — the calls were strictly interleaved with the rollout
+    log's `token_count` events (3, 2, 2, matching exactly) — but nothing here
+    enforces that. Overstating only blanks the column, which is the safe
+    direction. The authoritative count is the number of `token_count` events
+    in that thread's rollout log, which is also where the correct per-request
+    figure lives; this function deliberately reads only the saved payload.
     """
     tool_rounds = 0
     turns = 0
@@ -368,15 +382,18 @@ def main(argv: list[str]) -> int:
         turns = codex_turn_count(codex_payload)
         if requests > 1:
             print(
-                f"\ncodex: this probe turn took {requests} model requests "
-                f"({turns} turn.completed event(s)), because the agent called "
+                f"\ncodex: this probe turn took more than one model request — "
+                f"at most {requests}, from the saved payload's tool calls and "
+                f"{turns} turn.completed event(s) — because the agent called "
                 "tools before answering. turn.completed.input_tokens is the "
                 "sum over those requests, not the context size, so the column "
                 "is blank rather than inflated (#44).\n"
-                "To recover the real figure, read the first `token_count` "
-                "event's `last_token_usage.input_tokens` from this thread's "
-                "rollout log under $CODEX_HOME/sessions — the thread id is in "
-                "the `thread.started` event of the saved payload."
+                "For the exact request count, and for the real figure, read "
+                "that thread's rollout log under $CODEX_HOME/sessions: one "
+                "`token_count` event per request, and the first one's "
+                "`last_token_usage.input_tokens` is the static context. The "
+                "thread id is in the `thread.started` event of the saved "
+                "payload."
             )
     print(
         "\nWhat this counts: everything sent before the model answered, "
