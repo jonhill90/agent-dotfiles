@@ -517,7 +517,8 @@ columns are required before their breakage blocks release.
 
 Budget answers PRD open question 2. **Measurement method:** bytes/4 of
 every file loaded at session start (same method as the research);
-enforced by `scripts/validate_repository.py`; verified live by E15.
+enforced by `scripts/validate_repository.py` for every row it can
+still read repo-side; verified live by E15.
 
 | Component | Budget (tokens) |
 |---|---|
@@ -525,19 +526,23 @@ enforced by `scripts/validate_repository.py`; verified live by E15.
 | Per-harness overlay (worst case: Pi) | ≤ 1,500 |
 | Session-start injection (baseline: none; reserved for an eval-justified fix) | ≤ 500 (baseline measured 0) |
 | Memory index (vault `agent/index.md`) | ≤ 1,500 |
-| Installed-skill descriptions (aggregate frontmatter in system prompt) | ≤ 2,000 |
+| Installed-skill descriptions (aggregate frontmatter in system prompt) | ≤ 2,000 (unmeasured repo-side†) |
 | Enabled Claude Code plugin skills (live-only, see below) | counted in the description aggregate |
 | **Total static, thickest harness** | **≤ 8,000** |
 
+† Not enforced by `validate_repository.py`; see below.
+
 Everything procedural loads dynamically (progressive disclosure). The
 validator fails the build if canonical files exceed their line/token
-caps; the skill-description aggregate is checked against the declared
-dependency set in `apm.yml`.
+caps, with one exception: the skill-description aggregate, which it
+cannot check against anything repo-side (see below).
 
-Once per-harness rosters land (§4.1, P2-M4), the skill-description
-aggregate is measured against each harness's *resolved* roster rather
-than the `apm.yml` union, and the total above is enforced per harness.
-Until then the union is the enforced basis.
+Per-harness rosters (§4.1, P2-M4) will scope enforcement of every
+*other* row in this table to each harness's resolved roster rather
+than the `apm.yml` union; until then the union is the enforced basis.
+They do not change the skill-description aggregate — see below for why
+that component has no repo-side number to check against, before or
+after per-harness rosters land.
 
 **The installed-skill-descriptions cap is in the budget and, since #9,
 cannot be measured repo-side at all** — not only for plugin skills.
