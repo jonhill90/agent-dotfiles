@@ -99,9 +99,14 @@ sha=$(git -C "$HERE" rev-parse --short HEAD 2>/dev/null || echo unknown)
 # freshness; the ref itself may be stale. The status line says which it is
 # rather than implying a guarantee this check cannot make.
 behind=$(git -C "$HERE" rev-list --count HEAD..origin/main 2>/dev/null || echo "")
+# THREE outcomes, not two. Lumping the unreadable case in with zero is the same
+# defect this line exists to fix: if origin/main is missing or git fails, an
+# empty result printed as no-note reads exactly like "up to date". Caught in
+# review before merge -- the first version had `''|0) code_note=""`.
 case "$behind" in
-  ''|0) code_note="" ;;
-  *)    code_note=" (${behind} behind origin/main, ref not refetched)" ;;
+  0)            code_note="" ;;
+  ''|*[!0-9]*)  code_note=" (cannot compare — origin/main ref unreadable)" ;;
+  *)            code_note=" (${behind} behind origin/main, ref not refetched)" ;;
 esac
 
 log() { printf '%s %s\n' "$iso" "$*" >>"$LOG"; }

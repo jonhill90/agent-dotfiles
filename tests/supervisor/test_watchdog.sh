@@ -252,5 +252,27 @@ else
   echo "  FAIL the status says the comparison ref was not refetched"; fail=$((fail+1))
 fi
 
+
+# An UNREADABLE comparison must not read as "up to date". The first version of
+# this check wrote `''|0) code_note=""`, lumping a failed git call in with a
+# genuine zero -- the exact defect the line exists to prevent, inside the fix
+# for it. Caught in review before merge.
+#
+# Delete origin/main entirely: rev-list fails, `behind` is empty, and a status
+# with no note would claim currency the check never established.
+git -C "$G" update-ref -d refs/remotes/origin/main 2>/dev/null
+wd_run "$D/wnoref"
+if grep -q "cannot compare" "$D/wnoref/st" 2>/dev/null; then
+  echo "  ok   an unreadable comparison says so instead of reading as current"; pass=$((pass+1))
+else
+  echo "  FAIL an unreadable comparison says so instead of reading as current"; fail=$((fail+1))
+  sed 's/^/       /' "$D/wnoref/st" 2>/dev/null
+fi
+if grep -q "behind origin/main" "$D/wnoref/st" 2>/dev/null; then
+  echo "  FAIL an unreadable comparison does not claim a behind-count"; fail=$((fail+1))
+else
+  echo "  ok   an unreadable comparison does not claim a behind-count"; pass=$((pass+1))
+fi
+
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
