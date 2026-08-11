@@ -96,6 +96,14 @@ scripts, imperative instructions, model-invoked vs. user-invoked framed in
 `description`) and its own validator/CI. Follow that repository's
 `AGENTS.md`, not this section, when writing skill content.
 
+For the same reason this repository carries no path-scoped skill-authoring
+instruction file. It had one — `.github/instructions/skill-authoring.instructions.md`,
+`applyTo: 'skills/**/*.md'` — which bound to nothing from the moment #9
+removed the `skills/` directory, and stated a second, divergent copy of a
+contract the paragraph above sends you elsewhere to read (#28). Every
+`.github/instructions/*.instructions.md` must match at least one tracked
+file; `tests/test_instruction_globs.py` enforces it.
+
 **Rostering an existing skill happens here:**
 
 1. Add its name to `settings/default-skills.txt`.

@@ -7,8 +7,9 @@
   surface and the roster is enforced on each. P2-M5, P2-M6 and P2-M7
   all closed 2026-07-27 (§13). `sanity-check` moved to public opt-in
   2026-07-29 (§4.1), so per-harness scoping currently has no user.
-  Open: jonhill90/skills#95 (§6 budget blind spot), jonhill90/skills#96 (`name-only`), and E20's
-  unbound columns (Codex FAIL ×3, Pi 1 of 3, Copilot unmeasured).
+  Open: #5 (§6 budget blind spot) and E20's unbound columns (Codex FAIL
+  ×3, Pi 1 of 3, Copilot unmeasured). jonhill90/skills#96 (`name-only`)
+  closed 2026-08-03.
 - **Owner:** Jon Hill
 - **Inputs:** [PRD](PRD.md), [harness engineering](harness-engineering.md),
   and [memory](memory.md). Behavioral evals' methodology now lives in
