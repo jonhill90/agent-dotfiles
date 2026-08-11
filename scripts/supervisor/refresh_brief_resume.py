@@ -45,6 +45,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -84,8 +85,13 @@ def repo_head(name: str) -> str:
 
 def open_items(repo: str, kind: str) -> str:
     """`kind` is "pr" or "issue". Returns a rendered list or an explicit failure."""
+    # Request one MORE than we will show. A bare --limit renders a truncated
+    # list identically to a complete one -- the same "incomplete presented as
+    # complete" family as reporting a failed query as "none", which this
+    # function is otherwise careful about.
+    shown = 40
     out = _run(["gh", kind, "list", "-R", f"jonhill90/{repo}", "--state", "open",
-                "--limit", "40", "--json", "number,title"])
+                "--limit", str(shown + 1), "--json", "number,title"])
     if out is None:
         return "could not read (gh failed) — NOT the same as none"
     try:
@@ -94,7 +100,10 @@ def open_items(repo: str, kind: str) -> str:
         return "could not parse (gh returned malformed JSON) — NOT the same as none"
     if not rows:
         return "none"
-    return ", ".join(f"#{r['number']}" for r in sorted(rows, key=lambda r: -r["number"]))
+    ordered = sorted(rows, key=lambda r: -r["number"])
+    truncated = len(ordered) > shown
+    listed = ", ".join(f"#{r['number']}" for r in ordered[:shown])
+    return f"{listed} … and more (showing {shown})" if truncated else listed
 
 
 def build_block(tests: str | None) -> str:
@@ -216,6 +225,12 @@ def main(argv: list[str] | None = None) -> int:
     # machine holds a copy of the prose it contains.
     tmp = args.brief.with_suffix(args.brief.suffix + ".tmp")
     tmp.write_text(updated)
+    # Carry the target's existing mode onto the replacement. os.replace moves
+    # the temp file's mode with it, so a brief at 0600 came back 0644 -- the
+    # write silently widened permissions on the file it is meant to maintain.
+    # #103 is hardening this state directory to 0700/0600; this would have
+    # quietly undone the file half of that.
+    shutil.copymode(args.brief, tmp)
     os.replace(tmp, args.brief)
     print(f"refresh_brief_resume: rewrote the resume block in {args.brief}")
     return 0

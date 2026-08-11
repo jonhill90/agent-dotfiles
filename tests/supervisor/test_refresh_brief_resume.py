@@ -14,6 +14,7 @@ Three failure modes matter, in this order:
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -214,6 +215,40 @@ class AtomicWriteTests(unittest.TestCase):
                 with self.assertRaises(OSError):
                     r.main(["--brief", str(brief)])
             self.assertEqual(original, brief.read_text())
+
+
+class PermissionsAndTruncationTests(unittest.TestCase):
+    """Both from re-review. Both are the same family this tool is otherwise
+    careful about: something incomplete or altered, rendered as if it were not.
+    """
+
+    def test_the_write_preserves_the_briefs_mode(self):
+        """os.replace carries the TEMP file's mode onto the target, so a brief
+        at 0600 came back 0644 -- the write silently widened permissions on the
+        file it maintains. #103 is hardening this state directory to 0700/0600.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            brief = Path(d) / "brief.md"
+            brief.write_text(BRIEF)
+            brief.chmod(0o600)
+            with patch.object(r, "build_block", return_value=f"{r.BEGIN}\nNEW\n{r.END}"):
+                self.assertEqual(0, r.main(["--brief", str(brief)]))
+            self.assertEqual(0o600, brief.stat().st_mode & 0o777)
+
+    def test_a_truncated_list_says_it_is_truncated(self):
+        rows = json.dumps([{"number": n, "title": "x"} for n in range(1, 60)])
+        with patch.object(r, "_run", return_value=rows):
+            out = r.open_items("agent-dotfiles", "issue")
+        self.assertIn("and more", out)
+        self.assertIn("showing 40", out)
+
+    def test_a_complete_list_does_not_claim_truncation(self):
+        # The other direction, or the fix is just a label on everything.
+        rows = json.dumps([{"number": n, "title": "x"} for n in range(1, 5)])
+        with patch.object(r, "_run", return_value=rows):
+            out = r.open_items("agent-dotfiles", "issue")
+        self.assertNotIn("and more", out)
+        self.assertIn("#4", out)
 
 
 if __name__ == "__main__":
