@@ -72,6 +72,30 @@ Keep `brief.md` current as state changes — it is what a cold session resumes
 from. Durable preferences and decisions go to the Obsidian vault under
 `agent/facts/` with an index line, not into this file.
 
+## Check lane health before dispatching — do not trust "idle"
+
+Run this first, every time you are about to dispatch:
+
+```bash
+scripts/supervisor/lanes.sh          # full table
+scripts/supervisor/lanes.sh --free   # only lanes safe to dispatch to
+```
+
+**Dispatch only to lanes it reports `free`.** `capture-pane` alone cannot tell
+these apart, and all of them were misread as "nothing to do" on 2026-08-11:
+
+- `free` — an agent is running and waiting. Dispatch here.
+- `busy` — mid-turn. Leave alone.
+- `hung` — looks busy but has stopped advancing. A dispatch queues forever.
+- `dead` — no agent, just a shell. A dispatch lands in `zsh`, which replies
+  `no such file or directory: /clear`, and the work is silently lost. Restart
+  the agent with `claude --dangerously-skip-permissions` before using the lane.
+- `unknown` — a non-Claude harness. There is no probe for it; do not guess.
+
+This tool exists because a dispatch was sent into a dead lane and vanished, and
+because a lane wedged for 40 minutes was read as busy and left alone. Reading
+the table costs one command; both of those cost a whole tick.
+
 ## Lane names must say what is happening right now
 
 Jon must be able to read the tmux window list and know what the estate is
