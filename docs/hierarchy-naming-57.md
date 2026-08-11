@@ -326,8 +326,10 @@ instead of Manager→Jon, adding a hop the research above argues against — or
 `CALLER GATE` continuing to authorize the Manager for time-critical
 escalation and the Director for everything else (status digests, direct
 replies to Jon's own messages). This document recommends **(b)**, on the
-escalation-chain-depth evidence above, but the choice is Jon's, and #52 is
-blocked until it is made.
+escalation-chain-depth evidence above, but the choice is Jon's. #52's own
+"Blocked on Jon" section names a bot token as its blocker, not this
+routing decision — this decision is needed to build #52 *correctly*, not
+to unblock it.
 
 ---
 
