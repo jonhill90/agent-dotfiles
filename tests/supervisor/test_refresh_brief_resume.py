@@ -122,5 +122,36 @@ class TestCountHonestyTests(unittest.TestCase):
             self.assertIn("399 python", r.build_block("399 python, 0 failed"))
 
 
+class CheckIgnoresTheGenerationStampTests(unittest.TestCase):
+    """--check must be able to say "current". The block embeds
+    "generated <when>", which changes every run, so a naive equality comparison
+    reports STALE unconditionally -- a check that always fires carries exactly
+    as much information as one that never does. Found by running the tool
+    against the real brief, not by reading it.
+    """
+
+    def test_only_the_timestamp_changing_is_not_stale(self):
+        with tempfile.TemporaryDirectory() as d:
+            brief = Path(d) / "brief.md"
+            body = "agent-dotfiles  main abc1234"
+            brief.write_text(
+                f"# B\n\n{r.BEGIN}\n## Resume point — generated 1999-01-01 00:00 UTC\n{body}\n{r.END}\n"
+            )
+            newer = f"{r.BEGIN}\n## Resume point — generated 2030-12-31 23:59 UTC\n{body}\n{r.END}"
+            with patch.object(r, "build_block", return_value=newer):
+                self.assertEqual(0, r.main(["--brief", str(brief), "--check"]))
+
+    def test_real_content_change_is_still_stale(self):
+        # The other direction, or the fix above would just disable the check.
+        with tempfile.TemporaryDirectory() as d:
+            brief = Path(d) / "brief.md"
+            brief.write_text(
+                f"# B\n\n{r.BEGIN}\n## Resume point — generated 1999-01-01 00:00 UTC\nmain abc1234\n{r.END}\n"
+            )
+            newer = f"{r.BEGIN}\n## Resume point — generated 1999-01-01 00:00 UTC\nmain DIFFERENT\n{r.END}"
+            with patch.object(r, "build_block", return_value=newer):
+                self.assertEqual(1, r.main(["--brief", str(brief), "--check"]))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -143,6 +143,11 @@ def splice(text: str, block: str) -> str:
     )
 
 
+def _without_stamp(text: str) -> str:
+    """The block minus its generation timestamp, for change detection."""
+    return re.sub(r"^## Resume point — generated .*$", "## Resume point", text, flags=re.M)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--brief", type=Path,
@@ -160,7 +165,12 @@ def main(argv: list[str] | None = None) -> int:
     text = args.brief.read_text()
     updated = splice(text, build_block(args.tests))
     if args.check:
-        if updated == text:
+        # Compare with the generation timestamp stripped. The block embeds
+        # "generated <when>", which differs on every run, so a naive equality
+        # check reports STALE unconditionally and can never report current --
+        # a check that always fires carries exactly as much information as one
+        # that never does. Found by running it, not by reading it.
+        if _without_stamp(updated) == _without_stamp(text):
             print("resume block is current")
             return 0
         print("resume block is STALE — run without --check to regenerate", file=sys.stderr)
