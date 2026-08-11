@@ -35,9 +35,15 @@ windows() { tmux list-windows -t "$S" -F '#{window_index} #{window_name}' 2>/dev
 # 1. Refuses to touch a session that already exists. This is the one that
 #    protects live work: the estate's session is always holding lanes.
 tmux new-session -d -s "$S" -n existing 2>/dev/null
+# Capture the layout rather than hardcoding "1 existing". tmux's base-index is
+# a user setting: this session is created by raw tmux, not by the script, so it
+# lands at whatever index the local .tmux.conf dictates -- 1 here, 0 on the CI
+# runner. The property under test is "unchanged", not "equal to a literal", and
+# hardcoding the index tested the runner's config instead of the script.
+before_existing="$(windows)"
 bash "$BOOT" --session "$S" --lanes 4 --agent bash >/dev/null 2>&1
 check "refuses an existing session" "1" "$?"
-check "existing session left untouched" "1 existing" "$(windows)"
+check "existing session left untouched" "$before_existing" "$(windows)"
 cleanup
 
 # 2. Dry run changes nothing at all.
