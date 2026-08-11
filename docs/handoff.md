@@ -180,20 +180,30 @@ One live measurement exists (`docs/evals.md`, single run, 2026-07-29): **Pi
 the first draft of this file quoted four inflated figures and a range with no
 source. Claude Code alone carries ~14 bundled skills (~1,758 tokens) the
 disk-based script cannot see; `measure_e15.py` now prints a `NOT COUNTED ABOVE`
-section naming its blind spots. Issue jonhill90/skills#95 carries the unresolved half: what §6
+section naming its blind spots. Issue #5 carries the unresolved half: what §6
 is actually for.
 
-## Open work — 7 issues, none blocking
+## Open work — 6 issues, none blocking
 
 | # | State | Honest read |
 |---|---|---|
-| jonhill90/skills#95 | milestone | Half done. `measure_e15.py` now names its blind spots; its second "Done when" bullet is unmet — `validate_repository.py:302` still swallows unresolved names. Deciding what §6 *means* is a judgement call, not a task. |
-| jonhill90/skills#96 | milestone | `name-only` is real — one of four `skillOverrides` values — and unbuilt. It optimises ~490 tokens while ~1,758 sit untouched behind `disableBundledSkills`. |
-| jonhill90/skills#97 | parked | Rejected design for managing foreign skills. At least one of its five rejection arguments is undercut by this repo's own later finding that `npx skills use` does not install. Revisit trigger: a foreign skill actually landing. |
+| #5 | milestone | Half done. `measure_e15.py` now names its blind spots; its second "Done when" bullet is unmet — `validate_repository.py:302` still swallows unresolved names. Deciding what §6 *means* is a judgement call, not a task. |
+| jonhill90/skills#96 | closed 2026-08-03 | `name-only` is real — one of four `skillOverrides` values — and unbuilt. It optimises ~490 tokens while ~1,758 sit untouched behind `disableBundledSkills`. |
+| #6 | parked | Rejected design for managing foreign skills. At least one of its five rejection arguments is undercut by this repo's own later finding that `npx skills use` does not install. Revisit trigger: a foreign skill actually landing. |
 | jonhill90/skills#52–jonhill90/skills#55 | parked | Memory-design questions behind explicit triggers. Leave them. |
 
-None of these issues has comments. Where this file says "reviewers judged X",
-that is unrecorded conversation, not an artifact you can go read.
+**#5 and #6 were `jonhill90/skills#95` and `#97` until 2026-08-09**, when they
+were transferred here. GitHub redirects the old numbers, so
+`gh api repos/jonhill90/skills/issues/95` still answers — with *this*
+repository's issue #5. That redirect is why the 2026-08-10 sweep read them as
+open duplicates in two repositories (#28): it compared each issue to itself.
+There is one copy of each, and it is here. A document describing what was
+decided in July may still name the old number as a historical referent; a
+pointer to where the question lives *today* is #5 or #6.
+
+Only #5 has comments — two, both measurements. Elsewhere, where this file says
+"reviewers judged X", that is unrecorded conversation, not an artifact you can
+go read.
 
 Not on the tracker:
 
