@@ -720,16 +720,53 @@ It is to spend runs where the inference is actually load-bearing.
    that flaps twice is not adopted at that rung — escalate to the next
    §4 rung or investigate the variance source first. Flapping is a
    finding, not noise to be re-rolled away.
-5. **Nothing enters the default roster on credit.** A component joins
-   `settings/default-skills.txt` only after it has *already* cleared the
-   bar above — failed ×2 at baseline, passed ×3 with the model pinned,
-   and a counter-scenario at ×2. Until then it ships **public opt-in**,
-   a state the repository already supports (`primer`,
-   `close-the-loop`, `dispatching-subagents`, and since 2026-07-29
-   `sanity-check` — §4.1). Opt-in costs nothing at
-   request time, so there is never a reason to take an advance against
-   the roster instead. A row may not be closed with a promise to
-   re-verify later, and the manifest has no such state.
+5. **Nothing enters the default roster on evidence credit.** Cost and
+   evidence are two separate gates, and this rule governs only the
+   evidence one. A component joins `settings/default-skills.txt` *on the
+   evidence gate* only after it has *already* cleared the bar above —
+   failed ×2 at baseline, passed ×3 with the model pinned, and a
+   counter-scenario at ×2. Until then it ships **public opt-in**, a
+   state the repository already supports. Opt-in was believed to cost
+   nothing at request time; **that justification is false and is struck
+   2026-08-11** (verified: `claude_disabled_skills()` derives its `off`
+   overrides from `roster_union`, so a deployed-but-unrostered skill can
+   never be turned off on Claude Code, and `~/.claude/settings.json`
+   carries no `skillOverrides` key at all — every deployed skill reaches
+   the model regardless of roster membership). A row may not be closed
+   with a promise to re-verify later on the evidence gate, and the
+   manifest has no such state for that gate.
+
+   **Cost gate, and the 2026-08-11 exception (PR #43, issue #45).** M1.5
+   (2026-07-13) benched `primer`, `close-the-loop`, `dispatching-subagents`,
+   and (2026-07-29) `sanity-check` on a §3.1 *cost* rationale, not this
+   rule — the claim that keeping a skill off the roster kept it from
+   "deploying or consuming context." `supervised-lane-loop` joined that
+   bench on the same rationale when it was vendored (§4.1). Measured on
+   this machine 2026-08-10, the cost rationale did not hold: skills load
+   by description until triggered, and rostering all five together costs
+   roughly 367 tokens of description in total — no detectable cost on
+   Claude Code, and a few hundred tokens on the other three harnesses
+   (commit `cf21cc2`, PR #43). PR #43 rostered all five on that
+   measurement alone. **This did not clear the evidence gate above** —
+   none of the five had failed ×2 / passed ×3 / a counter-scenario at
+   ×2 before PR #43, and none has since; the prohibition on entering the
+   roster on evidence credit still applies to them. The cost gate and
+   the evidence gate can therefore disagree about a component's roster
+   membership: cost decided placement here, and evidence is still owed.
+
+   **Demotion policy (added 2026-08-11).** A roster entry admitted on
+   the cost gate with its evidence gate still open is removed from
+   `settings/default-skills.txt` the moment its own eval is run and
+   fails — no second window, no re-verification grace period, demoted
+   on the first adverse result. This is narrower than the promise-and-
+   wait path the paragraph above forbids: that path asked for time
+   before evidence existed and let a component sit in the roster on the
+   strength of the ask. Demotion-on-failure asks for nothing — it grants
+   provisional membership on a *different*, already-cleared gate (cost),
+   and removes that membership the instant the still-open gate (evidence)
+   returns a failure. The five components rostered under this exception
+   are recorded, with this exact status, in
+   [`docs/provenance-manifest.md`](provenance-manifest.md).
 
    The retired path is the one `safe-deletion` and `failing-test-first`
    used on 2026-07-18: into the roster at a weaker bar, carrying a
@@ -797,9 +834,13 @@ caveats their manifest rows carried are cleared
 (results — private repository jonhill90/agent-evals, evidence unavailable publicly (`tests/evals/results/2026-07-27-copilot-column.md`)).
 
 **The path itself is retired** (rule 5, 2026-07-27). No component may
-enter the roster on a promise again, so no manifest row should ever
-carry a "will be re-verified" caveat. If one appears, it is a defect in
-the row, not a state the process allows.
+enter the roster on a promise against the evidence gate again, so no
+manifest row should ever carry a "will be re-verified" caveat on that
+gate. If one appears, it is a defect in the row, not a state the
+process allows. **This does not cover the 2026-08-11 cost-gate
+exception above** — that exception is not a promise to re-verify later;
+it is provisional membership on a different, already-cleared gate,
+closed out by demotion rather than by a future re-check.
 
 ## 10.2 Scenario Intake (added 2026-07-25)
 
