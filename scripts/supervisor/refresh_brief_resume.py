@@ -43,6 +43,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import re
 import subprocess
 import sys
@@ -132,15 +133,50 @@ def build_block(tests: str | None) -> str:
 
 
 def splice(text: str, block: str) -> str:
-    if BEGIN not in text or END not in text:
+    """Replace the single marker-delimited block. Refuse anything ambiguous.
+
+    Every check here is a REFUSAL, not a repair. This writes to the document a
+    cold session reads first, and the failure modes below were found by an
+    adversarial review that constructed each one:
+
+    - two marker pairs: `re.sub` replaced BOTH with the same block. If they had
+      ever held different content -- a bad merge, a copy-paste -- both were
+      clobbered silently.
+    - nested markers: the non-greedy match ran from the first BEGIN to the
+      NEAREST END, replaced that, and left a dangling orphan END behind.
+    - markers out of order (END before BEGIN): the old presence check passed,
+      because both literals existed *somewhere*. The regex then matched nothing
+      and returned the text byte-for-byte unchanged -- while the CLI printed
+      "rewrote the resume block" and exited 0, and --check reported "current".
+      **A malformed brief was actively certified as fresh.** That is strictly
+      worse than the staleness this tool exists to fix: staleness was visible.
+
+    Counting occurrences and checking order catches all four, including a marker
+    pasted into a fenced code block as documentation -- which this repo's own
+    docstrings and PR bodies do, so it is not hypothetical.
+    """
+    n_begin = text.count(BEGIN)
+    n_end = text.count(END)
+    if n_begin == 0 or n_end == 0:
         raise SystemExit(
-            f"refresh_brief_resume: markers not found in brief.\n"
+            f"refresh_brief_resume: markers not found (BEGIN x{n_begin}, END x{n_end}).\n"
             f"Add {BEGIN} / {END} around the resume block first. Refusing to guess "
-            f"where it starts — a mangled brief is worse than a stale one."
+            f"where it starts -- a mangled brief is worse than a stale one."
         )
-    return re.sub(
-        re.escape(BEGIN) + ".*?" + re.escape(END), lambda _: block, text, flags=re.S
-    )
+    if n_begin > 1 or n_end > 1:
+        raise SystemExit(
+            f"refresh_brief_resume: expected exactly one marker pair, found "
+            f"BEGIN x{n_begin}, END x{n_end}. Refusing: replacing several blocks "
+            f"with identical content destroys whichever one differed."
+        )
+    if text.index(BEGIN) > text.index(END):
+        raise SystemExit(
+            "refresh_brief_resume: END appears before BEGIN. Refusing: the "
+            "previous version silently changed nothing here and reported success."
+        )
+    start = text.index(BEGIN)
+    end = text.index(END) + len(END)
+    return text[:start] + block + text[end:]
 
 
 def _without_stamp(text: str) -> str:
@@ -175,7 +211,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         print("resume block is STALE — run without --check to regenerate", file=sys.stderr)
         return 1
-    args.brief.write_text(updated)
+    # Atomic: write a sibling temp file and rename over the target. A partial
+    # write here truncates the cold-start document, and nothing else on the
+    # machine holds a copy of the prose it contains.
+    tmp = args.brief.with_suffix(args.brief.suffix + ".tmp")
+    tmp.write_text(updated)
+    os.replace(tmp, args.brief)
     print(f"refresh_brief_resume: rewrote the resume block in {args.brief}")
     return 0
 

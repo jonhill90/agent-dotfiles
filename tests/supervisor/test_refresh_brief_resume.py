@@ -153,5 +153,68 @@ class CheckIgnoresTheGenerationStampTests(unittest.TestCase):
                 self.assertEqual(1, r.main(["--brief", str(brief), "--check"]))
 
 
+class AdversarialMarkerTests(unittest.TestCase):
+    """Every case here was constructed by an adversarial review of this tool and
+    silently corrupted or silently no-op'd before the fix. Each must now REFUSE.
+
+    The out-of-order case is the one that mattered most: the CLI printed
+    "rewrote the resume block", exited 0, changed nothing, and --check then
+    reported "current" -- a malformed brief certified as fresh, which is worse
+    than the staleness this tool exists to remove.
+    """
+
+    def _refuses(self, text, expect):
+        with self.assertRaises(SystemExit) as caught:
+            r.splice(text, f"{r.BEGIN}\nNEW\n{r.END}")
+        self.assertIn(expect, str(caught.exception))
+
+    def test_two_marker_pairs_are_refused(self):
+        self._refuses(
+            f"a\n{r.BEGIN}\none\n{r.END}\nb\n{r.BEGIN}\ntwo\n{r.END}\nc\n",
+            "exactly one marker pair",
+        )
+
+    def test_nested_markers_are_refused(self):
+        self._refuses(
+            f"a\n{r.BEGIN}\nouter\n{r.BEGIN}\ninner\n{r.END}\ntail\n{r.END}\n",
+            "exactly one marker pair",
+        )
+
+    def test_markers_out_of_order_are_refused(self):
+        self._refuses(f"a\n{r.END}\nb\n{r.BEGIN}\nc\n", "END appears before BEGIN")
+
+    def test_a_marker_pasted_in_a_code_fence_is_refused(self):
+        # This repo's own docstrings and PR bodies paste the marker syntax, so a
+        # second pair landing in the brief as documentation is realistic.
+        self._refuses(
+            f"# B\n\n```\n{r.BEGIN}\nexample\n{r.END}\n```\n\n{r.BEGIN}\nreal\n{r.END}\n",
+            "exactly one marker pair",
+        )
+
+    def test_a_begin_with_no_end_is_refused(self):
+        self._refuses(f"a\n{r.BEGIN}\nb\n", "markers not found")
+
+    def test_the_ordinary_single_pair_still_works(self):
+        # Or every assertion above is satisfied by a tool that refuses always.
+        out = r.splice(BRIEF, f"{r.BEGIN}\nNEW\n{r.END}")
+        self.assertIn("NEW", out)
+        self.assertIn("Prose above that must survive untouched.", out)
+
+
+class AtomicWriteTests(unittest.TestCase):
+    def test_a_failed_write_leaves_the_brief_intact(self):
+        """A partial write truncates the cold-start document and nothing else
+        holds a copy of its prose."""
+        with tempfile.TemporaryDirectory() as d:
+            brief = Path(d) / "brief.md"
+            brief.write_text(BRIEF)
+            original = brief.read_text()
+            with patch.object(r, "build_block", return_value=f"{r.BEGIN}\nNEW\n{r.END}"), \
+                 patch("os.replace", side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    r.main(["--brief", str(brief)])
+            self.assertEqual(original, brief.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
