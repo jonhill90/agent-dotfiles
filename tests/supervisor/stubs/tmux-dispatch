@@ -32,10 +32,11 @@ case "$sub" in
         esac
       done
       buf="$PANES/$win"
+      echo "PROBE entry buf=[$buf] size=$(wc -c <"$buf" 2>/dev/null || echo NA) pid=$$ ppid=$PPID" >> "${TMUX_PROBE_LOG:-/dev/null}"
       for k in "${keys[@]:-}"; do
         case "$k" in
-          Enter) : ;;
-          C-u)   : > "$buf" ;;
+          Enter) echo "PROBE branch=Enter k=[$k]" >> "${TMUX_PROBE_LOG:-/dev/null}"; : ;;
+          C-u)   echo "PROBE branch=C-u k=[$k]" >> "${TMUX_PROBE_LOG:-/dev/null}"; : > "$buf" ;;
           *)
             drop="${DISPATCH_DROP_PREFIX:-0}"
             # Only the brief itself, not a short command like `/clear`: the
@@ -44,6 +45,7 @@ case "$sub" in
               : > "$buf.dropped"
               k="${k:$drop}"
             fi
+            echo "PROBE branch=default k=[$k] drop=$drop" >> "${TMUX_PROBE_LOG:-/dev/null}"
             printf '%s' "$k" >> "$buf" ;;
         esac
       done
