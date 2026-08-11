@@ -492,6 +492,74 @@ want_contains "the task is recorded as delivered -- the brief was verified in th
 want_contains "the record carries the worktree the lane was given" "$D/roots" "$status"
 want_contains "the record carries the issue it was dispatched for" '"source_ref":"140"' "$status"
 
+# --- THE LANE_META SANITY GUARD (agent-dotfiles#144 finding 4) ------------
+#
+# The pane-identity probe the ledger recording block makes right before
+# `record-dispatch` can itself fail against a real tmux -- a target it
+# cannot resolve prints a single-line error, not the pipe-joined template
+# dispatch.sh expects. The guard exists to catch that BEFORE `IFS='|' read`
+# scatters an error string across PANE_ID/PANE_CMD/etc and hands it to
+# cli.py as if it were real pane identity. The brief must still go out --
+# this is a bookkeeping failure, not a dispatch failure, same contract as
+# #140's own ledger-failure tolerance.
+cat > "$D/lanes" <<'FIX'
+1|arch|claude.exe|❯ ready|1|0
+3|free-3|claude.exe|❯ ready|1|0
+FIX
+printf '145|| a dispatch whose pane-identity probe itself fails\n' >> "$D/issues"
+export STUB_LANE_META_BROKEN=1
+out=$(LEDGER_STATE="$D/state-145" run 145 ledger-meta-broken "$D/brief-orig.md" acme/agent-dotfiles "$REPO"); rc=$?
+unset STUB_LANE_META_BROKEN
+want_exit "a broken pane-identity probe does NOT abort the dispatch" "$rc" 0 "$out"
+log=$(tmuxlog)
+want_contains "the brief still goes out" "send-keys -t t:3" "$log"
+want_contains "and is still submitted" "send-keys -t t:3 Enter" "$log"
+want_contains "the guard names the failure as an unreadable pane probe" \
+  "could not read pane metadata" "$out"
+status=$(LEDGER_STATE="$D/state-145" ledger status 2>&1)
+want_contains "no garbage dispatch is recorded from the malformed probe" '"lanes":[]' "$status"
+want_contains "and no task either" '"tasks":[]' "$status"
+
+# ...and that guard is load-bearing. Patch a copy that always takes the
+# "well-formed" branch regardless of what LANE_META actually contains, and
+# confirm the specific reason string above disappears -- a suite that still
+# reports "could not read pane metadata" with the guard removed has not
+# tested the guard, only the ledger-failure tolerance underneath it.
+BROKEN_META_GUARD="$D/dispatch-lane-meta-unguarded.sh"
+patch_rc=0
+python3 - "$DISPATCH" "$BROKEN_META_GUARD" <<'PY' || patch_rc=$?
+import os
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+text = open(src).read()
+marker = 'if [ -z "$LANE_META" ] || [[ "$LANE_META" != *"|"* ]]; then'
+assert marker in text, "LANE_META guard not found -- script shape changed"
+assert text.count(marker) == 1, "LANE_META guard not unique -- script shape changed"
+text = text.replace(marker, "if false; then  # MUTATED: guard always skipped", 1)
+here = 'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
+assert text.count(here) == 1, "HERE assignment not found or not unique -- script shape changed"
+text = text.replace(here, 'HERE=%r' % os.path.dirname(os.path.abspath(src)), 1)
+open(dst, "w").write(text)
+PY
+if [ "$patch_rc" -ne 0 ]; then
+  bad "setup: patched a copy of dispatch.sh whose LANE_META guard is skipped" \
+    "could not patch $DISPATCH (exit $patch_rc) -- treating as a failure, not a skip"
+else
+  ok "setup: patched a copy of dispatch.sh whose LANE_META guard is skipped"
+  printf '146|| the same broken probe, against the unguarded copy\n' >> "$D/issues"
+  export STUB_LANE_META_BROKEN=1
+  out=$(DISPATCH_SCRIPT="$BROKEN_META_GUARD" LEDGER_STATE="$D/state-146" \
+        run 146 ledger-meta-unguarded "$D/brief-orig.md" acme/agent-dotfiles "$REPO"); rc=$?
+  unset STUB_LANE_META_BROKEN
+  if ! grep -qF "could not read pane metadata" <<<"$out"; then
+    ok "mutation confirmed: skipping the guard loses the specific pane-probe diagnosis (the assertion above would now be red)"
+  else
+    bad "mutation confirmed: skipping the guard loses the specific pane-probe diagnosis" \
+      "the unguarded copy still reported 'could not read pane metadata' -- the patch missed the real guard: $out"
+  fi
+  want_exit "the unguarded copy still does not abort the dispatch" "$rc" 0 "$out"
+fi
+
 # --- A LEDGER FAILURE MUST NOT ABORT A DISPATCH ---------------------------
 #
 # The property the whole design rests on. `dispatch.sh` aborts and unwinds on

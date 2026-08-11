@@ -171,11 +171,23 @@ def record_dispatch(
 
     Nothing reads any of this yet. That is the safety property, not an
     oversight: `lanes.sh` still classifies panes exactly as it did.
+
+    agent-dotfiles#144 finding 2: this used to make five independent `Ledger`
+    calls -- register, reconstruct, assign, mark-pending, mark-delivered --
+    each its own lock and transaction. A crash between any two left whatever
+    had already committed, including an orphan `lanes` row claiming a lane
+    occupied for a dispatch nothing else records. `Ledger.record_dispatch`
+    does the same five writes in ONE transaction now; this function's job is
+    just shaping `dispatch.sh`'s raw inputs into that call.
     """
     harness = harness or HARNESS_BY_COMMAND.get(command)
     if harness is None:
         raise RuntimeError(f"cannot tell which harness pane command {command!r} is -- pass --harness")
-    lane_record = ledger.register_lane(
+    primary = issues[0]
+    source_url = (
+        f"https://github.com/{github}/issues/{primary}" if github else f"issue:{primary}@{Path(pane_path).name}"
+    )
+    return ledger.record_dispatch(
         lane=lane,
         pane_id=pane_id,
         nonce=secrets.token_hex(16),
@@ -188,31 +200,15 @@ def record_dispatch(
         server_id=server_id,
         session_id=session_id,
         command=command,
-    )
-    nonce = lane_record["nonce"]
-    primary = issues[0]
-    source_url = (
-        f"https://github.com/{github}/issues/{primary}" if github else f"issue:{primary}@{Path(pane_path).name}"
-    )
-    ledger.reconstruct_task(
         task_id=task,
         source_kind="issue",
         source_url=source_url,
         source_ref=str(primary),
         summary=summary,
         source_state="OPEN",
-        status="created",
         evidence=[f"claimed by dispatch.sh for lane {lane}", f"issues: {','.join(str(i) for i in issues)}"],
         status_marker=None,
     )
-    ledger.assign(task_id=task, lane=lane, pane_nonce=nonce, summary=summary)
-    # The caller only reaches this after it has typed the brief, read the pane
-    # back and confirmed both ends of the message arrived, so `delivered` is
-    # what actually happened. The intermediate `delivery_pending` write is not
-    # skipped: it is the state machine's only route to `delivered`, and its
-    # own guard against a silent resend.
-    ledger.mark_delivery_pending(task, pane_nonce=nonce)
-    return {"lane": lane_record, "task": ledger.mark_delivered(task, pane_nonce=nonce)}
 
 
 def record_completion(ledger, *, task, note):
