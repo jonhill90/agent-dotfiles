@@ -483,13 +483,18 @@ class NoLocalSkillsDirTests(unittest.TestCase):
     def test_discover_skill_dirs_is_empty_not_a_crash(self) -> None:
         self.assertEqual(validator.discover_skill_dirs(self.root, None), [])
 
-    def test_description_tokens_by_harness_is_zero_everywhere(self) -> None:
+    def test_description_tokens_by_harness_is_unmeasured_everywhere(self) -> None:
+        # Was test_description_tokens_by_harness_is_zero_everywhere: it
+        # pinned 0.0 as correct, which is what let the description-token
+        # cap check pass unconditionally and silently (agent-dotfiles#5).
+        # 0.0 means "measured, under budget"; retargeted at the value that
+        # actually distinguishes "measured" from "cannot measure" — None.
         (self.root / "settings" / "default-skills.txt").write_text(
             "github-cli\n", encoding="utf-8"
         )
         totals = validator.description_tokens_by_harness(self.root)
         self.assertTrue(totals)
-        self.assertTrue(all(value == 0 for value in totals.values()))
+        self.assertTrue(all(value is None for value in totals.values()))
 
     def test_validate_roster_resolves_is_silent_without_a_skills_dir(self) -> None:
         (self.root / "settings" / "default-skills.txt").write_text(
@@ -502,6 +507,73 @@ class NoLocalSkillsDirTests(unittest.TestCase):
     def test_validate_static_context_does_not_crash(self) -> None:
         # no skills/ anywhere: must not raise, regardless of other findings
         validator.validate_static_context(self.root)
+
+
+class DescriptionTokenCapTests(unittest.TestCase):
+    """agent-dotfiles#5, repo-side half: description_tokens_by_harness()
+    returning 0.0 for "cannot measure" made the cap check at
+    validate_static_context()'s `tokens > DESCRIPTION_TOKEN_CAP` line
+    unconditionally pass, silently, in every tree without a local skills/
+    -- which has been every tree since #9. These prove the replacement
+    behaviour: unmeasured is reported, not swallowed; a sighted tree still
+    measures real totals; and the cap still fires when a sighted tree
+    genuinely exceeds it."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        instructions = self.root / "instructions"
+        (instructions / "overlays").mkdir(parents=True)
+        (instructions / "global.instructions.md").write_text(
+            "x" * 400, encoding="utf-8"
+        )
+
+    def _add_skill(self, name: str, description: str) -> None:
+        skill = self.root / "skills" / name
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: {description}\n---\n\n# {name}\n",
+            encoding="utf-8",
+        )
+
+    def test_unmeasured_tree_gets_a_warning_finding(self) -> None:
+        # No skills/ at all -- the normal state of this repo since #9.
+        findings = validator.validate_static_context(self.root)
+        warnings = [f for f in findings if f.level == "warning"]
+        self.assertTrue(
+            any("description-token" in f.message for f in warnings),
+            f"no unmeasured warning among: {findings}",
+        )
+        # And the cap check must not have fired at all -- there is nothing
+        # to compare against the cap when the component is unmeasured.
+        self.assertFalse(
+            any("installed-skill descriptions" in f.message for f in findings)
+        )
+
+    def test_sighted_tree_still_computes_real_totals(self) -> None:
+        self._add_skill("example-skill", "d" * 100)
+        by_harness = validator.description_tokens_by_harness(self.root)
+        self.assertTrue(by_harness)
+        self.assertTrue(all(value is not None for value in by_harness.values()))
+        self.assertTrue(all(value > 0 for value in by_harness.values()))
+        # A sighted tree must not emit the unmeasured warning.
+        findings = validator.validate_static_context(self.root)
+        self.assertFalse(
+            any("description-token" in f.message and f.level == "warning"
+                for f in findings)
+        )
+
+    def test_cap_check_fires_when_a_sighted_tree_exceeds_it(self) -> None:
+        # DESCRIPTION_TOKEN_CAP is 2000 tokens; token_estimate_bytes is
+        # size/4, so >8000 description bytes trips it.
+        self._add_skill("oversized-skill", "d" * 8100)
+        findings = validator.validate_static_context(self.root)
+        errors = [f for f in findings if f.level == "error"]
+        self.assertTrue(
+            any("installed-skill descriptions" in f.message for f in errors),
+            f"cap check did not fire: {findings}",
+        )
 
 
 class SkillSourcePinTests(unittest.TestCase):

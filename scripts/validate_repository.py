@@ -288,12 +288,20 @@ def validate_projections(root: Path) -> list[Finding]:
     return findings
 
 
-def description_tokens_by_harness(root: Path) -> dict[str, float]:
+def description_tokens_by_harness(root: Path) -> dict[str, float | None]:
     """Static description cost per harness, against its resolved roster.
 
     A skill scoped to one harness is charged to that harness only — the
     point of per-harness rosters (SPEC §4.1). With a flat roster every
     harness resolves to the same set and the numbers are identical.
+
+    Returns `None` per harness, not `0.0`, when there is no local `skills/`
+    to measure (#9: skill content lives in jonhill90/skills and
+    jonhill90/skills-private now). `0.0` already means "measured, and under
+    budget" — collapsing "unmeasured" onto that value made the caller's cap
+    check (`tokens > DESCRIPTION_TOKEN_CAP`) unconditionally pass, silently,
+    which is the defect agent-dotfiles#5 measured. `None` lets the caller
+    tell the two apart.
     """
     roster = root / "settings" / "default-skills.txt"
     if not roster.is_file():
@@ -305,15 +313,13 @@ def description_tokens_by_harness(root: Path) -> dict[str, float]:
         names_by_harness = {
             harness: load_default_skills(root, harness) for harness in HARNESSES
         }
-    totals: dict[str, float] = {}
-    # #9: skill descriptions live in jonhill90/skills and
-    # jonhill90/skills-private now, not locally, so this repo can no longer
-    # compute the description-token component from disk. The live
-    # instrument is scripts/measure_e15.py, which reads the *deployed*
-    # ~/.claude/skills tree and is the authority for the §6 budget; this
-    # function's contribution collapses to 0 without a local skills/.
+    # The live instrument for the deployed tree is scripts/measure_e15.py,
+    # which reads the *deployed* ~/.claude/skills tree and is the authority
+    # for the §6 budget; this function only ever reads a local skills/,
+    # which #9 removed from this repo as the normal, expected state.
     if not (root / "skills").is_dir():
-        return {harness: 0.0 for harness in HARNESSES}
+        return {harness: None for harness in HARNESSES}
+    totals: dict[str, float | None] = {}
     for harness, names in names_by_harness.items():
         description_bytes = 0
         for name in sorted(set(names)):
@@ -615,8 +621,24 @@ def validate_static_context(root: Path) -> list[Finding]:
                 )
 
     by_harness = description_tokens_by_harness(root)
+    if all(tokens is None for tokens in by_harness.values()):
+        # Warning, not error: no local skills/ is the normal, expected
+        # state of this repo since #9, and an error here would make a
+        # correct tree fail validation forever. But a budget component
+        # with a cap that silently reports nothing when it cannot measure
+        # is the exact failure agent-dotfiles#5 found — say so instead.
+        findings.append(
+            Finding(
+                "warning",
+                root / "skills",
+                "description-token cap cannot be measured: no local skills/ "
+                "(#9 moved skill content to jonhill90/skills and "
+                "jonhill90/skills-private); the live instrument for the "
+                "deployed tree is scripts/measure_e15.py",
+            )
+        )
     for harness, tokens in sorted(by_harness.items()):
-        if tokens > DESCRIPTION_TOKEN_CAP:
+        if tokens is not None and tokens > DESCRIPTION_TOKEN_CAP:
             findings.append(
                 Finding(
                     "error",
@@ -627,7 +649,11 @@ def validate_static_context(root: Path) -> list[Finding]:
             )
     # The thickest harness sets the aggregate (SPEC §6 measures the worst
     # case), but each harness is now charged only for its own roster.
-    description_tokens = max(by_harness.values(), default=0.0)
+    # Unmeasured harnesses (None) contribute nothing here, same as the old
+    # 0.0 did for this total — only the per-harness cap check above needed
+    # to stop treating "unmeasured" as "measured and zero".
+    measured = [tokens for tokens in by_harness.values() if tokens is not None]
+    description_tokens = max(measured, default=0.0)
 
     total_tokens = (
         instruction_tokens
