@@ -297,6 +297,20 @@ pass the assignment gate (§2.1).**
 Everything below is **inferred** from reading the code; none of it was
 attempted.
 
+- **Documentation-amendment cost, checked for the same defect as path A:
+  none found.** `docs/SPEC.md`, `docs/PRD.md` and `docs/loop-engineering.md`
+  never name any of the eight shell-supervisor files (`watchdog.sh`
+  `lanes.sh` `dispatch.sh` `claim.sh` `notify.sh` `inbox.sh` `worktree.sh`
+  `director-inbox.sh`) or the phrase "shell supervisor" (**measured**,
+  `grep -n -i "watchdog\|dispatch.sh\|lanes.sh\|claim.sh\|shell supervisor"
+  docs/SPEC.md docs/PRD.md docs/loop-engineering.md` — no hits). The
+  cooperative `tmux wait-for` mechanism SPEC §14.1 and §14.3's fast-path row
+  describe lives in `scripts/supervisor/lane-done.sh`, which is neither one
+  of the eight nor the ledger's (**measured**, `grep -rln "wait-for"
+  scripts/supervisor/*.sh` → only `lane-done.sh`; §2 already establishes the
+  ledger has none). Retiring the shell path therefore does not leave any
+  canonical doc describing a component that no longer exists, unlike
+  deleting the ledger.
 - A `hill90-supervisor`-equivalent entry point has to exist, be installed, and
   be named something this repository owns.
 - Every dispatchable issue needs a hand-authored marker in its body, or the
