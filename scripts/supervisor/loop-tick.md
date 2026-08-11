@@ -127,6 +127,105 @@ tick, not a failure of one.
   `$HOME` (`sync.py apply`, `install.sh`, any `apm` mutation).
 - Commits: Jon Hill \<jonhill90@live.com\> sole author, no co-author trailers.
 
+## Before you merge, check what the merge will CLOSE
+
+```bash
+gh pr view <n> --json closingIssuesReferences --jq '.closingIssuesReferences[].number'
+```
+
+If that list does not match what you intend to close, fix the PR body before
+merging. It is the only way to see this — the PR body reads as prose and the
+linkage is invisible in it.
+
+**GitHub's closing-keyword parser is not negation-aware.** A PR body saying
+
+> It does not explain or close #NNN
+
+links issue NNN as a closing reference and auto-closes it on merge. The sentence
+promising not to close the issue is what closes it. Caught on #98 by review,
+after the PR had been open for a full tick and read past twice.
+
+Two things that follow, both learned the hard way on that PR:
+
+- The **commit message** counts too, not just the body. A squash merge folds
+  commit messages into the merge commit, so amend the branch as well.
+- Writing the explanation reintroduces the bug. The note added to #98's body
+  describing this trap repeated the same keyword-then-number pattern three more
+  times and re-linked the issue. **On a PR that should close nothing**, break
+  every `close|closes|closed|fix|fixes|resolve|resolves` followed by
+  `#<number>` — including inside quotes and explanations — then re-check and
+  confirm the list is empty.
+
+**The target is "matches intent", never "empty".** A PR that genuinely resolves
+an issue SHOULD carry `Fixes #N`, and stripping it breaks something real:
+`claim.sh stale` finds in-flight work by grepping PR bodies for
+`(fixes|closes|resolves) #N`, and that is the only signal it has. A PR with no
+reference is invisible to every duplicate-work check in this estate — which is
+how a lane was dispatched to #99 while #100 was already open, #100 having
+omitted the keyword because it implements only half of that issue.
+
+So there are two failure directions, not one:
+
+- a keyword that should not be there closes an issue nothing has solved
+- a missing keyword hides live work and gets a second lane dispatched onto it
+
+Both are silent. Check the list against what you intend; do not reach for
+either extreme by reflex.
+
+An issue closed by accident is a louder false signal than almost anything else
+this loop produces: the tracker then says a problem is solved, and the next
+session believes it.
+
+## "This branch would revert X" — check with three-dot, not two-dot
+
+`git diff main..branch` compares the two **tips**. Every commit on `main` the
+branch does not have appears as a **deletion**, because the branch's tree does
+not contain it. That is a property of comparing tips. It is not a prediction
+about merging.
+
+A merge — including a squash merge — applies the **three-dot** diff: the
+branch's changes since the merge base. Everything else on `main` is left alone.
+
+Reproduced from scratch on 2026-08-11, after a PR was held on the two-dot
+reading:
+
+```
+$ git diff --stat master..feature     # two-dot
+  feature.txt  | 1 +
+  mainfile.txt | 1 -                  <- looks exactly like a revert
+
+$ git diff --stat master...feature    # three-dot -- what a merge applies
+  feature.txt | 1 +
+
+$ git merge feature        -> mainfile.txt PRESENT   (not reverted)
+$ git merge --squash ...   -> mainfile.txt PRESENT
+```
+
+Applied as written, the two-dot reading holds **every** branch that is behind
+`main` with a revert warning that is not real.
+
+*Reasoning, not measurement, and flagged as such:* the cost of a
+usually-wrong warning is that readers learn to skim past it. That is an argument,
+not something counted here. The frequency claim beside it originally read "in
+this repo tonight, most of them" — measured afterwards and **false**: of four
+open PRs, one was behind `main`. Stated wrong first, corrected by counting.
+
+**Also not a revert: "the squash moved the merge base."** It does not. A squash
+merge writes one new commit on `main` whose parent is `main`'s previous tip; the
+branch's own merge base is unaffected, and a later branch forked before that
+squash still merges its own changes and nothing else. This was part of the
+original false alarm's reasoning and the tip-versus-merge-base correction above
+does not address it on its own.
+
+Being behind is not sufficient to revert anything. It takes a real content
+conflict — the branch editing lines a newer commit changed, a rebase onto an
+older base, or a delete-versus-modify. All of those appear in a three-dot diff or
+as a merge conflict.
+
+When it matters, do the decisive thing instead of reading a diff: merge into a
+scratch worktree and look. That is what found the genuine #96/#97 semantic
+conflict, which git reported as a clean merge.
+
 ## Before you finish the tick
 
 Keep `brief.md` current as state changes — it is what a cold session resumes
