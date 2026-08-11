@@ -226,65 +226,38 @@ When it matters, do the decisive thing instead of reading a diff: merge into a
 scratch worktree and look. That is what found the genuine #96/#97 semantic
 conflict, which git reported as a clean merge.
 
-### Do not generalise this to "three-dot good, two-dot bad"
+### Which diff answers which question
 
-Which diff is correct depends on the **question**, and for one common question
-**neither form is correct**. Constructed and measured, not reasoned:
+For "would merging this branch delete something", use **three-dot**
+(`main...branch`) — see above. For "does `main` already contain this branch's
+work", **neither plain form is correct**:
 
-| question | answer |
-|---|---|
-| would merging this branch delete something? | `main...branch` |
-| does `main` already contain this branch's work? | **neither — compare per file** |
+- `main...branch` — after a squash merge, `main` holds that content under a
+  different commit, so this still lists it. Reports finished work as outstanding.
+- `main..branch` — once `main` drifts, this lists `main`'s own newer files as
+  "deletions". Reports unrelated work as the branch's.
 
-The second question is the one you ask about an unpushed branch: is this work
-lost, or was it squash-merged already?
-
-**Three-dot is wrong for it.** After a squash merge `main` holds the same content
-under a different commit, so:
-
-```
-$ git diff --stat master...feature    # branch's work IS on master
-  work.txt | 1 +                      <- reports finished work as outstanding
-```
-
-**Two-dot is right only while the branch is current, and silently wrong once it
-is stale.** With the branch's work already on `master`, and `master` since
-advanced:
-
-```
-$ git diff --stat master..feature
-  base.txt  | 1 -
-  later.txt | 1 -                     <- master's OWN newer work, not the
-                                         branch's outstanding work
-```
-
-Two-dot answers "is this branch identical to `main`", which is a different
-question and coincides with the one you meant only when `main` has not moved.
-
-**What actually answers it** — two-dot **scoped to the paths the branch itself
-touched**. The scoping is what removes `main`'s unrelated drift:
+What works is two-dot **scoped to the paths the branch touched**, with the
+pathspec passed through `xargs -0` so filenames cannot word-split:
 
 ```bash
-paths=$(git diff --name-only "$(git merge-base main "$b")" "$b")
-git diff main.."$b" -- $paths      # empty => the branch's work is on main
+mb=$(git merge-base main "$b")
+git diff --name-only -z "$mb" "$b" | xargs -0 git diff --stat main.."$b" --
+# empty => the branch's work is on main
 ```
 
-Measured against both cases:
+**Do not write that as `-- $paths`.** Unquoted, it is broken in both shells and
+both failures say "already merged" — the direction that gets unmerged work
+deleted. In bash a path containing a space splits into two pathspecs that match
+nothing; in zsh, which does not word-split, a multi-file branch becomes one
+newline-joined pathspec that matches nothing. Verified in both shells.
 
-```
-superseded branch, main drifted     raw two-dot: base.txt, later.txt  (false)
-                                    scoped:      (empty)              correct
-branch DELETED a file main still has
-                                    scoped:      base.txt | 2 --      correct
-```
+Verified by construction: superseded branch with `main` drifted → empty; branch
+that only deletes a file → still reported; rename, add-on-both-sides, binary,
+and a path containing a space → all correct.
 
-The deletion case matters: a branch whose contribution is a removal must still
-report as outstanding, and scoping does not hide it.
-
-The record here is three wrong answers to this one question in one night — see
-#120 and #121 — two of them written by whoever was also writing the guidance.
-If you cannot say in one sentence which question you are asking, you are not
-ready to pick a diff.
+This question got four wrong answers in one night, three of them written by
+whoever was also writing this section. Check it rather than adopt it.
 
 ## Before you finish the tick
 
