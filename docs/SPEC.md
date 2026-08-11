@@ -539,18 +539,28 @@ aggregate is measured against each harness's *resolved* roster rather
 than the `apm.yml` union, and the total above is enforced per harness.
 Until then the union is the enforced basis.
 
-**Plugin skills are in the budget and cannot be measured repo-side.**
-Enabled Claude Code plugins contribute description tokens but are not
-vendored here, so `validate_repository.py` cannot see them — a plugin
-can grow the static footprint with no repo-side check noticing. Live
-E15 therefore runs `scripts/measure_e15.py`, which reads the deployed
-tree. Three counting traps it encodes, each found on a live machine
-2026-07-26: only `plugins/cache/` is installed content (`marketplaces/`
-is the catalogue of everything *available* and double-counts anything
-installed); a plugin may ship `commands/*.md` instead of
-`skills/*/SKILL.md`, which Claude Code merges into skills and which
-therefore cost tokens; and a cached-but-disabled plugin costs nothing.
-Only Claude Code loads plugin skills — the neutral trio are not charged.
+**The installed-skill-descriptions cap is in the budget and, since #9,
+cannot be measured repo-side at all** — not only for plugin skills.
+Skill content moved to `jonhill90/skills` and `jonhill90/skills-private`
+(pinned `apm.yml` dependencies); this repository no longer vendors a
+local `skills/` tree for `validate_repository.py` to read, so the cap
+has no repo-side number to check against for *any* skill, roster-managed
+or plugin. `validate_repository.py` reports this component as
+unmeasured (a warning, not a silent pass) rather than treating the
+absence as zero tokens. On top of that base blindness, enabled Claude
+Code plugins specifically contribute description tokens that were never
+vendored here in the first place, so even a hypothetical restored local
+`skills/` tree still could not see them — a plugin can grow the static
+footprint with no repo-side check noticing either way. Live E15
+therefore runs `scripts/measure_e15.py`, which reads the deployed tree
+and is the sole authority for this component now. Three counting traps
+it encodes, each found on a live machine 2026-07-26: only
+`plugins/cache/` is installed content (`marketplaces/` is the catalogue
+of everything *available* and double-counts anything installed); a
+plugin may ship `commands/*.md` instead of `skills/*/SKILL.md`, which
+Claude Code merges into skills and which therefore cost tokens; and a
+cached-but-disabled plugin costs nothing. Only Claude Code loads plugin
+skills — the neutral trio are not charged.
 
 ## 7. Sync Wrapper (`scripts/sync.py`)
 

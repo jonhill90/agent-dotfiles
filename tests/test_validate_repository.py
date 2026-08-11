@@ -330,14 +330,16 @@ class PerHarnessBudgetTests(unittest.TestCase):
 
     def test_scoped_skill_counts_only_against_its_own_harness(self) -> None:
         self.write_roster("shared-one\n\n[copilot]\ncopilot-only\n")
-        by_harness = validator.description_tokens_by_harness(self.root)
+        by_harness, unparseable = validator.description_tokens_by_harness(self.root)
         self.assertGreater(by_harness["copilot"], by_harness["claude"])
         self.assertEqual(by_harness["claude"], by_harness["pi"])
+        self.assertEqual(unparseable, [])
 
     def test_flat_roster_charges_every_harness_the_same(self) -> None:
         self.write_roster("shared-one\ncopilot-only\n")
-        by_harness = validator.description_tokens_by_harness(self.root)
+        by_harness, unparseable = validator.description_tokens_by_harness(self.root)
         self.assertEqual(len(set(by_harness.values())), 1)
+        self.assertEqual(unparseable, [])
 
 
 class RosterCreditTests(unittest.TestCase):
@@ -492,9 +494,10 @@ class NoLocalSkillsDirTests(unittest.TestCase):
         (self.root / "settings" / "default-skills.txt").write_text(
             "github-cli\n", encoding="utf-8"
         )
-        totals = validator.description_tokens_by_harness(self.root)
+        totals, unparseable = validator.description_tokens_by_harness(self.root)
         self.assertTrue(totals)
         self.assertTrue(all(value is None for value in totals.values()))
+        self.assertEqual(unparseable, [])
 
     def test_validate_roster_resolves_is_silent_without_a_skills_dir(self) -> None:
         (self.root / "settings" / "default-skills.txt").write_text(
@@ -553,10 +556,11 @@ class DescriptionTokenCapTests(unittest.TestCase):
 
     def test_sighted_tree_still_computes_real_totals(self) -> None:
         self._add_skill("example-skill", "d" * 100)
-        by_harness = validator.description_tokens_by_harness(self.root)
+        by_harness, unparseable = validator.description_tokens_by_harness(self.root)
         self.assertTrue(by_harness)
         self.assertTrue(all(value is not None for value in by_harness.values()))
         self.assertTrue(all(value > 0 for value in by_harness.values()))
+        self.assertEqual(unparseable, [])
         # A sighted tree must not emit the unmeasured warning.
         findings = validator.validate_static_context(self.root)
         self.assertFalse(
@@ -573,6 +577,79 @@ class DescriptionTokenCapTests(unittest.TestCase):
         self.assertTrue(
             any("installed-skill descriptions" in f.message for f in errors),
             f"cap check did not fire: {findings}",
+        )
+
+
+class SightedTreePerNameResolutionTests(unittest.TestCase):
+    """agent-dotfiles#5's other repo-side half: inside a *sighted* tree
+    (skills/ exists), a roster name that does not resolve to a real skill
+    -- or resolves to a broken SKILL.md -- used to be swallowed by
+    description_tokens_by_harness()'s `except PARSE_ERRORS: continue` and
+    charged 0 bytes, silently. "Missing" and "corrupt" are different
+    operator problems and both were invisible before this fix.
+
+    "Missing" is deliberately NOT re-tested against
+    description_tokens_by_harness() here: validate_roster_resolves()
+    (see RosterResolutionTests) already reports it as an error, tested
+    and mutation-checked there. A second, overlapping rule for the same
+    cause would just be two findings for one defect. Only "corrupt" is a
+    genuine gap this class closes."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        instructions = self.root / "instructions"
+        (instructions / "overlays").mkdir(parents=True)
+        (instructions / "global.instructions.md").write_text(
+            "x" * 400, encoding="utf-8"
+        )
+        (self.root / "settings").mkdir(parents=True)
+        good = self.root / "skills" / "good-skill"
+        good.mkdir(parents=True)
+        (good / "SKILL.md").write_text(
+            "---\nname: good-skill\ndescription: fine\n---\n\n# good-skill\n",
+            encoding="utf-8",
+        )
+
+    def _roster(self, body: str) -> None:
+        (self.root / "settings" / "default-skills.txt").write_text(
+            body, encoding="utf-8"
+        )
+
+    def test_missing_name_is_not_double_reported_here(self) -> None:
+        # Already an error via validate_roster_resolves(); this function
+        # must stay silent about it rather than add a second finding.
+        self._roster("good-skill\nvanished\n")
+        _, unparseable = validator.description_tokens_by_harness(self.root)
+        self.assertEqual(unparseable, [])
+
+    def test_corrupt_skill_md_is_distinguished_from_missing(self) -> None:
+        broken = self.root / "skills" / "broken-skill"
+        broken.mkdir(parents=True)
+        (broken / "SKILL.md").write_text("not frontmatter at all\n", encoding="utf-8")
+        self._roster("good-skill\nbroken-skill\n")
+
+        by_harness, unparseable = validator.description_tokens_by_harness(self.root)
+        self.assertTrue(
+            any(p.name == "broken-skill" for p in unparseable),
+            f"broken-skill not flagged as unparseable: {unparseable}",
+        )
+        # The good skill's bytes still count -- one broken name must not
+        # zero out the whole harness total.
+        self.assertTrue(all(value > 0 for value in by_harness.values()))
+
+    def test_corrupt_skill_md_produces_an_error_finding(self) -> None:
+        broken = self.root / "skills" / "broken-skill"
+        broken.mkdir(parents=True)
+        (broken / "SKILL.md").write_text("not frontmatter at all\n", encoding="utf-8")
+        self._roster("good-skill\nbroken-skill\n")
+
+        findings = validator.validate_static_context(self.root)
+        errors = [f for f in findings if f.level == "error"]
+        self.assertTrue(
+            any("broken-skill" in str(f.path) for f in errors),
+            f"no error finding for the corrupt SKILL.md among: {findings}",
         )
 
 
