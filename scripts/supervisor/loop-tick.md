@@ -202,10 +202,20 @@ $ git merge --squash ...   -> mainfile.txt PRESENT
 ```
 
 Applied as written, the two-dot reading holds **every** branch that is behind
-`main` with a revert warning that is not real. In a repo merging several times an
-hour that is most of them, and the cost is not zero: it teaches the next reader
-to skim past a warning that is usually wrong, which is how a genuine one gets
-missed.
+`main` with a revert warning that is not real.
+
+*Reasoning, not measurement, and flagged as such:* the cost of a
+usually-wrong warning is that readers learn to skim past it. That is an argument,
+not something counted here. The frequency claim beside it originally read "in
+this repo tonight, most of them" — measured afterwards and **false**: of four
+open PRs, one was behind `main`. Stated wrong first, corrected by counting.
+
+**Also not a revert: "the squash moved the merge base."** It does not. A squash
+merge writes one new commit on `main` whose parent is `main`'s previous tip; the
+branch's own merge base is unaffected, and a later branch forked before that
+squash still merges its own changes and nothing else. This was part of the
+original false alarm's reasoning and the tip-versus-merge-base correction above
+does not address it on its own.
 
 Being behind is not sufficient to revert anything. It takes a real content
 conflict — the branch editing lines a newer commit changed, a rebase onto an
