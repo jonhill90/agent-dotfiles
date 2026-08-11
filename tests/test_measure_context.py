@@ -6,6 +6,10 @@ harness: a test that costs money per run does not get run.
 
 from __future__ import annotations
 
+import io
+import contextlib
+import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -165,6 +169,68 @@ class PayloadPersistenceTests(unittest.TestCase):
         removed = measure_context.prune_runs(self.base_dir, keep=5)
         self.assertEqual(removed, [])
         self.assertEqual(len(list(self.base_dir.iterdir())), 1)
+
+    def test_prune_runs_ignores_directories_it_did_not_create(self) -> None:
+        """#105: a manual note dropped next to the run directories sorted
+        before the timestamps and was deleted as if it were the oldest run.
+        Pruning must only ever touch directories matching the run-id
+        pattern persist_run itself writes."""
+        self.base_dir.mkdir(parents=True)
+        manual_note = self.base_dir / "0-manual-note"
+        manual_note.mkdir()
+        (manual_note / "notes.txt").write_text("do not delete", encoding="utf-8")
+        run_ids = [f"2026010{n}T000000000000Z" for n in range(1, 8)]
+        for run_id in run_ids:
+            measure_context.persist_run(self.base_dir, run_id, {"claude": "payload"})
+
+        removed = measure_context.prune_runs(self.base_dir, keep=3)
+
+        self.assertTrue(manual_note.is_dir())
+        self.assertNotIn(manual_note, removed)
+        remaining = sorted(p.name for p in self.base_dir.iterdir())
+        self.assertEqual(remaining, ["0-manual-note", *run_ids[-3:]])
+
+    def test_persist_run_sets_restrictive_permissions(self) -> None:
+        """#105: payloads can contain system prompts, file contents and
+        anything the harness echoed -- including a token. Directories must
+        be 0o700 and files 0o600, not the 0o755/0o644 world-readable
+        defaults."""
+        written = measure_context.persist_run(
+            self.base_dir, "20260101T000000000000Z", {"claude": "secret payload"}
+        )
+
+        run_dir = self.base_dir / "20260101T000000000000Z"
+        self.assertEqual(stat.S_IMODE(run_dir.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(self.base_dir.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(written["claude"].stat().st_mode), 0o600)
+
+    def test_main_survives_a_persist_failure(self) -> None:
+        """#105: persist_run/prune_runs ran unguarded after the billed
+        probe() calls, so a NotADirectoryError (base_dir exists as a file)
+        crashed the tool after the API spend and printed nothing. Capture
+        must warn on stderr and the table must still print."""
+        fake_command = [sys.executable, "-c", "print('{\"usage\": {\"input_tokens\": 5}}')"]
+        original_commands = dict(measure_context.HARNESS_COMMANDS)
+        measure_context.HARNESS_COMMANDS.clear()
+        measure_context.HARNESS_COMMANDS["claude"] = fake_command
+        original_payload_dir = measure_context.payload_dir
+        blocked = Path(self._tmp.name) / "blocked-base-dir"
+        blocked.write_text("not a directory", encoding="utf-8")
+        measure_context.payload_dir = lambda home=None: blocked
+        try:
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                exit_code = measure_context.main(["measure_context.py", "claude"])
+        finally:
+            measure_context.HARNESS_COMMANDS.clear()
+            measure_context.HARNESS_COMMANDS.update(original_commands)
+            measure_context.payload_dir = original_payload_dir
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("claude", stdout.getvalue())
+        self.assertIn("5", stdout.getvalue())
+        self.assertIn("warning", stderr.getvalue().lower())
+        self.assertIn(str(blocked), stderr.getvalue())
 
 
 class ReportTests(unittest.TestCase):

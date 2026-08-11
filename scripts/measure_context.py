@@ -36,6 +36,7 @@ Python 3 stdlib only.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -207,19 +208,30 @@ def payload_dir(home: Path | None = None) -> Path:
     return base / ".agent-dotfiles" / "measure-context-payloads"
 
 
+_RUN_ID_RE = re.compile(r"^\d{8}T\d{12}Z$")
+
+
 def _run_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
 
 
 def persist_run(base_dir: Path, run_id: str, payloads: dict[str, str]) -> dict[str, Path]:
     """Write each harness's raw stdout+stderr for this run to its own file.
-    Capture only -- this must never feed back into a measured number."""
+    Capture only -- this must never feed back into a measured number.
+
+    Payloads can contain system prompts, file contents and anything the
+    harness echoed back -- including a token -- so directories are created
+    0o700 and files 0o600, set at creation rather than chmod'd afterward, so
+    there is no window in which either is group- or world-readable."""
+    base_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     run_dir = base_dir / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_dir.mkdir(mode=0o700, exist_ok=True)
     written: dict[str, Path] = {}
     for harness, text in payloads.items():
         path = run_dir / f"{harness}.txt"
-        path.write_text(text, encoding="utf-8")
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
         written[harness] = path
     return written
 
@@ -230,7 +242,9 @@ def prune_runs(base_dir: Path, keep: int = MAX_RETAINED_RUNS) -> list[Path]:
     sort."""
     if not base_dir.is_dir():
         return []
-    runs = sorted(p for p in base_dir.iterdir() if p.is_dir())
+    runs = sorted(
+        p for p in base_dir.iterdir() if p.is_dir() and _RUN_ID_RE.match(p.name)
+    )
     stale = runs[:-keep] if keep > 0 else runs
     for run in stale:
         shutil.rmtree(run)
@@ -264,9 +278,20 @@ def main(argv: list[str]) -> int:
     base_dir = payload_dir()
     run_dir = base_dir / _run_id()
     payloads = {h: text for h, (_value, text) in probed.items()}
-    persist_run(base_dir, run_dir.name, payloads)
-    prune_runs(base_dir)
-    print(f"Raw payloads written to {run_dir}\n")
+    # Capture is best-effort: the probe above already spent the API call, so
+    # a persistence failure (a file where base_dir should be, a symlink
+    # tripping shutil.rmtree) must not eat the measurement it paid for.
+    try:
+        persist_run(base_dir, run_dir.name, payloads)
+        prune_runs(base_dir)
+    except OSError as exc:
+        print(
+            f"warning: could not persist probe payloads to {run_dir}: "
+            f"{exc.__class__.__name__}: {exc}\n",
+            file=sys.stderr,
+        )
+    else:
+        print(f"Raw payloads written to {run_dir}\n")
 
     print(format_rows(measured))
     if "codex" in probed:
