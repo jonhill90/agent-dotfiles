@@ -1,8 +1,13 @@
+close-the-loop
 create-skill
+dispatching-subagents
 failing-test-first
 github-cli
 linear
 memory-conventions
 obsidian
+primer
 safe-deletion
+sanity-check
+supervised-lane-loop
 tmux
