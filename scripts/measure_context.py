@@ -65,7 +65,19 @@ def parse_claude(payload: str) -> int | None:
 
 def parse_codex(payload: str) -> int | None:
     """Codex emits JSONL; `turn.completed` carries a total that already
-    includes the cached portion, so cached tokens must not be added again."""
+    includes the cached portion, so cached tokens must not be added again.
+
+    Known unreliable (#44): a rerun against an unchanged deployed state
+    swung 19,501 -> 40,981 (2.1x). The cause is not confirmed. This parser
+    trusts the *last* `turn.completed` event, on the assumption that one
+    trivial prompt produces exactly one turn — but nothing here checks that
+    assumption. If a run emits more than one (extra tool-discovery turns, a
+    resumed session's prior turns replayed into this stream), the "last"
+    event's `input_tokens` already includes the earlier turns' conversation
+    history, and this function would silently return the inflated total.
+    `codex_turn_count()` exposes the count so a caller can flag that instead
+    of trusting it blind; callers must still treat this column as unreliable
+    even when the count is 1, since #44's swing has not been explained."""
     total = None
     for line in payload.splitlines():
         line = line.strip()
@@ -79,6 +91,25 @@ def parse_codex(payload: str) -> int | None:
         if isinstance(usage, dict) and "input_tokens" in usage:
             total = int(usage["input_tokens"])
     return total
+
+
+def codex_turn_count(payload: str) -> int:
+    """Count `turn.completed` events carrying usable usage. parse_codex
+    trusts only the last one; more than one means that trust is unfounded —
+    see the #44 note on parse_codex."""
+    count = 0
+    for line in payload.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        usage = event.get("usage")
+        if isinstance(usage, dict) and "input_tokens" in usage:
+            count += 1
+    return count
 
 
 def parse_pi(payload: str) -> int | None:
@@ -117,18 +148,30 @@ PARSERS = {
 }
 
 
-def probe(harness: str, timeout: int = 240) -> int | None:
-    """Run one trivial turn and return the static-context size, or None."""
+# Harnesses whose reported number is known not to be trustworthy yet.
+# codex (#44): consecutive runs against an identical deployed state swung
+# 19,501 -> 40,981 (2.1x); the cause is unconfirmed (see parse_codex). A
+# number this volatile must not be printed as if it were comparable to the
+# other columns, so every codex row carries this marker regardless of value
+# -- silence is the failure mode being avoided here, not just a wrong number.
+UNRELIABLE = {
+    "codex": "UNRELIABLE (#44) -- 2.1x swing between runs on unchanged state, cause unconfirmed",
+}
+
+
+def probe(harness: str, timeout: int = 240) -> tuple[int | None, str]:
+    """Run one trivial turn and return (static-context size, raw output)."""
     command = HARNESS_COMMANDS.get(harness)
     if not command:
-        return None
+        return None, ""
     try:
         result = subprocess.run(
             command, capture_output=True, text=True, timeout=timeout, check=False
         )
     except (OSError, subprocess.TimeoutExpired):
-        return None
-    return PARSERS[harness](result.stdout + result.stderr)
+        return None, ""
+    text = result.stdout + result.stderr
+    return PARSERS[harness](text), text
 
 
 def format_rows(measured: dict[str, int | None]) -> str:
@@ -136,6 +179,9 @@ def format_rows(measured: dict[str, int | None]) -> str:
     for harness, tokens in measured.items():
         shown = f"{tokens:,}" if tokens else "not measured"
         lines.append(f"{harness:10} {shown:>15}")
+        note = UNRELIABLE.get(harness)
+        if note:
+            lines.append(f"{'':10} {note}")
     return "\n".join(lines)
 
 
@@ -149,8 +195,17 @@ def main(argv: list[str]) -> int:
         "Each harness below is sent one trivial prompt. This costs an API "
         "call per harness.\n"
     )
-    measured = {h: probe(h) for h in wanted}
+    probed = {h: probe(h) for h in wanted}
+    measured = {h: value for h, (value, _text) in probed.items()}
     print(format_rows(measured))
+    if "codex" in probed:
+        turns = codex_turn_count(probed["codex"][1])
+        if turns > 1:
+            print(
+                f"\ncodex: {turns} turn.completed events in this run — "
+                "parse_codex trusts only the last, so this number likely "
+                "includes earlier turns' conversation history (see #44)."
+            )
     print(
         "\nWhat this counts: everything sent before the model answered, "
         "cached or not.\nNot comparable across harnesses as a judgement — "

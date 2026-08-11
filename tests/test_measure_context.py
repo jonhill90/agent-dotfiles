@@ -36,6 +36,26 @@ class ParserTests(unittest.TestCase):
         )
         self.assertEqual(measure_context.parse_codex(payload), 62110)
 
+    def test_codex_turn_count_is_one_for_a_normal_run(self) -> None:
+        payload = (
+            '{"type":"thread.started"}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":19501}}\n'
+        )
+        self.assertEqual(measure_context.codex_turn_count(payload), 1)
+
+    def test_codex_turn_count_flags_more_than_one_turn(self) -> None:
+        """#44: parse_codex trusts the *last* turn.completed event. If a run
+        emits more than one, that event's input_tokens already folds in the
+        earlier turns' history — the exact shape that could explain a run
+        doubling on an unchanged deployed state. codex_turn_count surfaces
+        that instead of parse_codex silently returning the inflated total."""
+        payload = (
+            '{"type":"turn.completed","usage":{"input_tokens":19501}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":40981}}\n'
+        )
+        self.assertEqual(measure_context.codex_turn_count(payload), 2)
+        self.assertEqual(measure_context.parse_codex(payload), 40981)
+
     def test_pi_sums_input_and_cache_read_from_the_last_usage(self) -> None:
         payload = (
             '{"message":{"usage":{"input":0,"cacheRead":0,"totalTokens":0}}}\n'
@@ -68,6 +88,25 @@ class ReportTests(unittest.TestCase):
         rows = measure_context.format_rows({"pi": 3814, "codex": None})
         self.assertIn("3,814", rows)
         self.assertIn("not measured", rows)
+
+    def test_codex_row_carries_an_unreliability_marker_when_measured(self) -> None:
+        """#44: a swing this large (19,501 -> 40,981, 2.1x) means the number
+        cannot be used for deltas. It must not print as if it were as
+        trustworthy as the other three columns, even when a value came
+        back."""
+        rows = measure_context.format_rows({"codex": 19501})
+        self.assertIn("19,501", rows)
+        self.assertIn("UNRELIABLE", rows)
+        self.assertIn("#44", rows)
+
+    def test_codex_row_carries_the_marker_even_when_not_measured(self) -> None:
+        rows = measure_context.format_rows({"codex": None})
+        self.assertIn("not measured", rows)
+        self.assertIn("UNRELIABLE", rows)
+
+    def test_other_harnesses_carry_no_unreliability_marker(self) -> None:
+        rows = measure_context.format_rows({"claude": 29708, "pi": 8198})
+        self.assertNotIn("UNRELIABLE", rows)
 
 
 if __name__ == "__main__":

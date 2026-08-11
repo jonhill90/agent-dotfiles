@@ -200,7 +200,11 @@ Rules:
   files under `$HOME` and reports declared state; `/context` reports what
   the model was actually sent, free, on Claude Code only; `claude plugin
   details <name>` prices one plugin, free; `measure_context.py` asks all
-  four harnesses and bills for it.
+  four harnesses and bills for it. Its codex column is known unreliable
+  (#44: 19,501 -> 40,981, 2.1x, on two runs against an identical deployed
+  state, cause unconfirmed) — the script marks that column UNRELIABLE on
+  every row; do not cite a codex figure from it as measured until #44
+  closes.
 - A prediction, a counterfactual, and a re-score are not results. Record
   them where they belong — as a note on the results file, not as the
   result.
