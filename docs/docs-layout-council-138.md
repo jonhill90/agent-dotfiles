@@ -359,9 +359,10 @@ and repeated it back.
   this repo's real identity leaned flat, even though the full 12-arm vote
   was a near-even split and even that best-matched group was not unanimous).
 - **Do not adopt Hill90's five-way split anywhere in scope.** It is not
-  externally well-precedented as a combined pattern (Q5), and the arms that
-  knew this repo's own history correctly identify that agent-dotfiles
-  already tried and reversed subdividing (Q4).
+  externally well-precedented as a combined pattern (Q5), and this repo
+  already tried and reversed subdividing `docs/` once — `533f275`,
+  2026-07-13, verified by direct inspection of the commit rather than
+  asserted by any arm (Q4).
 - **Revisit, don't schedule.** The trigger for `agent-dotfiles` is a new
   document class that doesn't fit the current 12 (see `migration-audit.md`
   / `agent-engineering-lineage.md` as the closest existing candidates for
