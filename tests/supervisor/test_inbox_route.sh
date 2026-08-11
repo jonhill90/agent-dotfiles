@@ -36,7 +36,7 @@ run() {  # run <lanes-fixture-file> <message...>
   : > "$D/tmux.log"; rm -rf "$D/panes"; mkdir -p "$D/panes"
   : > "$D/curl.log"
   PATH="$D/bin:$PATH" LANES_FIXTURE="$fixture" LANES_SESSION=t \
-    TMUX_LOG="$D/tmux.log" TMUX_PANES="$D/panes" \
+    TMUX_LOG="$D/tmux.log" TMUX_PANES="$D/panes" TMUX_PROBE_LOG="$D/probe.log" \
     HOME="$D/state" NOTIFY_ENV="$D/notify.env" CURL_LOG="$D/curl.log" \
     bash "$ROUTE" "$@" t
 }
@@ -55,6 +55,8 @@ grep -q '^yes' "$D/panes/2" 2>/dev/null && ok "the reply lands in the blocked la
        echo "--- route stdout/stderr ---"; echo "$out"
        echo "--- ls -la \$D/panes ---"; ls -la "$D/panes" 2>&1
        echo "--- \$D/tmux.log ---"; cat "$D/tmux.log" 2>&1
+       echo "--- probe.log ---"; cat "$D/probe.log" 2>&1
+       echo "--- od of panes/2 ---"; od -c "$D/panes/2" 2>&1 | head -5
        echo "--- lanes.sh --blocked ---"
        PATH="$D/bin:$PATH" LANES_FIXTURE="$D/one-blocked" LANES_SESSION=t \
          TMUX_LOG=/dev/null TMUX_PANES="$D/probe-panes" HOME="$D/state" \

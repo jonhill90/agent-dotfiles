@@ -47,6 +47,11 @@ case "$sub" in
             printf '%s' "$k" >> "$buf" ;;
         esac
       done
+      { echo "PROBE argc_after_parse=$# win=[$win] buf=[$buf] nkeys=${#keys[@]}"
+        for _i in "${!keys[@]}"; do echo "PROBE key[$_i]=[${keys[$_i]}] len=${#keys[$_i]}"; done
+        echo "PROBE bufsize=$(wc -c <"$buf" 2>&1) bufexists=$([ -e "$buf" ] && echo y || echo n)"
+        echo "PROBE bash=$BASH_VERSION shellopts=$SHELLOPTS"
+      } >> "${TMUX_PROBE_LOG:-/dev/null}"
     fi
     exit 0 ;;
 esac
