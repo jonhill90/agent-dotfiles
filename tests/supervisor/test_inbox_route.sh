@@ -51,7 +51,28 @@ out=$(run "$D/one-blocked" "yes")
 rc=$?
 [ "$rc" -eq 0 ] && ok "exactly one blocked lane: exits 0" || bad "exited $rc" "$out"
 grep -q '^yes' "$D/panes/2" 2>/dev/null && ok "the reply lands in the blocked lane's pane" \
-  || bad "pane 2 does not contain the reply" "$(cat "$D/panes/2" 2>/dev/null)"
+  || bad "pane 2 does not contain the reply" "$(
+       echo "--- route stdout/stderr ---"; echo "$out"
+       echo "--- ls -la \$D/panes ---"; ls -la "$D/panes" 2>&1
+       echo "--- \$D/tmux.log ---"; cat "$D/tmux.log" 2>&1
+       echo "--- lanes.sh --blocked ---"
+       PATH="$D/bin:$PATH" LANES_FIXTURE="$D/one-blocked" LANES_SESSION=t \
+         TMUX_LOG=/dev/null TMUX_PANES="$D/probe-panes" HOME="$D/state" \
+         bash "$HERE/../../scripts/supervisor/lanes.sh" --blocked t 2>&1
+       echo "--- lanes.sh --json ---"
+       PATH="$D/bin:$PATH" LANES_FIXTURE="$D/one-blocked" LANES_SESSION=t \
+         TMUX_LOG=/dev/null TMUX_PANES="$D/probe-panes" HOME="$D/state" \
+         bash "$HERE/../../scripts/supervisor/lanes.sh" --json t 2>&1
+       echo "--- which tmux (test PATH) ---"
+       PATH="$D/bin:$PATH" command -v tmux 2>&1
+       PATH="$D/bin:$PATH" bash -c 'type -a tmux' 2>&1
+       echo "--- stub perms ---"; ls -la "$D/bin" 2>&1
+       echo "--- real tmux on box ---"; command -v tmux 2>&1; tmux -V 2>&1
+       echo "--- locale/bash ---"; echo "LANG=$LANG LC_ALL=${LC_ALL:-} TMPDIR=${TMPDIR:-}"; bash --version | head -1
+       echo "--- leaked env (TMUX/LANES/DISPATCH/SUPERVISOR) ---"
+       env | grep -E '^(TMUX|LANES|DISPATCH|SUPERVISOR|NOTIFY|CURL)' 2>&1
+       echo "--- default panes dir ---"; ls -la "${TMPDIR:-/tmp}/tmux-dispatch-panes" 2>&1
+     )"
 [ -s "$D/curl.log" ] && bad "notify.sh was called even though delivery succeeded" "$(cat "$D/curl.log")" \
   || ok "no Telegram notification sent when delivery succeeds"
 
