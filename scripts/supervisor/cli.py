@@ -26,7 +26,7 @@ DEFAULT_STATE = Path.home() / ".local/state/agent-dotfiles-supervisor"
 # repos this supervisor actually drives.
 DEFAULT_REPOSITORIES = (
     {"name": "agent-dotfiles", "path": "/Users/jon/source/repos/Personal/agent-dotfiles", "github": "jonhill90/agent-dotfiles"},
-    {"name": "skills", "path": "/Users/jon/source/repos/Personal/skills", "github": "jonhill90/skills"},
+    {"name": "skills", "path": "/Users/jon/source/repos/Personal/Skills", "github": "jonhill90/skills"},
     {"name": "skills-private", "path": "/Users/jon/source/repos/Personal/skills-private", "github": "jonhill90/skills-private"},
     {"name": "agent-evals", "path": "/Users/jon/source/repos/Personal/agent-evals", "github": "jonhill90/agent-evals"},
 )

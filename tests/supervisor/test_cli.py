@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -244,6 +245,42 @@ class CliIsRunnable(unittest.TestCase):
         # legitimate entry. The first version of this test did exactly that.
         estate = {"jonhill90/Hill90", "jonhill90/hill90-app", "jonhill90/hill90-docs"}
         self.assertEqual(set(), estate & {repo["github"] for repo in cli.DEFAULT_REPOSITORIES})
+
+    def test_a_real_subcommand_dispatches_end_to_end(self):
+        """The two tests above pin argparse, not dispatch. Shown by review of
+        #94: a `cli.py` whose entry point ran `parser().parse_args()` and then
+        `sys.exit(0)` -- parser wired, `main()` never called -- passed both of
+        them and the whole suite. That is the same defect one layer down.
+
+        `status` is the right subcommand for this: it touches no tmux, no
+        network, and writes only inside the temporary state directory it is
+        given.
+        """
+        with tempfile.TemporaryDirectory() as root:
+            proc = self._run("--state-dir", root, "status")
+            self.assertEqual(0, proc.returncode, proc.stderr)
+            # Parsing alone cannot produce this: it is main()'s own output.
+            json.loads(proc.stdout)
+
+    def test_default_repository_paths_exist_with_the_case_they_are_written_in(self):
+        """`/Users/jon/source/repos/Personal/skills` resolved on this machine
+        only because the volume is case-insensitive APFS; the directory is
+        `Skills`. On a case-sensitive volume `_collect_git` raises, the
+        `git-skills` component goes unhealthy, and `tick` gates only on
+        components whose name starts with `github-` -- so a blind `git-` sensor
+        would not gate and `tick` would carry on as if the repo were fine.
+
+        `os.path.realpath` is what distinguishes them: a plain `isdir` returns
+        True for either spelling here, which is why the original check missed it.
+        """
+        for repo in cli.DEFAULT_REPOSITORIES:
+            path = repo["path"]
+            if not os.path.isdir(path):
+                continue  # not this machine; nothing to compare against
+            self.assertEqual(
+                os.path.realpath(path), path,
+                f"{repo['name']}: on-disk name differs in case from {path}",
+            )
 
     def test_unknown_subcommand_is_a_nonzero_exit(self):
         # Guards the other half: if the entry point were added but wired to
