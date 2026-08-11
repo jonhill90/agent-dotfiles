@@ -11,6 +11,28 @@ at a time — should be adopted anywhere in `agent-dotfiles`, `skills`,
 supports for a repo this size — see §4. If you disagree with §4 after reading
 it, this file is misplaced and that is itself informative.
 
+**This PR also recreates `docs/research/`** — the exact directory class whose
+2026-07-13 deletion is cited below (§4) as the strongest evidence for staying
+flat. That is a real tension, not a technicality, and it does not resolve
+itself: the raw batch data has to live somewhere, and it is not living
+documentation, so it does not belong in flat `docs/` next to `PRD.md` and
+`SPEC.md` either. The resolution is in the difference between what
+2026-07-13 removed and what this adds. The 2026-07-13 `docs/research/` held
+*distilled-then-orphaned* prose — research whose conclusions had already been
+folded into living docs, left behind as a stale duplicate. This
+`docs/research/docs-layout-council-138/` holds *undistilled raw evidence* —
+the 12 arm transcripts this document's own claims cite by file name (e.g.
+Q1's link to `copilot-concrete.txt`) — material a reader needs in order to
+audit the claims above it, not a leftover. `docs/PRD.md`'s own rule (quoted
+in full at §4) is explicit that research prose gets "deleted at each spec
+iteration's exit" once distilled — it does not say audit trails for a
+findings document are barred from existing at all beforehand. Once Jon acts
+on this document's conclusions, this raw folder has served its purpose and
+should be deleted then, same as its 2026-07-13 predecessor was — the
+raw-results README says so already. If it is still here at the next spec
+iteration's exit with nothing left citing it, that is the signal to remove
+it, not a standing exception to the rule it currently satisfies.
+
 ## Method: why a council, and how it was built to disagree
 
 Asking several language models "is this layout good" produces agreement
@@ -54,7 +76,7 @@ gap in this council.
 
 At today's flat layout, yes, with one qualification. Evidence:
 
-- **6 of the 12 arms told the real repo/history** (control ×3, concrete's
+- **6 of the 12 arms shown this repo's real identity** (control ×3, concrete's
   Claude and Codex responses) converge on "no document needs to move,"
   each citing a *different* concrete reason per file rather than a blanket
   rule — e.g. Claude-control: `hierarchy-naming-57.md` is self-describing by
@@ -132,10 +154,12 @@ agreement across a design built to let them disagree.
 ## Question 4 — Is the split itself right, or is flatter better at this size? At what size does the answer change?
 
 This is where the batch produced its real finding. Short version: **flat is
-right for these four repos today, but that verdict came from *which arms had
-the real repo's history*, not from the layout being self-evidently correct**,
-and the batch surfaced a second, opposite reading of pure document count that
-deserves to be on record, not buried under the majority.
+right for these four repos today, but that verdict tracks which arms could
+see this repo's real identity, not the layout being self-evidently
+correct** — and even that is not the whole story; the exact variable takes
+some sorting out below, and doing that sorting out is most of this section.
+The batch also surfaced a second, opposite reading of pure document count
+that deserves to be on record, not buried under the majority.
 
 **The split, tallied by prompt variant** (12 arms; "subdivide" = would give
 `agent-dotfiles`'s 12 docs more than one directory *now*):
@@ -156,61 +180,89 @@ non-flat — a coin flip**, not the "N models, N yeses" pattern the issue
 warns about. It lines up with *what each arm was told*, which is the
 signature of real reasoning rather than echo:
 
-- **Every arm that saw agent-dotfiles' own git history** (the 2026-07-13
-  `docs/research/` flattening, framed in the concrete prompt as "distill
-  temporary research into living documentation... the subdirectory was
-  removed, not kept alongside them") **stayed flat or nearly flat** — Claude
-  and Codex concrete arms treat reintroducing subdirectories as reversing
-  that precedent outright. This is the one closest read of this repo's own
-  stated intent, and PRD.md itself is explicit: *"research prose is
-  scaffolding... distilled into topical living docs and deleted at each spec
-  iteration's exit."* Flat is the documented policy, not just an emergent
-  habit.
-- **Every blind arm — which never saw that history, or the real repo names,
-  or the "nobody designed this" framing — independently proposed subdividing
-  the same 12-document set**, each inventing its own category names from
-  content alone (Claude: decisions/operations/specifications/governance/
-  research; Codex: project-direction/architecture-decisions/
-  implementation-planning/migration-and-selection-records/
-  research-and-comparisons; Copilot: charter/design/decisions/analysis).
-  None of the three blind arms' category schemes match each other exactly,
-  and none match Hill90's five categories either — but all three independently
-  decided 12 heterogeneous documents crosses a subdividing threshold, put
-  that threshold at **4–8 documents** (Claude: "5-6"; Codex: "6 to 8";
-  Copilot: "4-5... well past that threshold" at 12), and reasoned about
-  *document-type heterogeneity*, not raw count, as the trigger.
-- **Two of three adversarial arms**, explicitly instructed to argue the
-  layout is *wrong*, still ended their answer by proposing a different
-  split of their own (Codex: product/design/state/analysis/records/
-  reference; Copilot: current/design/decisions/research) rather than "stay
-  flat." Read generously, this says a categorization instinct at ~12
-  documents survives even when a model is told to be skeptical of
-  categorization — it is not purely a control-prompt artifact.
+**Testing candidate variables against all four groups, not just the two that
+motivated the first draft of this section:**
 
-**What actually decided the flat-vs-split question, then, was not document
-count** (all 12 arms saw the same 12-file, 1-file, 0-file, 0-file corpus) —
-**it was whether the arm knew this specific repo already tried subdividing
-and deliberately reversed it.** That is a fact about agent-dotfiles, not a
-fact about documentation architecture in general, and it is why this
-document's verdict is scoped to *these four repos right now*, not a general
-"flat beats categorized under 30 files" claim.
+An earlier version of this document claimed the deciding variable was
+"whether the arm was told this repo's own git history" (the 2026-07-13
+`docs/research/` flattening). That claim does not survive checking it
+against **control**: the control prompt never mentions that history either
+— it gives no git facts at all — yet control went 3/3 flat, matching
+concrete's flat lean rather than blind's subdivide lean. A variable that
+predicts concrete correctly but gets control backwards is not the variable.
+
+The variable that actually separates the four groups correctly is coarser:
+**whether the arm could see real, recognizable repo and file names at all.**
+
+| Variant | Real names visible? | Told this repo's own history? | Explicitly told to argue/critique? | Result |
+|---|---|---|---|---|
+| control | yes | no | no | 3 flat |
+| adversarial | yes | no | yes | 1 flat / 2 subdivide |
+| concrete | yes | yes | no | 2 flat / 1 partial |
+| blind | **no** | no | no | 3 subdivide |
+
+Grouped by that one column: the three name-visible variants are 6 flat / 1
+partial / 2 subdivide across 9 arms (flat-leaning, 67% strict-flat); the
+name-blind variant is 0 flat / 3 subdivide across 3 arms (100%
+subdivide). That is the cut that actually holds across all four groups —
+control and concrete agree with each other and disagree with blind, which
+"history known" cannot explain since control didn't have it, and this
+column does.
+
+**What it does not explain: adversarial's internal split.** Two of three
+adversarial arms subdivided despite seeing real names — the same names
+control saw, which went 3/3 flat. Being explicitly instructed to argue the
+layout is wrong and propose something better appears to trigger a
+"produce an alternative structure" response somewhat independent of whether
+the names were real, and this batch cannot cleanly separate that effect from
+the possibility that *any* instruction to actively redesign (rather than
+evaluate or answer narrow placement questions) pulls toward proposing
+directories. Blind's own prompt asked the arm to "design... from scratch,"
+which is closer in spirit to adversarial's "propose better" than to
+control's or concrete's evaluate/answer framing — so blind's 3/3 subdivide
+result is consistent with *either* "no real names" *or* "asked to design
+rather than evaluate" as the operative cause, and this design cannot tell
+those two apart. Naming that limit is more honest than picking whichever
+story is more interesting.
+
+**What this batch supports, precisely:** arms shown this project's real
+identity and given a narrow, evaluative task (control, concrete) converge
+on flat; the one arm-group with neither real names nor an evaluative framing
+(blind) converges on subdivide; the one group with real names but an
+explicit redesign instruction (adversarial) splits down the middle. The
+strongest single-variable fit across all four groups is name-visibility, not
+history-awareness — but "was asked to redesign vs. evaluate" is a live
+alternative or contributing explanation that a 3-arms-per-cell batch cannot
+rule out. Both readings point the same direction for this document's actual
+question (should real, named `agent-dotfiles` adopt a split *now*, given its
+real history) — the arms that had all three of real names, this repo's
+history, and a narrow evaluative task (concrete) are the closest match to
+that question, and they lean flat (2 flat / 1 partial, not 3/3, so this is
+still not unanimous even in the best-matched cell).
 
 **Answer to "at what size does it change":** the batch's own numbers put a
-soft floor at 4–8 heterogeneous documents (the blind arms) — meaning
-`agent-dotfiles` at 12 is already inside the range where the batch's
-*content-blind* reasoning would subdivide, and only stays flat because of
-this repo's own recorded precedent, not because 12 is objectively too few.
-If a 13th document arrives that does *not* fit the existing files' shape
-(e.g., a genuinely new document class — see Q1's `migration-audit.md`/
-`agent-engineering-lineage.md` case), that is the trigger to revisit, not a
-raw count threshold.
+soft floor at 4–8 heterogeneous documents for the *content-only, no-real-
+identity* reading (blind arms: Claude "5-6," Codex "6 to 8," Copilot "4-5" —
+already below `agent-dotfiles`' current 12). That reading does not automatically
+transfer to the real, named repo, precisely because name-visibility is the
+variable that best explains why the other three groups diverge from it. The
+honest statement is: *if* `agent-dotfiles` were evaluated as an anonymous
+12-document pile with no identity or history attached, this batch's evidence
+says it would already be past the subdividing threshold; *as the actual,
+named repo with its own recorded reversal on this exact question*, the
+groups that had access to that identity lean flat. Which reading should
+govern is a judgment call this document is making explicitly (below), not
+one the data alone settles.
 
 **Verdict:** stay flat in `agent-dotfiles` and `agent-evals` for now. This
-is a scoped call resting on this repo's own history and current
-sub-2026-08 file count, not a portable rule — the next re-review of this
-question should re-run the blind arm's document-only reasoning against
-whatever the file set looks like then, since that arm has no access to
-"but we already decided this" and won't inherit a stale precedent.
+is a scoped call resting on this repo's real identity, its own history, and
+its current sub-2026-08 file count — not a portable rule, and not a
+unanimous one even within the best-matched arm group (concrete: 2 flat / 1
+partial, not 3/3). The next re-review of this question should re-run a
+name-blind, content-only arm against whatever the file set looks like then
+as a deliberate check against inherited precedent, precisely because this
+batch shows that arm answers differently when it cannot see "but we already
+decided this."
 
 ## Question 5 — What is the actual convention outside this estate? (cite real repositories)
 
@@ -266,10 +318,15 @@ real building blocks, not as "the convention outside this estate."
 
 ## Was the disagreement real?
 
-Yes, on Q4 (§ above) — a near-even 6-flat/5-subdivide/1-partial split, along
-an information axis (saw-the-repo's-history vs. didn't), not along model or
-harness lines. That is the finding this issue exists to surface, and it is
-reported in full in §4 rather than compressed to "flat won."
+Yes, on Q4 (§ above) — a near-even 6-flat/5-subdivide/1-partial split, and
+the split lines up with an information axis (could the arm see this repo's
+real, recognizable identity, or only anonymized content) rather than with
+model or harness lines: the one name-blind group is 3/3 subdivide, the three
+name-visible groups are collectively flat-leaning but not unanimous — one of
+them (adversarial) splits down the middle on its own. That is the finding
+this issue exists to surface, and it is reported in full in §4, including
+the parts of it a single tidy variable does not explain, rather than
+compressed to "flat won."
 
 On Q3, the batch was unanimous (12/12: no `docs/` for `skills`/
 `skills-private`). Per the issue's own instruction, unanimity here needs an
@@ -298,9 +355,9 @@ and repeated it back.
 ## Recommendation
 
 - **No file moves now**, in any of the four repos (hard constraint of this
-  issue; also consistent with the informed-arm reasoning above — the arms
-  that knew this repo's own history leaned flat even though the vote overall
-  was a near-even split).
+  issue; also consistent with the reasoning above — the arms that could see
+  this repo's real identity leaned flat, even though the full 12-arm vote
+  was a near-even split and even that best-matched group was not unanimous).
 - **Do not adopt Hill90's five-way split anywhere in scope.** It is not
   externally well-precedented as a combined pattern (Q5), and the arms that
   knew this repo's own history correctly identify that agent-dotfiles
