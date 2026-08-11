@@ -99,5 +99,43 @@ check "refuses non-numeric --lanes" "1" "$?"
 bash "$BOOT" --session "$S" --lanes 3 --agent bash --cwd /no/such/dir >/dev/null 2>&1
 check "refuses a missing --cwd" "1" "$?"
 
+# --- Findings from the independent review of #137 ---
+
+# 10. THE BLOCKING ONE. tmux resolves an unambiguous session-name PREFIX as a
+#     match when no exact match exists, so `has-session -t foo` returns true
+#     when only `foo-2` exists. With --add-lanes the script then added four
+#     windows to `foo-2`: a live session it was never told about. That
+#     falsified the central safety claim, so this test encodes it directly.
+NEIGHBOUR="${S}-2"
+tmux new-session -d -s "$NEIGHBOUR" -n important-lane 2>/dev/null
+before_neighbour="$(tmux list-windows -t "=$NEIGHBOUR" -F '#{window_index} #{window_name}' 2>/dev/null)"
+bash "$BOOT" --session "$S" --lanes 5 --agent bash --add-lanes >/dev/null 2>&1
+check "prefix neighbour is NOT modified by --add-lanes" \
+  "$before_neighbour" "$(tmux list-windows -t "=$NEIGHBOUR" -F '#{window_index} #{window_name}' 2>/dev/null)"
+# and the intended session must actually have been created, not skipped
+tmux has-session -t "=$S" 2>/dev/null
+check "the named session itself was created" "0" "$?"
+cleanup
+tmux kill-session -t "=$NEIGHBOUR" 2>/dev/null
+
+# 11. `command -v` succeeds for shell builtins, which have no PATH binary and
+#     are not harnesses. `--agent cd` produced exactly the all-`dead` session
+#     the PATH guard exists to prevent.
+bash "$BOOT" --session "$S" --lanes 3 --agent cd >/dev/null 2>&1
+check "refuses a shell builtin as --agent" "1" "$?"
+tmux has-session -t "=$S" 2>/dev/null
+check "no session left behind by the builtin refusal" "1" "$?"
+
+# 12. tmux rewrites `:` and `.` in session names, then targets built from the
+#     original string miss -- previously leaving a stray half-built session
+#     that the failure report never mentioned.
+sessions_before="$(tmux list-sessions -F '#{session_name}' 2>/dev/null | sort)"
+bash "$BOOT" --session "bs:evil-$$" --lanes 3 --agent bash >/dev/null 2>&1
+check "refuses a session name containing ':'" "1" "$?"
+check "that refusal leaves no stray session" \
+  "$sessions_before" "$(tmux list-sessions -F '#{session_name}' 2>/dev/null | sort)"
+bash "$BOOT" --session "bs.evil-$$" --lanes 3 --agent bash >/dev/null 2>&1
+check "refuses a session name containing '.'" "1" "$?"
+
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

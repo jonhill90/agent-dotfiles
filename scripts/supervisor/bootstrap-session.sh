@@ -82,6 +82,18 @@ fi
 
 command -v tmux >/dev/null 2>&1 || { echo "bootstrap-session: tmux not on PATH" >&2; exit 1; }
 
+# tmux silently rewrites `:` and `.` in a session name (they are its target
+# delimiters), then every later target built from the ORIGINAL string misses.
+# Review of #137 hit this: new-session succeeded as `bs_evil-N` while the
+# follow-up move-window failed on `bs:evil-N`, leaving a stray half-built
+# session the failure report never mentioned. Reject up front instead.
+case "$SESSION" in
+  ""|*:*|*.*)
+    echo "bootstrap-session: --session must be non-empty and contain no ':' or '.' (got '$SESSION')" >&2
+    echo "  tmux uses both as target delimiters and rewrites them in session names." >&2
+    exit 1 ;;
+esac
+
 if [ ! -d "$WORKDIR" ]; then
   echo "bootstrap-session: --cwd does not exist: $WORKDIR" >&2
   exit 1
@@ -91,8 +103,17 @@ fi
 # name would otherwise produce N windows that all instantly fall back to a
 # shell -- i.e. a session that lanes.sh reports entirely `dead`, with no clue
 # as to why.
+# `command -v` succeeds for shell builtins (`cd`, `true`, `echo`), which have
+# no PATH-resident binary and are not harnesses. Review of #137 showed
+# `--agent cd` sailing through this guard and producing exactly the all-`dead`
+# session the guard exists to prevent. Require a real executable path.
 AGENT_BIN="${AGENT_CMD%% *}"
-if ! command -v "$AGENT_BIN" >/dev/null 2>&1; then
+AGENT_PATH="$(command -v "$AGENT_BIN" 2>/dev/null || true)"
+case "$AGENT_PATH" in
+  /*) ;;
+  *) AGENT_PATH="" ;;
+esac
+if [ -z "$AGENT_PATH" ] || [ ! -x "$AGENT_PATH" ]; then
   echo "bootstrap-session: agent command not on PATH: $AGENT_BIN" >&2
   echo "  pass --agent with the harness this machine actually has (claude, copilot, codex)" >&2
   exit 1
@@ -106,14 +127,24 @@ run() {
   fi
 }
 
-session_exists() { tmux has-session -t "$SESSION" 2>/dev/null; }
+# BLOCKING BUG found reviewing #137: tmux resolves an UNAMBIGUOUS PREFIX of a
+# session name as a match when no exact match exists. `has-session -t foo`
+# therefore returns true when only `foo-2` exists, and with --add-lanes the
+# script then added four windows to `foo-2` -- a live session it was never
+# told about. That falsified this script's central safety claim.
+#
+# `=name` is tmux's exact-match target syntax and does not prefix-match;
+# confirmed directly against a real tmux before relying on it. Every target
+# built from $SESSION uses it, not just this probe -- an exact existence check
+# followed by prefix-matching targets would be worse than no check.
+session_exists() { tmux has-session -t "=$SESSION" 2>/dev/null; }
 
 # Existing-window inventory, read ONCE up front. Re-querying per iteration
 # would race against a lane that exits mid-run and could hand the same index
 # to two windows.
 existing_indexes=""
 if session_exists; then
-  existing_indexes="$(tmux list-windows -t "$SESSION" -F '#{window_index}' 2>/dev/null || true)"
+  existing_indexes="$(tmux list-windows -t "=$SESSION" -F '#{window_index}' 2>/dev/null || true)"
 fi
 
 has_window() {
@@ -143,10 +174,10 @@ if ! session_exists; then
   # one tmux picked. Without this, a user whose .tmux.conf sets base-index 0
   # gets a supervisor at window 0 and lanes.sh offers it as a dispatch target.
   if [ "$DRY_RUN" -eq 0 ]; then
-    first="$(tmux list-windows -t "$SESSION" -F '#{window_index}' | head -1)"
-    [ "$first" = "$SUPERVISOR_WINDOW" ] || tmux move-window -s "$SESSION:$first" -t "$SESSION:$SUPERVISOR_WINDOW"
+    first="$(tmux list-windows -t "=$SESSION" -F '#{window_index}' | head -1)"
+    [ "$first" = "$SUPERVISOR_WINDOW" ] || tmux move-window -s "=$SESSION:$first" -t "=$SESSION:$SUPERVISOR_WINDOW"
   fi
-  run send-keys -t "$SESSION:$SUPERVISOR_WINDOW" "$AGENT_CMD" Enter
+  run send-keys -t "=$SESSION:$SUPERVISOR_WINDOW" "$AGENT_CMD" Enter
   created=$((created + 1))
   echo "  window $SUPERVISOR_WINDOW ($SUPERVISOR_NAME): supervisor, created"
 else
@@ -163,8 +194,8 @@ while [ "$idx" -lt "$((SUPERVISOR_WINDOW + LANES - 1))" ]; do
     skipped=$((skipped + 1))
     continue
   fi
-  run new-window -d -t "$SESSION:$idx" -n "free-$idx" -c "$WORKDIR"
-  run send-keys -t "$SESSION:$idx" "$AGENT_CMD" Enter
+  run new-window -d -t "=$SESSION:$idx" -n "free-$idx" -c "$WORKDIR"
+  run send-keys -t "=$SESSION:$idx" "$AGENT_CMD" Enter
   created=$((created + 1))
   echo "  window $idx (free-$idx): lane, created"
 done
