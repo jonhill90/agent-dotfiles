@@ -61,11 +61,15 @@ done < <("$HERE/lanes.sh" --blocked "$SESSION" 2>/dev/null)
 case "${#BLOCKED[@]}" in
   1)
     LANE="${BLOCKED[0]}"
-    # No `-l`: dispatch.sh's own brief send (loop-tick.md's documented path)
-    # relies on the same behaviour -- a single quoted argument that is not
-    # itself a recognised key name is typed literally. Matching it keeps one
-    # convention for "type text into a lane's pane" instead of two.
-    if tmux send-keys -t "$LANE" "$MESSAGE" 2>/dev/null \
+    # `-l`: unlike dispatch.sh's own brief send, this text comes from an
+    # external network service (agent-dotfiles#152) -- it is never safe to
+    # assume it isn't a recognised key name. Without `-l`, a reply of
+    # literally `C-c` or `Escape` fires that control action at the lane
+    # instead of typing the four characters; `C-u` would silently wipe
+    # whatever the lane had already typed. `-l` forces every byte to be
+    # typed as literal text, key name or not, and Enter stays a deliberate
+    # second call so a message can never smuggle in its own submission.
+    if tmux send-keys -l -t "$LANE" "$MESSAGE" 2>/dev/null \
        && tmux send-keys -t "$LANE" Enter 2>/dev/null; then
       echo "inbox-route: delivered to $LANE"
       exit 0

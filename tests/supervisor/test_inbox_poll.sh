@@ -79,12 +79,15 @@ run() {  # run <inbox-script-fixture> <iterations> [extra env...]
 }
 
 # --- a message is routed the moment inbox.sh returns it --------------------
-cat > "$D/fixture-basic" <<'FIX'
-ok:[telegram 1 from Jon] yes
-FIX
+# agent-dotfiles#152: inbox.sh emits TEXT and the "[telegram ...]" display
+# line tab-separated on one line (see inbox.sh's own usage comment). The
+# production bug this fixture used to lock in was routing the WHOLE line --
+# framing included -- instead of the bare reply; the fixture below models the
+# real inbox.sh output shape so this test can actually catch that again.
+printf 'ok:yes\t[telegram 1 from Jon] yes\n' > "$D/fixture-basic"
 run "$D/fixture-basic" 1 >"$D/out1" 2>&1
-grep -qF '[telegram 1 from Jon] yes' "$D/route.log" && ok "a new message is handed to inbox-route.sh" \
-  || bad "route.log missing the message" "$(cat "$D/route.log" 2>/dev/null)"
+[ "$(cat "$D/route.log" 2>/dev/null)" = "yes" ] && ok "the bare reply text is handed to inbox-route.sh" \
+  || bad "route.log should contain only the bare reply \"yes\", not the framing" "$(cat "$D/route.log" 2>/dev/null)"
 
 # --- nothing new: nothing routed, no notification ---------------------------
 cat > "$D/fixture-empty" <<'FIX'

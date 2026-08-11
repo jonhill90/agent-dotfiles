@@ -14,6 +14,15 @@
 # Usage:  inbox.sh          print any new messages, one per line, then ack them
 #         inbox.sh --peek   print without acknowledging (safe to run twice)
 #
+# Each line is two tab-separated fields: the bare message TEXT, then the
+# human-readable "[telegram <ts> from <who>] <text>" display line (unchanged
+# from before this field was added). agent-dotfiles#152: a caller that needs
+# to act on the reply itself -- inbox-route.sh does, typing it into a lane --
+# must use field 1. Re-deriving TEXT by parsing field 2 back apart is what
+# broke routing in the first place; TEXT is already known here, before the
+# display line is even built, so callers get it directly instead of
+# reconstructing it downstream.
+#
 # Exit 0 with output = new messages. Exit 0 with no output = nothing new.
 # Exit 1 = could not reach Telegram, which is NOT the same as "no messages"
 # and must never be reported as silence.
@@ -133,7 +142,11 @@ with open(lock_file, "a") as lockfile:
         chat = message.get("chat") or {}
         who = chat.get("title") or chat.get("first_name") or chat.get("id")
         when = message.get("date", "")
-        print(f"[telegram {when} from {who}] {text}")
+        display = f"[telegram {when} from {who}] {text}"
+        # TEXT first, tab-separated, so a caller that needs the bare reply
+        # (inbox-route.sh) reads it directly instead of parsing it back out
+        # of `display` -- see the usage comment above (#152).
+        print(f"{text}\t{display}")
 
     # Acknowledge only after the messages have been printed, and still inside
     # the lock: if this process dies mid-write, the messages are re-read next

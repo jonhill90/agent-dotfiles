@@ -141,12 +141,16 @@ while :; do
     notified_down=""
     report ok "listening"
     if [ -n "$out" ]; then
-      while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        if "$HERE/inbox-route.sh" "$line" "$SESSION" >>"$LOG" 2>&1; then
-          log "ROUTED: $line"
+      while IFS=$'\t' read -r text display; do
+        [ -n "$text" ] || continue
+        # inbox.sh (#152) emits TEXT and DISPLAY tab-separated on one line --
+        # route the bare TEXT (what a lane should receive), log the DISPLAY
+        # form (what a human reading $LOG wants to see). Never re-derive TEXT
+        # by parsing DISPLAY back apart.
+        if "$HERE/inbox-route.sh" "$text" "$SESSION" >>"$LOG" 2>&1; then
+          log "ROUTED: ${display:-$text}"
         else
-          log "ROUTE FAILED: $line"
+          log "ROUTE FAILED: ${display:-$text}"
         fi
       done <<<"$out"
     fi

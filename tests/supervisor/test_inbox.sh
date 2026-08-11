@@ -65,6 +65,15 @@ offset_file="$D/state/.local/state/agent-dotfiles-supervisor/.telegram-offset"
 [ "$(cat "$offset_file" 2>/dev/null)" = "502" ] && ok "offset advanced to highest_id+1 (502)" \
   || bad "offset file reads $(cat "$offset_file" 2>/dev/null || echo '<missing>'), wanted 502"
 
+# --- output is TEXT<TAB>DISPLAY, bare text first (agent-dotfiles#152) ------
+# inbox-route.sh must route the bare reply, not the "[telegram ...]" framing
+# -- this only works if the framing never contaminates field 1.
+hello_line=$(grep 'hello' <<<"$out")
+[ "$(cut -f1 <<<"$hello_line")" = "hello" ] && ok "field 1 is the bare message text, not the display framing" \
+  || bad "field 1 was not the bare text" "$hello_line"
+grep -q 'telegram' <<<"$(cut -f2 <<<"$hello_line")" && ok "field 2 carries the [telegram ...] display line" \
+  || bad "field 2 missing the display framing" "$hello_line"
+
 # --- second call: no duplicate delivery ------------------------------------
 # This is the mutation-check case: if the ack write above were broken (offset
 # never persisted, or persisted before the messages were read), this call
