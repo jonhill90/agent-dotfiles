@@ -171,11 +171,24 @@ tens of thousands. If the common case is expensive, the cadence or the
 intake filter is wrong. Report one line even when idle; a silent loop is
 indistinguishable from a dead one.
 
-**No loop in this repository auto-commits or auto-merges.** Every corpus
-source that discusses it lands on human review before merge; this repo's own
-global instructions already require verification evidence before a success
-claim, and `01-contract.md`'s stop-condition anti-patterns list treating a
-green run as success as a named failure mode.
+Three things collapse into one sentence here if you're not careful, so keep
+them separate. What the **corpus** recommends: every corpus source that
+discusses auto-committing or auto-merging loops lands on human review before
+merge — that is their design position, attributed to them, not a claim about
+this repository. What this repository **actually authorizes**: as of
+2026-08-10, Jon granted the supervisor full merge and close autonomy across
+`agent-dotfiles`, `skills`, `skills-private`, and `agent-evals`, and the
+supervisor has merged PRs in those four repos since without Jon reading the
+diff; `Hill90` remains propose-only. What makes that **safe** is not human
+review at merge time but three things this repo still enforces instead:
+independent review at the exact head being merged, red evidence gathered
+before a fix is accepted as fixing anything, and a boundary list the
+autonomy grant does not touch — force-push, history rewrite, operating
+against the real `$HOME`, `apm` mutations, and repository visibility changes
+still route to Jon. This repo's own global instructions already require
+verification evidence before a success claim, and `01-contract.md`'s
+stop-condition anti-patterns list treating a green run as success as a named
+failure mode.
 
 ## Two load-bearing findings — measured, not corpus opinion
 
@@ -294,9 +307,10 @@ them:
 - **A Ralph skill.** Ralph's guardrails are environmental (container/VM,
   disposable branch, permission bypass), not instructional — a document
   cannot make it safe, only name when the headless ring is appropriate.
-- **Auto-committing or auto-merging loops.** Already covered above; every
-  corpus source and this repo's own global instructions land on human
-  review before merge.
+- **Auto-committing or auto-merging loops.** Already distinguished above:
+  the corpus's own recommendation, what this repository actually
+  authorizes under the 2026-08-10 merge-autonomy grant, and what makes
+  that safe are three separate things, not restated here.
 
 No skill implementing `loop-contract` or `loop-memory` exists in this
 repository yet — the corpus's specs for both are implementation-ready but
