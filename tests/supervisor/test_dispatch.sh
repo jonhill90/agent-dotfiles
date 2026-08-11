@@ -326,7 +326,29 @@ want_missing "the lane is not renamed for a closed issue" "rename-window" "$log"
 if [ "$(assignees 150)" = "" ]; then ok "a closed issue gets no assignee via dispatch"; else bad "a closed issue gets no assignee via dispatch" "assignees: $(assignees 150)"; fi
 if [ "$(worktrees)" = "$before" ]; then ok "a closed issue leaves no worktree behind"; else bad "a closed issue leaves no worktree behind" "$before -> $(worktrees)"; fi
 
+# --- the lane is told what "done" means, by the dispatcher (#117) ----------
+#
+# A lane completed #112 correctly -- tests green, mutation-checked, committed --
+# and stopped, because its brief never said to push. It was right to be literal.
+# From outside that is indistinguishable from a lane that did nothing: no PR, no
+# comment, issue still claimed, and the work living only as an unpushed commit
+# in a temporary worktree.
+#
+# Every other brief that night said "open a PR when done". Depending on that is
+# depending on whoever wrote the brief remembering, which is the mechanism that
+# failed in #114. So the dispatcher states it, on every dispatch.
+echo '78|| a dispatch that must say what done means' >> "$D/issues"
+out=$(run 78 deliverable-contract "$D/brief.md" "" "$REPO"); rc=$?
+want_exit "a dispatch still succeeds with the contract attached" "$rc" 0 "$out"
+log=$(tmuxlog)
+want_contains "the lane is told to push and open a PR" "push your branch and open a PR" "$log"
+want_contains "a no-code lane is told to comment instead" "post your findings as a comment" "$log"
+want_contains "and told why it matters" "unshipped work looks exactly like no work" "$log"
+# The delivery check greps for the brief path; a longer message must not break it.
+want_contains "the brief path still reaches the lane intact" "$D/brief.md" "$log"
+
 rm -rf "$D"
+
 
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

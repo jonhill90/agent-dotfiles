@@ -165,7 +165,17 @@ if ! tmux rename-window -t "$LANE" "$WINDOW_NAME" 2>/dev/null; then
   exit 1
 fi
 
-MESSAGE="Read $BRIEF and do exactly what it says. That file is your complete brief. Do all of your work in the worktree at $WORKTREE -- it is yours, already branched; never work in the shared checkout at $REPO_PATH."
+# The standing deliverable contract, prepended by the dispatcher rather than
+# left to whoever wrote the brief (#117). A lane completed #112 correctly --
+# tests green, mutation-checked, committed -- and stopped, because the brief
+# never said to push. It was right to be literal. From outside, a lane that
+# finished without shipping is indistinguishable from one that did nothing: no
+# PR, no comment, issue still claimed, and the work living only as an unpushed
+# commit in a temporary worktree one cleanup away from being lost.
+#
+# Every other brief written that night carried "open a PR when done". Relying on
+# that is relying on memory, which is the same mechanism that failed in #114.
+MESSAGE="Read $BRIEF and do exactly what it says. That file is your complete brief. Do all of your work in the worktree at $WORKTREE -- it is yours, already branched; never work in the shared checkout at $REPO_PATH. When you are finished: push your branch and open a PR, or -- if you produced no code -- post your findings as a comment on the issue. Do not stop with work only in the worktree; unshipped work looks exactly like no work."
 
 abort_send() {
   echo "dispatch: $1" >&2
