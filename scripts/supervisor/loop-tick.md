@@ -151,9 +151,26 @@ Two things that follow, both learned the hard way on that PR:
   commit messages into the merge commit, so amend the branch as well.
 - Writing the explanation reintroduces the bug. The note added to #98's body
   describing this trap repeated the same keyword-then-number pattern three more
-  times and re-linked the issue. Break every `close|closes|closed|fix|fixes|resolve|resolves` that is
-  followed by `#<number>`, including inside quotes and explanations, then
-  re-check `closingIssuesReferences` and confirm it is empty before merging.
+  times and re-linked the issue. **On a PR that should close nothing**, break
+  every `close|closes|closed|fix|fixes|resolve|resolves` followed by
+  `#<number>` — including inside quotes and explanations — then re-check and
+  confirm the list is empty.
+
+**The target is "matches intent", never "empty".** A PR that genuinely resolves
+an issue SHOULD carry `Fixes #N`, and stripping it breaks something real:
+`claim.sh stale` finds in-flight work by grepping PR bodies for
+`(fixes|closes|resolves) #N`, and that is the only signal it has. A PR with no
+reference is invisible to every duplicate-work check in this estate — which is
+how a lane was dispatched to #99 while #100 was already open, #100 having
+omitted the keyword because it implements only half of that issue.
+
+So there are two failure directions, not one:
+
+- a keyword that should not be there closes an issue nothing has solved
+- a missing keyword hides live work and gets a second lane dispatched onto it
+
+Both are silent. Check the list against what you intend; do not reach for
+either extreme by reflex.
 
 An issue closed by accident is a louder false signal than almost anything else
 this loop produces: the tracker then says a problem is solved, and the next
