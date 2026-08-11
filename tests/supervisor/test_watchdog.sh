@@ -245,11 +245,11 @@ else
   sed 's/^/       /' "$D/wstale/st" 2>/dev/null
 fi
 # No fetch happens, so a zero is not proof of freshness. The wording must say
-# the ref was not refetched rather than implying a currency it cannot check.
-if grep -q "not refetched" "$D/wstale/st" 2>/dev/null; then
-  echo "  ok   the status says the comparison ref was not refetched"; pass=$((pass+1))
+# the was not refetched by this check rather than implying a currency it cannot check.
+if grep -q "not refetched by this check" "$D/wstale/st" 2>/dev/null; then
+  echo "  ok   the status says the comparison was not refetched by this check"; pass=$((pass+1))
 else
-  echo "  FAIL the status says the comparison ref was not refetched"; fail=$((fail+1))
+  echo "  FAIL the status says the comparison was not refetched by this check"; fail=$((fail+1))
 fi
 
 

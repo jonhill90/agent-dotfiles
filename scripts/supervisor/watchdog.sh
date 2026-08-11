@@ -96,8 +96,15 @@ sha=$(git -C "$HERE" rev-parse --short HEAD 2>/dev/null || echo unknown)
 #
 # NO `git fetch` -- this runs every 180s. The comparison is against the LOCAL
 # origin/main ref, so a nonzero count is trustworthy and a zero is not proof of
-# freshness; the ref itself may be stale. The status line says which it is
-# rather than implying a guarantee this check cannot make.
+# freshness.
+#
+# The live copy is a git WORKTREE of this repository, not a standalone clone, so
+# it shares one object store and one set of refs with the main checkout and with
+# every lane worktree on the machine. origin/main's freshness is therefore an
+# emergent property of whatever unrelated git activity has happened recently --
+# it may be seconds old because a lane just fetched, or hours old because none
+# did. This check cannot tell which. The wording claims only what it knows: that
+# IT did not refetch. Do not read it as an assertion that the ref is stale.
 behind=$(git -C "$HERE" rev-list --count HEAD..origin/main 2>/dev/null || echo "")
 # THREE outcomes, not two. Lumping the unreadable case in with zero is the same
 # defect this line exists to fix: if origin/main is missing or git fails, an
@@ -106,7 +113,7 @@ behind=$(git -C "$HERE" rev-list --count HEAD..origin/main 2>/dev/null || echo "
 case "$behind" in
   0)            code_note="" ;;
   ''|*[!0-9]*)  code_note=" (cannot compare — origin/main ref unreadable)" ;;
-  *)            code_note=" (${behind} behind origin/main, ref not refetched)" ;;
+  *)            code_note=" (${behind} behind origin/main, not refetched by this check)" ;;
 esac
 
 log() { printf '%s %s\n' "$iso" "$*" >>"$LOG"; }
