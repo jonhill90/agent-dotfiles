@@ -261,17 +261,25 @@ $ git diff --stat master..feature
 Two-dot answers "is this branch identical to `main`", which is a different
 question and coincides with the one you meant only when `main` has not moved.
 
-**What actually answers it** — compare each file the branch touched against
-`main`'s version of that same file, ignoring everything else:
+**What actually answers it** — two-dot **scoped to the paths the branch itself
+touched**. The scoping is what removes `main`'s unrelated drift:
 
 ```bash
-for f in $(git diff --name-only $(git merge-base main "$b") "$b"); do
-    git diff --quiet "main:$f" "$b:$f" || echo "$f differs — genuinely outstanding"
-done
+paths=$(git diff --name-only "$(git merge-base main "$b")" "$b")
+git diff main.."$b" -- $paths      # empty => the branch's work is on main
 ```
 
-On the case above that prints nothing for `work.txt`, correctly: the content is
-on `main` and the branch is safe to delete.
+Measured against both cases:
+
+```
+superseded branch, main drifted     raw two-dot: base.txt, later.txt  (false)
+                                    scoped:      (empty)              correct
+branch DELETED a file main still has
+                                    scoped:      base.txt | 2 --      correct
+```
+
+The deletion case matters: a branch whose contribution is a removal must still
+report as outstanding, and scoping does not hide it.
 
 The record here is three wrong answers to this one question in one night — see
 #120 and #121 — two of them written by whoever was also writing the guidance.
