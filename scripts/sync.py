@@ -360,6 +360,35 @@ def skill_source_aliases(repo: Path) -> list[str]:
     return aliases
 
 
+def declared_skill_source_pins(repo: Path) -> dict[str, str]:
+    """alias -> pinned `ref:` for every skill-bundle dependency in this
+    repo's apm.yml (#41).
+
+    `apply()` uses this as the ground truth to verify `apm install -g`
+    actually reached the pinned commit, rather than trusting its exit
+    code alone: #41 reproduced `apm install -g` exiting 0 while
+    resolving a stale, cached commit for a ref that had just been
+    bumped, so the exit code cannot be treated as proof the pin was
+    applied.
+    """
+    apm_yml = repo / "apm.yml"
+    if not apm_yml.is_file():
+        return {}
+    block = apm_dependency_block(apm_yml.read_text(encoding="utf-8"))
+    block = "\n".join(
+        line for line in block.splitlines() if not line.strip().startswith("#")
+    )
+    pins: dict[str, str] = {}
+    for entry in re.split(r"(?=^    - )", block, flags=re.M):
+        if not entry.strip() or not re.search(r"^\s*skills:", entry, re.M):
+            continue
+        alias_match = re.search(r"^\s*alias:\s*(.+?)\s*$", entry, re.M)
+        ref_match = re.search(r"^\s*ref:\s*(.+?)\s*$", entry, re.M)
+        if alias_match and ref_match:
+            pins[alias_match.group(1).strip("'\"")] = ref_match.group(1).strip("'\"")
+    return pins
+
+
 # -- global APM manifest: stale local-package registrations (#14) ---------
 #
 # apm install -g is additive: every `apm install -g <path>` a machine has
@@ -803,6 +832,27 @@ class Sync:
                 }
             )
         return sources
+
+    def stale_skill_source_pins(self) -> dict[str, tuple[str, str]]:
+        """alias -> (declared_ref, resolved_commit) for every skill source
+        whose commit in the just-written global lockfile does not match
+        this repo's apm.yml pin (#41).
+
+        `apm install -g` can exit 0 while resolving a stale cached commit
+        for a ref that was just bumped -- the lockfile it writes is the
+        only place that discrepancy is visible, since apm's own exit code
+        reports success either way. Empty when apm.yml declares no pins
+        (nothing to check) or when every resolved commit matches.
+        """
+        declared = declared_skill_source_pins(self.repo)
+        if not declared:
+            return {}
+        stale: dict[str, tuple[str, str]] = {}
+        for source in self.pinned_skill_sources():
+            name = source["name"]
+            if name in declared and source["resolved_commit"] != declared[name]:
+                stale[name] = (declared[name], source["resolved_commit"])
+        return stale
 
     def stale_global_registrations(self) -> list[tuple[str, str]]:
         """Every stale local-package registration in the *global*
@@ -1264,24 +1314,60 @@ class Sync:
                 for skill in roster_union(self.repo)
                 for argument in ("--skill", skill)
             ]
-            try:
-                result = self.runner(
-                    ["apm", "install", "-g", str(self.repo), *skill_args],
-                    check=False,
+            # #41: `apm install -g` has been observed to exit 0 while
+            # resolving a stale, cached commit for a ref that was just
+            # bumped in apm.yml -- a second, identical invocation then
+            # resolves correctly. The exit code alone cannot be trusted as
+            # proof the pinned commit was reached, so the just-written
+            # global lockfile is checked against apm.yml's declared pins
+            # after every attempt. One redrive is allowed so a single
+            # `sync.py apply` still suffices for the operator; if the
+            # second attempt is *also* stale, this is no longer the known
+            # one-retry cache-miss pattern and apply fails closed instead
+            # of reporting an unreached state as success.
+            stale: dict[str, tuple[str, str]] = {}
+            attempts_remaining = 2
+            while attempts_remaining:
+                attempts_remaining -= 1
+                try:
+                    result = self.runner(
+                        ["apm", "install", "-g", str(self.repo), *skill_args],
+                        check=False,
+                    )
+                except Exception as exc:
+                    # A launch failure (missing binary, OS error, ...) never
+                    # returns a process result at all — restore must run on
+                    # the exception path too, not only on a bad returncode
+                    # (#9 review), and the failure must reach the caller as
+                    # a return code, not an uncaught exception mid-deployment.
+                    self.restore_skills_dirs(skill_backups)
+                    print(f"ERROR: apm install raised {exc!r}; aborting apply")
+                    return 1
+                if result.returncode != 0:
+                    self.restore_skills_dirs(skill_backups)
+                    print("ERROR: apm install failed; aborting apply")
+                    return result.returncode
+                stale = self.stale_skill_source_pins()
+                if not stale:
+                    break
+                if attempts_remaining:
+                    print(
+                        "[retry] apm install -g resolved a stale cached "
+                        f"commit for {', '.join(sorted(stale))}; redriving "
+                        "apm install once (#41)"
+                    )
+            if stale:
+                self.restore_skills_dirs(skill_backups)
+                for name, (declared_ref, resolved) in sorted(stale.items()):
+                    print(
+                        f"ERROR: {name} still resolved to {resolved[:8]} "
+                        f"after retry; apm.yml pins {declared_ref[:8]} (#41)"
+                    )
+                print(
+                    "ERROR: apm install did not reach the pinned skill "
+                    "source(s) after a redrive; aborting apply"
                 )
-            except Exception as exc:
-                # A launch failure (missing binary, OS error, ...) never
-                # returns a process result at all — restore must run on the
-                # exception path too, not only on a bad returncode (#9
-                # review), and the failure must reach the caller as a
-                # return code, not an uncaught exception mid-deployment.
-                self.restore_skills_dirs(skill_backups)
-                print(f"ERROR: apm install raised {exc!r}; aborting apply")
-                return 1
-            if result.returncode != 0:
-                self.restore_skills_dirs(skill_backups)
-                print("ERROR: apm install failed; aborting apply")
-                return result.returncode
+                return 5
             self.discard_skills_backup(skill_backups)
             # install does NOT reliably compile root files on fresh
             # machines (E16 failure 2026-07-13) — compile explicitly,
@@ -1332,6 +1418,19 @@ class Sync:
         for source in self.pinned_skill_sources():
             short_sha = source["resolved_commit"][:8]
             print(f"[source] {source['name']}: {source['repo_url']}@{short_sha}")
+        for name, (declared_ref, resolved) in sorted(
+            self.stale_skill_source_pins().items()
+        ):
+            # #41: apply() already retries once and fails closed rather
+            # than report this, but a lockfile can also go stale between
+            # applies (e.g. an operator bumps apm.yml and runs `status`
+            # before the next `apply`) -- surface that here too, so
+            # `status`/`doctor` do not silently agree with a stale `apply`.
+            print(
+                f"[stale-pin] {name}: resolved {resolved[:8]}, "
+                f"apm.yml pins {declared_ref[:8]}"
+            )
+            issues += 1
         for path, reason in self.stale_global_registrations():
             print(f"[stale-global] {path}: {reason}")
             issues += 1
