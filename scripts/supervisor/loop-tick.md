@@ -127,6 +127,38 @@ tick, not a failure of one.
   `$HOME` (`sync.py apply`, `install.sh`, any `apm` mutation).
 - Commits: Jon Hill \<jonhill90@live.com\> sole author, no co-author trailers.
 
+## Before you merge, check what the merge will CLOSE
+
+```bash
+gh pr view <n> --json closingIssuesReferences --jq '.closingIssuesReferences[].number'
+```
+
+If that list does not match what you intend to close, fix the PR body before
+merging. It is the only way to see this — the PR body reads as prose and the
+linkage is invisible in it.
+
+**GitHub's closing-keyword parser is not negation-aware.** A PR body saying
+
+> It does not explain or close #NNN
+
+links issue NNN as a closing reference and auto-closes it on merge. The sentence
+promising not to close the issue is what closes it. Caught on #98 by review,
+after the PR had been open for a full tick and read past twice.
+
+Two things that follow, both learned the hard way on that PR:
+
+- The **commit message** counts too, not just the body. A squash merge folds
+  commit messages into the merge commit, so amend the branch as well.
+- Writing the explanation reintroduces the bug. The note added to #98's body
+  describing this trap repeated the same keyword-then-number pattern three more
+  times and re-linked the issue. Break every `close|closes|closed|fix|fixes|resolve|resolves` that is
+  followed by `#<number>`, including inside quotes and explanations, then
+  re-check `closingIssuesReferences` and confirm it is empty before merging.
+
+An issue closed by accident is a louder false signal than almost anything else
+this loop produces: the tracker then says a problem is solved, and the next
+session believes it.
+
 ## Before you finish the tick
 
 Keep `brief.md` current as state changes — it is what a cold session resumes
