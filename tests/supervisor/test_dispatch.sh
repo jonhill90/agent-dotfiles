@@ -66,6 +66,7 @@ run() {
     LANES_FIXTURE="$D/lanes" LANES_SESSION=t TMUX_LOG="$D/tmux.log" \
     TMUX_PANES="$D/panes" DISPATCH_SETTLE=0 \
     DISPATCH_DROP_PREFIX="${DISPATCH_DROP_PREFIX:-0}" \
+    DISPATCH_LANE="${DISPATCH_LANE:-}" \
     WORKTREE_ROOT="$D/roots" bash "$DISPATCH" "$@" 2>&1
 }
 tmuxlog()   { cat "$D/tmux.log"; }
@@ -145,11 +146,22 @@ fi
 if [ "$(worktrees)" = "$before" ]; then ok "no stray worktree is left behind"; else bad "no stray worktree is left behind" "$before -> $(worktrees)"; fi
 
 # --- already claimed: pick different work, do not build anything ---------
+# The issue and slug here must be UNIQUE to this case. This case used to reuse
+# #81's number and slug, whose lane branch already existed from the happy path
+# earlier in this same run -- so with the claim guard deleted entirely,
+# `worktree.sh new` still failed, for the unrelated reason of a duplicate
+# branch, and the resulting exit-1/no-send outcome coincidentally matched every
+# assertion below. The suite stayed 32/32 green with the guard gone. A fresh
+# number and slug is what makes the claim the only thing that can refuse here.
+printf '97|someone-else| Claimed by another lane\n' >> "$D/issues"
 before=$(worktrees)
-out=$(run 81 dispatch-worktree "$D/brief.md" acme/agent-dotfiles "$REPO"); rc=$?
+out=$(run 97 already-claimed "$D/brief.md" acme/agent-dotfiles "$REPO"); rc=$?
 want_exit "a claimed issue is refused" "$rc" 1 "$out"
+want_contains "the refusal names the holder of the claim" "someone-else" "$out"
 log=$(tmuxlog)
 want_missing "a refused claim sends no brief" "send-keys" "$log"
+want_missing "a refused claim does not rename the lane" "rename-window" "$log"
+want_contains "a refused claim leaves the other lane's claim alone" "someone-else" "$(assignees 97)"
 if [ "$(worktrees)" = "$before" ]; then ok "a refused claim creates no worktree"; else bad "a refused claim creates no worktree" "$before -> $(worktrees)"; fi
 
 # --- no free lane: an empty tmux target hits the ACTIVE window ------------
@@ -173,6 +185,75 @@ if [ "$(worktrees)" = "$before" ]; then ok "no lane means no worktree is created
 out=$(run 90 no-brief "$D/does-not-exist.md" acme/agent-dotfiles "$REPO"); rc=$?
 want_exit "a missing brief fails the dispatch" "$rc" 1 "$out"
 if [ "$(assignees 90)" = "" ]; then ok "a missing brief takes no claim"; else bad "a missing brief takes no claim" "assignees: $(assignees 90)"; fi
+
+# --- "free" is not "unowned": a task-named lane is still someone's --------
+# `lanes.sh --free` decides free from pane content alone. A lane that finished
+# and was never renamed, and a lane paused on an approval prompt, both show no
+# busy marker and are indistinguishable from a genuinely unowned lane. The name
+# is the only signal that survives that, which is why `claim.sh:124` and
+# `loop-tick.md:292-295` both key on `free-N`. The supervisor made this exact
+# mistake by hand on 2026-08-11: `--free | head -1` returned another
+# dispatcher's task-named lane and it was `/clear`ed.
+cat > "$D/lanes" <<'FIX'
+1|arch|claude.exe|❯ ready|1|0
+3|ad82-other|claude.exe|❯ ready|1|0
+FIX
+printf '95|| Needs an unowned lane\n' > "$D/issues"
+before=$(worktrees)
+out=$(run 95 owned-lane "$D/brief.md" acme/agent-dotfiles "$REPO"); rc=$?
+want_exit "an idle lane still named after a task is not dispatched to" "$rc" 1 "$out"
+log=$(tmuxlog)
+want_missing "no brief is sent to a task-named lane" "send-keys" "$log"
+want_missing "a task-named lane is not renamed out from under its owner" "rename-window" "$log"
+want_contains "the refusal says the name convention is why" "free-" "$out"
+if [ "$(assignees 95)" = "" ]; then ok "a task-named lane means no claim is taken"; else bad "a task-named lane means no claim is taken" "assignees: $(assignees 95)"; fi
+if [ "$(worktrees)" = "$before" ]; then ok "a task-named lane means no worktree is created"; else bad "a task-named lane means no worktree is created" "$before -> $(worktrees)"; fi
+
+# ...and the name filter picks the renamed lane rather than whatever comes
+# first, so an owned lane sitting ahead of a free one does not block dispatch.
+cat > "$D/lanes" <<'FIX'
+1|arch|claude.exe|❯ ready|1|0
+3|ad82-other|claude.exe|❯ ready|1|0
+4|free-4|claude.exe|❯ ready|1|0
+FIX
+printf '98|| Needs the renamed lane, not the first one\n' >> "$D/issues"
+out=$(run 98 free-named-lane "$D/brief.md" acme/agent-dotfiles "$REPO"); rc=$?
+want_exit "an owned lane ahead of a free one does not block the dispatch" "$rc" 0 "$out"
+log=$(tmuxlog)
+want_contains "the brief goes to the lane named free-N" "send-keys -t t:4" "$log"
+want_missing "the task-named lane is left untouched" "-t t:3" "$log"
+
+# --- DISPATCH_LANE is gone: no env var aims a dispatch --------------------
+# It used to be honoured verbatim -- no free check, no name check, no
+# supervisor exclusion. Reproduced with `DISPATCH_LANE=t:1`: the issue was
+# claimed and `/clear` plus the full brief went into the SUPERVISOR's own pane,
+# exit 0. That is the incident `loop-tick.md:248-253` documents, reachable
+# through a stray env var instead of an empty string. There was no caller, so
+# the override was removed rather than gated; these assert it stays removed.
+cat > "$D/lanes" <<'FIX'
+1|arch|claude.exe|❯ ready|1|0
+FIX
+printf '96|| Must not land in the supervisor\n' > "$D/issues"
+before=$(worktrees)
+out=$(DISPATCH_LANE=t:1 run 96 env-override "$D/brief.md" acme/agent-dotfiles "$REPO"); rc=$?
+want_exit "DISPATCH_LANE cannot dispatch when no lane is free" "$rc" 1 "$out"
+log=$(tmuxlog)
+want_missing "DISPATCH_LANE cannot reach the supervisor's window" "t:1" "$log"
+want_missing "DISPATCH_LANE sends nothing at all" "send-keys" "$log"
+if [ "$(assignees 96)" = "" ]; then ok "DISPATCH_LANE takes no claim"; else bad "DISPATCH_LANE takes no claim" "assignees: $(assignees 96)"; fi
+if [ "$(worktrees)" = "$before" ]; then ok "DISPATCH_LANE creates no worktree"; else bad "DISPATCH_LANE creates no worktree" "$before -> $(worktrees)"; fi
+
+# ...and when a real free lane exists, the env var does not redirect the brief.
+cat > "$D/lanes" <<'FIX'
+1|arch|claude.exe|❯ ready|1|0
+3|free-3|claude.exe|❯ ready|1|0
+FIX
+printf '99|| Must go where lanes.sh says\n' >> "$D/issues"
+out=$(DISPATCH_LANE=t:1 run 99 no-redirect "$D/brief.md" acme/agent-dotfiles "$REPO"); rc=$?
+want_exit "DISPATCH_LANE does not redirect a dispatch" "$rc" 0 "$out"
+log=$(tmuxlog)
+want_contains "the brief goes to the lane lanes.sh chose" "send-keys -t t:3" "$log"
+want_missing "not to the window DISPATCH_LANE named" "-t t:1" "$log"
 
 rm -rf "$D"
 

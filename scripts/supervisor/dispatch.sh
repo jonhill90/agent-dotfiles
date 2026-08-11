@@ -79,9 +79,44 @@ WINDOW_NAME="${PREFIX}${ISSUE}-${SLUG}"
 # `send-keys -t session:` with an empty index does not error; it targets the
 # active window, which is usually the supervisor. Refuse an empty target
 # rather than discover where the brief landed.
-LANE="${DISPATCH_LANE:-$("$HERE/lanes.sh" --free "$SESSION" 2>/dev/null | head -1)}"
+#
+# TWO questions, and `lanes.sh --free` only answers the first. "Is an agent
+# there and not mid-turn" it answers from pane content. "Is this lane UNOWNED"
+# it cannot answer at all: a lane that finished and was never renamed, and a
+# lane paused on an approval prompt, both show no busy marker and are
+# byte-identical to a genuinely idle one. The window NAME is the only signal
+# that survives that, which is why claim.sh's `stale` keys on
+# `$2 !~ /^free-[0-9]+$/` and loop-tick.md requires the rename on completion.
+# This is now the only path a brief takes to a lane, so the rule has to hold
+# here too. On 2026-08-11 the supervisor took `--free | head -1` by hand, got
+# another dispatcher's task-named lane, and `/clear`ed it; nothing was lost
+# only because that lane had already shipped.
+#
+# There is deliberately NO env-var override of this selection. `DISPATCH_LANE`
+# used to be honoured verbatim -- no free check, no name check, no supervisor
+# exclusion -- and `DISPATCH_LANE=t:1` put `/clear` plus a full brief into the
+# supervisor's own pane at exit 0, which is the incident loop-tick.md records
+# under "an empty tmux target hits the ACTIVE window", reached through a stray
+# environment variable instead of an empty string. Nothing called it. An
+# escape hatch around the only guard is not worth a caller it does not have;
+# to aim a dispatch, rename the target lane `free-N` first, which is the same
+# thing its owner would have done on finishing.
+FREE_NAMED=$("$HERE/lanes.sh" "$SESSION" 2>/dev/null \
+  | awk 'NR>1 && $1 ~ /^[0-9]+$/ && $2 ~ /^free-[0-9]+$/ {print $1}')
+LANE=""
+while read -r candidate; do
+  [ -n "$candidate" ] || continue
+  # lanes.sh --free prints session:index, and the index is what names the row.
+  if grep -qx -- "${candidate##*:}" <<<"$FREE_NAMED"; then
+    LANE="$candidate"
+    break
+  fi
+done < <("$HERE/lanes.sh" --free "$SESSION" 2>/dev/null)
+
 if [ -z "$LANE" ]; then
   echo "dispatch: no free lane in session '$SESSION' -- not dispatching #$ISSUE" >&2
+  echo "dispatch: a lane must be idle AND named 'free-N' to be dispatchable --" >&2
+  echo "dispatch: one still carrying a task name is still working on it" >&2
   "$HERE/lanes.sh" "$SESSION" >&2
   exit 1
 fi

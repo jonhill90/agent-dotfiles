@@ -173,6 +173,13 @@ lane, claim the issue, create the worktree, rename the window, send the brief:
 dispatch.sh <issue> <slug> <brief-file> [repo] [repo-path]
 ```
 
+A lane is a candidate only if `lanes.sh` calls it `free` **and** its window is
+named `free-N`. Both are needed: `lanes.sh` reads pane content, so a lane that
+finished without being renamed, and one paused on an approval prompt, look
+identical to an unowned one — the name is the only signal that separates them,
+and `/clear`ing the wrong lane destroys whatever it had not posted yet (#89).
+The lane cannot be chosen from the environment; there is no override.
+
 It exists because `worktree.sh` shipped (#79) with no automated caller
 (agent-dotfiles#81): `grep -rn worktree.sh` found three code fences in
 `loop-tick.md` and the section above, and nothing else. The tool fails closed
