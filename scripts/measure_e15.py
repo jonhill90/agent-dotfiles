@@ -126,7 +126,7 @@ def suppressed_skills(home: Path, harness: str) -> set[str]:
 # Populations that are in the model's context and never touch a path this
 # script reads, with the last time each was measured against the harness
 # itself. Reporting zero for these is how Claude Code came to be understated
-# by 5.3x for weeks (#95). The numbers age; the point is that the report
+# by 5.3x for weeks (#5). The numbers age; the point is that the report
 # names its blind spots instead of implying it has none.
 BLIND_SPOTS: dict[str, list[dict]] = {
     "claude": [
@@ -350,7 +350,7 @@ def main() -> int:
     # Name the blind spots. This script reads deployed files, so anything the
     # harness itself ships is invisible to it — and printing a total without
     # saying so is how Claude Code was reported at 490 tokens when the harness
-    # said 2,600 (#95).
+    # said 2,600 (#5).
     print("\nNOT COUNTED ABOVE — populations this script cannot read:")
     for harness in HARNESS_LAYOUT:
         for spot in blind_spots(harness):

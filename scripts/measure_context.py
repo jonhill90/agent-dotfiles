@@ -3,7 +3,7 @@
 
 `measure_e15.py` estimates the footprint *this repository deploys* by reading
 files on disk. It cannot see what a harness ships itself, and on Claude Code
-that gap was 5.3x (#95). This script closes it from the other direction: send
+that gap was 5.3x (#5). This script closes it from the other direction: send
 a one-token prompt and read the input-token count the CLI reports back. That
 number is the whole static context — system prompt, tool definitions, skills,
 instructions, memory — measured by the thing that pays for it.
