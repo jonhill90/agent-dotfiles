@@ -38,9 +38,11 @@ esac
 
 # Shells mean "the agent exited and left the pane behind".
 SHELLS="bash|zsh|sh|fish|login"
-# Sampling gap for hung detection. Long enough that a live turn's timer ticks,
-# short enough that a tick is cheap.
-SAMPLE_GAP="${LANES_SAMPLE_GAP:-2}"
+# A lane is hung if it looks busy but tmux has seen no output from it for this
+# long. Must exceed the slowest legitimate repaint interval -- Claude Code's
+# footer drops to MINUTE granularity past 60s, so a live turn can go ~60s
+# without changing a single byte.
+HUNG_AFTER="${LANES_HUNG_AFTER:-180}"
 
 if ! tmux has-session -t "$SESSION" 2>/dev/null; then
   echo "lanes: session '$SESSION' does not exist" >&2
@@ -51,41 +53,45 @@ windows=$(tmux list-windows -t "$SESSION" -F '#{window_index}' 2>/dev/null)
 
 # First sample of every pane, taken together so the gap is shared rather than
 # paid per lane.
-declare -a IDX NAME CMD FIRST
+declare -a IDX NAME CMD ACTIVITY
 while read -r w; do
   [ -n "$w" ] || continue
   IDX+=("$w")
   NAME+=("$(tmux display-message -p -t "$SESSION:$w" '#{window_name}' 2>/dev/null)")
   CMD+=("$(tmux display-message -p -t "$SESSION:$w.1" '#{pane_current_command}' 2>/dev/null)")
-  FIRST+=("$(tmux capture-pane -p -t "$SESSION:$w" -S -6 2>/dev/null | tr -d '\n')")
+  ACTIVITY+=("$(tmux display-message -p -t "$SESSION:$w" '#{window_activity}' 2>/dev/null)")
 done <<<"$windows"
 
-sleep "$SAMPLE_GAP"
+now_epoch=$(date +%s)
 
 emit_rows() {
   local i
   for i in "${!IDX[@]}"; do
-    local w="${IDX[$i]}" name="${NAME[$i]}" cmd="${CMD[$i]}" first="${FIRST[$i]}"
-    local second state
-    second=$(tmux capture-pane -p -t "$SESSION:$w" -S -6 2>/dev/null | tr -d '\n')
+    local w="${IDX[$i]}" name="${NAME[$i]}" cmd="${CMD[$i]}" act="${ACTIVITY[$i]}"
+    local pane state age
+    pane=$(tmux capture-pane -p -t "$SESSION:$w" -S -6 2>/dev/null | tr -d '\n')
 
     if [[ "$cmd" =~ ^($SHELLS)$ ]]; then
       state=dead
     elif [[ ! "$cmd" =~ ^(claude|claude\.exe)$ ]]; then
-      # The busy probe below greps for Claude Code's own status string. Other
-      # harnesses paint different UIs, and guessing produces false alarms: on
-      # 2026-08-11 a healthy idle Copilot pane was classified `hung` because
-      # that string appeared somewhere in its scrollback. Report what is known
-      # -- an agent is running -- and refuse to invent the rest.
+      # The busy probe greps Claude Code's own status string. Other harnesses
+      # paint different UIs, and guessing produces false alarms: a healthy idle
+      # Copilot pane was classified `hung` because that string appeared in its
+      # scrollback. Report what is known and refuse to invent the rest.
       state=unknown
-    elif ! grep -q 'esc to interrupt' <<<"$second"; then
+    elif ! grep -q 'esc to interrupt' <<<"$pane"; then
       state=free
-    elif [ "$first" = "$second" ]; then
-      # Busy-looking and byte-identical across the gap. A live turn repaints
-      # its elapsed-seconds counter, so no change is evidence of a wedge.
-      state=hung
     else
-      state=busy
+      # Busy-looking. Hung iff tmux has seen no output for HUNG_AFTER.
+      #
+      # This deliberately does NOT diff pane text across a short gap. That was
+      # the first version and it was wrong: Claude Code's elapsed footer shows
+      # minute granularity past 60s, so a turn running 61-119s prints an
+      # identical byte string for a whole minute and was reported hung while
+      # fully alive. Found in review of #65. tmux's own activity timestamp is
+      # independent of whatever the harness chooses to paint.
+      age=$(( now_epoch - ${act:-now_epoch} ))
+      if [ "$age" -ge "$HUNG_AFTER" ]; then state=hung; else state=busy; fi
     fi
     printf '%s\t%s\t%s\t%s\n' "$w" "$name" "$cmd" "$state"
   done

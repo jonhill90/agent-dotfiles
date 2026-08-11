@@ -13,14 +13,16 @@ want() { # want <name> <window-name> <expected-state> <output>
 
 D=$(mktemp -d); mkdir -p "$D/bin"
 cp "$HERE/stubs/tmux-lanes" "$D/bin/tmux"
+# columns: index|name|command|pane-text|seconds-since-tmux-saw-output
 cat > "$D/fixture" <<'FIX'
-1|arch|claude.exe|❯ ready|❯ ready
-2|w-busy|claude.exe|esc to interrupt 3s|esc to interrupt 9s
-3|w-hung|claude.exe|esc to interrupt 40m|esc to interrupt 40m
-4|w-dead|zsh|❯ |❯ 
-5|w-copilot|node|esc to interrupt|esc to interrupt
+1|arch|claude.exe|❯ ready|1
+2|w-busy|claude.exe|esc to interrupt 3s|1
+3|w-hung|claude.exe|esc to interrupt 40m|900
+4|w-dead|zsh|❯ |1
+5|w-copilot|node|esc to interrupt|1
+6|w-minute-tick|claude.exe|esc to interrupt 1m|30
 FIX
-out=$(PATH="$D/bin:$PATH" LANES_FIXTURE="$D/fixture" LANES_CALLS="$D/calls" LANES_SAMPLE_GAP=0 bash "$LANES" 2>&1)
+out=$(PATH="$D/bin:$PATH" LANES_FIXTURE="$D/fixture" bash "$LANES" 2>&1)
 
 echo "lanes.sh"
 want "a turn whose output advances is busy"              w-busy    busy    "$out"
@@ -31,10 +33,15 @@ want "a pane running a shell is dead, not idle"          w-dead    dead    "$out
 # string appeared in its scrollback.
 want "a non-Claude harness is unknown, never guessed"    w-copilot unknown "$out"
 want "an idle Claude lane is free"                       arch      free    "$out"
+# Found in review of #65: Claude Code's elapsed footer is minute-granular past
+# 60s, so a turn running 61-119s prints identical bytes for a whole minute. The
+# original text-diff detector called that hung and would have paged a human
+# about a working lane on every turn crossing a minute boundary.
+want "a mid-minute turn is busy, not hung"               w-minute-tick busy "$out"
 
 # --free must never offer a lane that would swallow the dispatch.
-free=$(PATH="$D/bin:$PATH" LANES_FIXTURE="$D/fixture" LANES_CALLS="$D/calls2" LANES_SAMPLE_GAP=0 bash "$LANES" --free 2>&1)
-for bad in w-dead w-hung w-busy w-copilot; do
+free=$(PATH="$D/bin:$PATH" LANES_FIXTURE="$D/fixture" bash "$LANES" --free 2>&1)
+for bad in w-dead w-hung w-busy w-copilot w-minute-tick; do
   if grep -qx "$bad" <<<"$free"; then echo "  FAIL --free offered $bad"; fail=$((fail+1));
   else echo "  ok   --free withholds $bad"; pass=$((pass+1)); fi
 done
