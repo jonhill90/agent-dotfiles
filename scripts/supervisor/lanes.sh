@@ -49,29 +49,46 @@ if ! tmux has-session -t "$SESSION" 2>/dev/null; then
   exit 1
 fi
 
-windows=$(tmux list-windows -t "$SESSION" -F '#{window_index}' 2>/dev/null)
-
 # First sample of every pane, taken together so the gap is shared rather than
 # paid per lane.
-declare -a IDX NAME CMD ACTIVITY
-while read -r w; do
+TAB=$'\t'   # tmux does not interpret a literal \t inside -F
+# One list-panes call for every field, all from the ACTIVE pane of each window
+# -- the pane that capture-pane reads and send-keys would hit. Reading the
+# command from ":$w.1" while capturing from ":$w" meant a split lane could
+# report the first pane's command and the active pane's screen.
+declare -a IDX NAME CMD ACTIVITY PANEMODE
+while IFS=$'\t' read -r w n c a m; do
   [ -n "$w" ] || continue
-  IDX+=("$w")
-  NAME+=("$(tmux display-message -p -t "$SESSION:$w" '#{window_name}' 2>/dev/null)")
-  CMD+=("$(tmux display-message -p -t "$SESSION:$w.1" '#{pane_current_command}' 2>/dev/null)")
-  ACTIVITY+=("$(tmux display-message -p -t "$SESSION:$w" '#{window_activity}' 2>/dev/null)")
-done <<<"$windows"
+  IDX+=("$w"); NAME+=("$n"); CMD+=("$c"); ACTIVITY+=("$a"); PANEMODE+=("$m")
+done < <(tmux list-panes -s -t "$SESSION" -f '#{pane_active}' \
+           -F "#{window_index}${TAB}#{window_name}${TAB}#{pane_current_command}${TAB}#{window_activity}${TAB}#{pane_in_mode}" 2>/dev/null)
 
 now_epoch=$(date +%s)
 
 emit_rows() {
   local i
   for i in "${!IDX[@]}"; do
-    local w="${IDX[$i]}" name="${NAME[$i]}" cmd="${CMD[$i]}" act="${ACTIVITY[$i]}"
+    local w="${IDX[$i]}" name="${NAME[$i]}" cmd="${CMD[$i]}" act="${ACTIVITY[$i]}" mode="${PANEMODE[$i]}"
     local pane state age
-    pane=$(tmux capture-pane -p -t "$SESSION:$w" -S -6 2>/dev/null | tr -d '\n')
+    # ONLY the status line -- the last non-empty line of the visible pane.
+    #
+    # This used to grep `capture-pane -S -6`, which is six scrollback lines
+    # PLUS the whole visible pane (~60 lines). Any lane that had merely
+    # PRINTED the phrase -- reviewing this very file, reading loop-tick.md --
+    # matched and was reported busy, then hung. Two live lanes were in that
+    # state during the review that found it. An earlier comment here blamed
+    # the Copilot harness; that was a misdiagnosis. It was never
+    # harness-specific, it was the capture window.
+    pane=$(tmux capture-pane -p -t "$SESSION:$w" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -1)
 
-    if [[ "$cmd" =~ ^($SHELLS)$ ]]; then
+    if [ "${mode:-0}" != "0" ]; then
+      # A pane in copy mode still captures its underlying screen, so an idle
+      # agent someone scrolled up reads free -- but keys sent there are eaten
+      # by the copy-mode key table and never reach the agent. Reproduced live
+      # against a real tmux server in review of #65: the dispatch vanished and
+      # copy mode exited.
+      state=scrolled
+    elif [[ "$cmd" =~ ^($SHELLS)$ ]]; then
       state=dead
     elif [[ ! "$cmd" =~ ^(claude|claude\.exe)$ ]]; then
       # The busy probe greps Claude Code's own status string. Other harnesses
@@ -101,7 +118,10 @@ rows=$(emit_rows)
 
 case "$MODE" in
   --free)
-    awk -F'\t' '$4=="free"{print $2}' <<<"$rows" ;;
+    # session:index, never the window name: names are not unique (the live
+    # session briefly had two windows both called ad65-lanes-review) and
+    # `send-keys -t session:name` silently hits the first match.
+    awk -F'\t' -v s="$SESSION" '$4=="free"{print s ":" $1}' <<<"$rows" ;;
   --json)
     printf '['
     awk -F'\t' 'BEGIN{c=0}

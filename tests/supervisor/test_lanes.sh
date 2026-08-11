@@ -13,14 +13,16 @@ want() { # want <name> <window-name> <expected-state> <output>
 
 D=$(mktemp -d); mkdir -p "$D/bin"
 cp "$HERE/stubs/tmux-lanes" "$D/bin/tmux"
-# columns: index|name|command|pane-text|seconds-since-tmux-saw-output
+# columns: index|name|command|status-line|seconds-since-output|in-mode
 cat > "$D/fixture" <<'FIX'
-1|arch|claude.exe|❯ ready|1
-2|w-busy|claude.exe|esc to interrupt 3s|1
-3|w-hung|claude.exe|esc to interrupt 40m|900
-4|w-dead|zsh|❯ |1
-5|w-copilot|node|esc to interrupt|1
-6|w-minute-tick|claude.exe|esc to interrupt 1m|30
+1|arch|claude.exe|❯ ready|1|0
+2|w-busy|claude.exe|esc to interrupt 3s|1|0
+3|w-hung|claude.exe|esc to interrupt 40m|900|0
+4|w-dead|zsh|❯ |1|0
+5|w-copilot|node|esc to interrupt|1|0
+6|w-minute-tick|claude.exe|esc to interrupt 1m|30|0
+7|w-scrolled|claude.exe|❯ ready|1|1
+8|w-mentions|claude.exe|reviewing: grep -q 'esc to interrupt'\n\n❯ ready|900|0
 FIX
 out=$(PATH="$D/bin:$PATH" LANES_FIXTURE="$D/fixture" bash "$LANES" 2>&1)
 
@@ -38,11 +40,22 @@ want "an idle Claude lane is free"                       arch      free    "$out
 # original text-diff detector called that hung and would have paged a human
 # about a working lane on every turn crossing a minute boundary.
 want "a mid-minute turn is busy, not hung"               w-minute-tick busy "$out"
+# Reproduced live against a real tmux server in review of #65: a pane in copy
+# mode still captures its screen, so it reads free -- but keys sent there are
+# eaten by the copy-mode key table and the dispatch vanishes.
+want "a scrolled-up pane is not free"                    w-scrolled scrolled "$out"
+# The live failure this whole probe got wrong: capture-pane -S -6 returns six
+# scrollback lines PLUS the entire visible pane, so any lane that had merely
+# PRINTED the phrase -- reviewing this file, reading loop-tick.md -- matched
+# and was reported busy, then hung. Two real lanes were in that state. The
+# probe must read only the status line.
+want "a lane that merely printed the phrase is free"     w-mentions free    "$out"
 
 # --free must never offer a lane that would swallow the dispatch.
 free=$(PATH="$D/bin:$PATH" LANES_FIXTURE="$D/fixture" bash "$LANES" --free 2>&1)
-for bad in w-dead w-hung w-busy w-copilot w-minute-tick; do
-  if grep -qx "$bad" <<<"$free"; then echo "  FAIL --free offered $bad"; fail=$((fail+1));
+for bad in w-dead w-hung w-busy w-copilot w-minute-tick w-scrolled; do
+  bi=$(awk -F'|' -v n="$bad" '$2==n{print $1}' "$D/fixture")
+  if grep -qx ".*:$bi" <<<"$free"; then echo "  FAIL --free offered $bad"; fail=$((fail+1));
   else echo "  ok   --free withholds $bad"; pass=$((pass+1)); fi
 done
 
