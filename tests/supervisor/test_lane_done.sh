@@ -56,8 +56,13 @@ run_script() {
   local script="$1"; shift
   : > "$D/tmux.log"
   PATH="$D:$PATH" LANES_FIXTURE="$D/lanes" TMUX_LOG="$D/tmux.log" \
-    WAIT_DIR="$D/wait" STUB_WAIT_TIMEOUT=1 bash "$script" "$@" 2>&1
+    WAIT_DIR="$D/wait" STUB_WAIT_TIMEOUT=1 \
+    AGENT_SUPERVISOR_STATE_DIR="${LEDGER_STATE:-$D/state}" bash "$script" "$@" 2>&1
 }
+# AGENT_SUPERVISOR_STATE_DIR is not optional in this harness. lane-done.sh now
+# records the completion in the ledger (#140); without it, every case in this
+# file would write into the REAL supervisor state directory under $HOME.
+ledger() { AGENT_SUPERVISOR_STATE_DIR="${LEDGER_STATE:-$D/state}" python3 "$HERE/../../scripts/supervisor/cli.py" "$@"; }
 signal() { mkdir -p "$D/wait"; : > "$D/wait/$1.signaled"; }
 tmuxlog() { cat "$D/tmux.log"; }
 
@@ -81,6 +86,52 @@ signal ad102-done
 out=$(run 6 ad102-lane-rename-on-completion ad102-done t); rc=$?
 want_exit "a name mismatch exits non-zero" "$rc" 1 "$out"
 want_missing "a name mismatch is never renamed" "rename-window" "$(tmuxlog)"
+
+# --- the completion is RECORDED, not just renamed away (#140) --------------
+#
+# The rename returns the lane to the pool; nothing recorded that the work
+# finished, which is the completion-signal gap #140 names. lane-done.sh now
+# writes it. The task id is the window name, which is what dispatch.sh
+# recorded it under -- and is already the identifier `lanes.sh` and
+# `claim.sh stale` key on, so the two halves agree without a new identifier.
+#
+# Seeded through the shipped recorder rather than by hand: a fixture written
+# straight into SQLite would prove the assertion below and nothing about
+# whether the two commands actually meet.
+LEDGER_STATE="$D/state-140" ledger record-dispatch \
+  --lane t:5 --task ad102-lane-rename-on-completion \
+  --summary "#102 lane-rename-on-completion" \
+  --pane-id '%5' --pane-path "$D" --command claude \
+  --server-id 'socket:1' --session-id '$0' --issue 102 >/dev/null 2>&1
+seed_rc=$?
+if [ "$seed_rc" -ne 0 ]; then
+  bad "setup: a dispatch record exists for the lane about to finish" "record-dispatch exited $seed_rc"
+else
+  ok "setup: a dispatch record exists for the lane about to finish"
+  before=$(LEDGER_STATE="$D/state-140" ledger status 2>&1)
+  want_contains "the seeded task starts out delivered, not complete" '"status":"delivered"' "$before"
+
+  signal ad102-done
+  out=$(LEDGER_STATE="$D/state-140" run 5 ad102-lane-rename-on-completion ad102-done t); rc=$?
+  want_exit "a signaled lane whose completion is recorded still exits zero" "$rc" 0 "$out"
+  want_contains "the lane is still renamed back to free-N" "rename-window -t t:5 free-5" "$(tmuxlog)"
+  after=$(LEDGER_STATE="$D/state-140" ledger status 2>&1)
+  want_contains "lane-done.sh marks the task complete" '"status":"complete"' "$after"
+  want_contains "the completion has a result artifact, hashed and immutable" '"result_sha256":"' "$after"
+  # The signal it was evidenced by, in the result the ledger stores -- not in
+  # the row, which only carries the path and the hash.
+  want_contains "and that artifact records which channel fired" "ad102-done" \
+    "$(cat "$D/state-140/results/ad102-lane-rename-on-completion.md" 2>&1)"
+fi
+
+# ...and a ledger that errors must not turn a lane that genuinely finished
+# into a reported failure -- same best-effort-and-loud contract dispatch.sh
+# carries, for the same reason: nothing reads the ledger yet.
+signal ad102-done
+out=$(LEDGER_STATE="$D/lanes/state" run 5 ad102-lane-rename-on-completion ad102-done t); rc=$?
+want_exit "a broken ledger does not fail a completion" "$rc" 0 "$out"
+want_contains "the lane is still returned to the pool" "rename-window -t t:5 free-5" "$(tmuxlog)"
+want_contains "the ledger failure is loud, not swallowed" "LEDGER RECORD FAILED" "$out"
 
 # --- prove the safety assertion is load-bearing -----------------------------
 # Patch a copy of lane-done.sh to drop the wait-for guard entirely -- the
@@ -194,7 +245,8 @@ else
     W=$(rtmux list-windows -t "$RSESS" -F '#{window_index}' | head -1)
     rtmux rename-window -t "${RSESS}:${W}" ad108-realcheck
     real_run() {
-      env -u TMUX TMUX_TMPDIR="$RT" timeout "$1" bash "$2" \
+      env -u TMUX TMUX_TMPDIR="$RT" AGENT_SUPERVISOR_STATE_DIR="$D/state-realtmux" \
+        timeout "$1" bash "$2" \
         "$W" ad108-realcheck "rt-lanedone-$$" "$RSESS" 2>&1
     }
 
