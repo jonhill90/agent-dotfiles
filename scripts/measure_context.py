@@ -37,10 +37,22 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
 
 PROBE = "hi"
+
+# Each run's raw payloads land in their own timestamped subdirectory so the
+# next #44-shaped swing has the evidence on hand instead of needing a paid
+# rerun to reproduce it. Retained runs are capped at a small N rather than
+# an age limit: #44's open question is "how did the *next* run differ from
+# the *last* one", a comparison that only needs a handful of recent
+# neighbors, not a growing archive. 5 keeps a couple of swings' worth of
+# history on disk without an unbounded leak.
+MAX_RETAINED_RUNS = 5
 
 # Argument vectors that produce machine-readable usage for a trivial turn.
 HARNESS_COMMANDS: dict[str, list[str]] = {
@@ -188,6 +200,43 @@ def probe(harness: str, timeout: int = 240) -> tuple[int | None, str]:
     return PARSERS[harness](text), text
 
 
+def payload_dir(home: Path | None = None) -> Path:
+    """Where raw payloads are persisted. Lives under the state directory,
+    never the repo -- payloads are not committed."""
+    base = home if home is not None else Path.home()
+    return base / ".agent-dotfiles" / "measure-context-payloads"
+
+
+def _run_id() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def persist_run(base_dir: Path, run_id: str, payloads: dict[str, str]) -> dict[str, Path]:
+    """Write each harness's raw stdout+stderr for this run to its own file.
+    Capture only -- this must never feed back into a measured number."""
+    run_dir = base_dir / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    written: dict[str, Path] = {}
+    for harness, text in payloads.items():
+        path = run_dir / f"{harness}.txt"
+        path.write_text(text, encoding="utf-8")
+        written[harness] = path
+    return written
+
+
+def prune_runs(base_dir: Path, keep: int = MAX_RETAINED_RUNS) -> list[Path]:
+    """Evict the oldest run directories beyond the retention cap. Run
+    directory names are UTC timestamps, so lexical sort is chronological
+    sort."""
+    if not base_dir.is_dir():
+        return []
+    runs = sorted(p for p in base_dir.iterdir() if p.is_dir())
+    stale = runs[:-keep] if keep > 0 else runs
+    for run in stale:
+        shutil.rmtree(run)
+    return stale
+
+
 def format_rows(measured: dict[str, int | None]) -> str:
     lines = [f"{'harness':10} {'static context':>15}"]
     for harness, tokens in measured.items():
@@ -211,6 +260,14 @@ def main(argv: list[str]) -> int:
     )
     probed = {h: probe(h) for h in wanted}
     measured = {h: value for h, (value, _text) in probed.items()}
+
+    base_dir = payload_dir()
+    run_dir = base_dir / _run_id()
+    payloads = {h: text for h, (_value, text) in probed.items()}
+    persist_run(base_dir, run_dir.name, payloads)
+    prune_runs(base_dir)
+    print(f"Raw payloads written to {run_dir}\n")
+
     print(format_rows(measured))
     if "codex" in probed:
         turns = codex_turn_count(probed["codex"][1])

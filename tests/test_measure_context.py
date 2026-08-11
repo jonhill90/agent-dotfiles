@@ -7,6 +7,7 @@ harness: a test that costs money per run does not get run.
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -113,6 +114,57 @@ class ParserTests(unittest.TestCase):
             measure_context.parse_copilot,
         ):
             self.assertIsNone(parse("no usage here"))
+
+
+class PayloadPersistenceTests(unittest.TestCase):
+    """#44: the raw JSONL from the two runs that swung 19,501 -> 40,981 no
+    longer exists, so the leading hypothesis can't be checked without
+    spending a paid rerun. These tests drive a fake harness command --
+    never a real CLI -- to prove capture and retention work without that
+    cost."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.base_dir = Path(self._tmp.name) / "measure-context-payloads"
+
+    def test_probe_payload_is_persisted_verbatim(self) -> None:
+        fake_command = [
+            sys.executable,
+            "-c",
+            "print('{\"usage\": {\"input_tokens\": 5}}')",
+        ]
+        original = measure_context.HARNESS_COMMANDS.get("claude")
+        measure_context.HARNESS_COMMANDS["claude"] = fake_command
+        try:
+            value, text = measure_context.probe("claude")
+        finally:
+            if original is not None:
+                measure_context.HARNESS_COMMANDS["claude"] = original
+
+        self.assertEqual(value, 5)
+        written = measure_context.persist_run(self.base_dir, "20260101T000000000000Z", {"claude": text})
+        persisted = written["claude"].read_text(encoding="utf-8")
+        self.assertEqual(persisted, text)
+        # What the parser saw is exactly what landed on disk.
+        self.assertEqual(measure_context.parse_claude(persisted), value)
+
+    def test_prune_runs_evicts_oldest_beyond_the_cap(self) -> None:
+        run_ids = [f"2026010{n}T000000000000Z" for n in range(1, 8)]
+        for run_id in run_ids:
+            measure_context.persist_run(self.base_dir, run_id, {"claude": "payload"})
+
+        removed = measure_context.prune_runs(self.base_dir, keep=3)
+
+        remaining = sorted(p.name for p in self.base_dir.iterdir())
+        self.assertEqual(remaining, run_ids[-3:])
+        self.assertEqual(sorted(p.name for p in removed), run_ids[:-3])
+
+    def test_prune_runs_is_a_noop_under_the_cap(self) -> None:
+        measure_context.persist_run(self.base_dir, "20260101T000000000000Z", {"claude": "x"})
+        removed = measure_context.prune_runs(self.base_dir, keep=5)
+        self.assertEqual(removed, [])
+        self.assertEqual(len(list(self.base_dir.iterdir())), 1)
 
 
 class ReportTests(unittest.TestCase):
