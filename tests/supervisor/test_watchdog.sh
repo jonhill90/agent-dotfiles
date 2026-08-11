@@ -191,5 +191,66 @@ else
   echo "  FAIL escalation sent $(wc -l < "$D/up-calls") times: $(cat "$D/up-calls")"; fail=$((fail+1))
 fi
 
+
+# --- the live copy is pinned, and staleness must be visible (#99) ----------
+#
+# The LaunchAgent runs watchdog.sh from a detached worktree that NOTHING in this
+# repository updates, so a merged fix can sit on main while the live copy keeps
+# running the old one. `code: detached @ <sha>` reads exactly as healthy as a
+# current sha unless the reader already knows what main is.
+#
+# This needs its own git repository: the count is computed from the directory
+# holding watchdog.sh, which for every other test in this file is the real
+# checkout, whose relationship to origin/main is whatever the working session
+# happens to be doing. A test that depends on that is not a test.
+G="$D/gitrepo"; mkdir -p "$G/scripts/supervisor"
+cp "$HERE/../../scripts/supervisor/watchdog.sh" "$G/scripts/supervisor/"
+for dep in sleepcheck.py watchdog_notify.py loop-tick.md; do
+  cp "$HERE/../../scripts/supervisor/$dep" "$G/scripts/supervisor/" 2>/dev/null
+done
+git -C "$G" init -q
+git -C "$G" config user.email t@e.com; git -C "$G" config user.name T
+git -C "$G" add -A >/dev/null 2>&1
+git -C "$G" commit -q -m "live copy"
+
+wd_run() { # runs the COPY, not this repository's own watchdog.sh
+  rm -rf "$1"; mkdir -p "$1" "$1/transcripts"
+  SUPERVISOR_PATH="$STUBS:/usr/bin:/bin" STUB_PANE_STATE=idle STUB_SENT="$1/sent" \
+  STUB_COUNTER="$1/counter" \
+  SUPERVISOR_STATE="$1" SUPERVISOR_STATUS="$1/st" SUPERVISOR_LOG="$1/lg" \
+  SUPERVISOR_STAMP="$1/stamp" SUPERVISOR_HISTORY="$1/hist" NOTIFY_ENV="$1/none.env" \
+  SLEEPCHECK_DIR="$1/transcripts" \
+  bash "$G/scripts/supervisor/watchdog.sh" >/dev/null 2>"$1/err"
+}
+
+git -C "$G" update-ref refs/remotes/origin/main HEAD
+wd_run "$D/wcur"
+if grep -q "behind origin/main" "$D/wcur/st" 2>/dev/null; then
+  echo "  FAIL a current live copy is not labelled stale"; fail=$((fail+1))
+else
+  echo "  ok   a current live copy is not labelled stale"; pass=$((pass+1))
+fi
+
+# Advance origin/main past the live copy, exactly as a merge does.
+echo newer > "$G/newfile"
+git -C "$G" add -A >/dev/null 2>&1
+git -C "$G" commit -q -m "merged after the live copy was pinned"
+git -C "$G" update-ref refs/remotes/origin/main HEAD
+git -C "$G" checkout -q HEAD~1 2>/dev/null
+wd_run "$D/wstale"
+if grep -q "1 behind origin/main" "$D/wstale/st" 2>/dev/null; then
+  echo "  ok   a stale live copy says how far behind it is"; pass=$((pass+1))
+else
+  echo "  FAIL a stale live copy says how far behind it is"; fail=$((fail+1))
+  sed 's/^/       /' "$D/wstale/st" 2>/dev/null
+fi
+# No fetch happens, so a zero is not proof of freshness. The wording must say
+# the ref was not refetched rather than implying a currency it cannot check.
+if grep -q "not refetched" "$D/wstale/st" 2>/dev/null; then
+  echo "  ok   the status says the comparison ref was not refetched"; pass=$((pass+1))
+else
+  echo "  FAIL the status says the comparison ref was not refetched"; fail=$((fail+1))
+fi
+
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

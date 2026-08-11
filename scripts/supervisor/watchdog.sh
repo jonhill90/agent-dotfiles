@@ -83,6 +83,27 @@ if [ "$branch" = "HEAD" ]; then
 fi
 sha=$(git -C "$HERE" rev-parse --short HEAD 2>/dev/null || echo unknown)
 
+# How far behind main this copy is. The LaunchAgent runs the watchdog from a
+# PINNED detached worktree that nothing in this repository updates (#99), so a
+# merged fix to watchdog.sh, sleepcheck.py, watchdog_notify.py or loop-tick.md
+# can sit green on main indefinitely while the live copy keeps running the old
+# one. `code: detached @ 9cddafb` reads exactly as healthy as a current sha
+# unless the reader already knows what main is.
+#
+# Reported, never acted on: code that guards the loop must not deploy itself.
+# A broken watchdog would reinstall itself every 180s and nothing would be left
+# to notice.
+#
+# NO `git fetch` -- this runs every 180s. The comparison is against the LOCAL
+# origin/main ref, so a nonzero count is trustworthy and a zero is not proof of
+# freshness; the ref itself may be stale. The status line says which it is
+# rather than implying a guarantee this check cannot make.
+behind=$(git -C "$HERE" rev-list --count HEAD..origin/main 2>/dev/null || echo "")
+case "$behind" in
+  ''|0) code_note="" ;;
+  *)    code_note=" (${behind} behind origin/main, ref not refetched)" ;;
+esac
+
 log() { printf '%s %s\n' "$iso" "$*" >>"$LOG"; }
 
 # Heartbeat. Written on EVERY exit path, including the healthy one — that is
@@ -105,7 +126,7 @@ report() {                       # report <state> <detail> [notify-line]
     # what guards the loop. On 2026-08-11 the live watchdog spent a stretch
     # running from a test branch purely because that was the last checkout --
     # it worked, but by luck. An unexpected branch here is a real finding.
-    printf 'code:     %s @ %s\n' "$branch" "$sha"
+    printf 'code:     %s @ %s%s\n' "$branch" "$sha" "$code_note"
     # Present only when a send was attempted and failed (#91). "escalate with
     # no notify: line" is therefore "a human was reached"; this line is the
     # difference between that and "the loop is down and NOBODY KNOWS". Written
