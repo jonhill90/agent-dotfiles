@@ -80,17 +80,35 @@ def parse_codex(payload: str) -> int | None:
     """Codex emits JSONL; `turn.completed` carries a total that already
     includes the cached portion, so cached tokens must not be added again.
 
-    Known unreliable (#44): a rerun against an unchanged deployed state
-    swung 19,501 -> 40,981 (2.1x). The cause is not confirmed. This parser
-    trusts the *last* `turn.completed` event, on the assumption that one
-    trivial prompt produces exactly one turn — but nothing here checks that
-    assumption. If a run emits more than one (extra tool-discovery turns, a
-    resumed session's prior turns replayed into this stream), the "last"
-    event's `input_tokens` already includes the earlier turns' conversation
-    history, and this function would silently return the inflated total.
-    `codex_turn_count()` exposes the count so a caller can flag that instead
-    of trusting it blind; callers must still treat this column as unreliable
-    even when the count is 1, since #44's swing has not been explained."""
+    #44's swing is measured and explained (three billed runs, 2026-08-11):
+    `turn.completed.input_tokens` is the turn's **cumulative** input across
+    every model request it took, not the size of the context. Codex's own
+    rollout log calls the same figure `total_token_usage` and reports the
+    per-request one separately as `last_token_usage`:
+
+        run  requests  per-request input_tokens     turn.completed total
+        1    3         19,787 / 20,744 / 22,143     62,674
+        2    2         19,787 / 22,029              41,816
+        3    2         19,787 / 22,085              41,872
+
+    Each tool call sends the conversation back to the model, so a turn with
+    N tool calls bills roughly (N+1) x the context and reports the sum. The
+    static context is the *first* request's figure, which was identical
+    (19,787) in all three runs — the context is stable; the reading was not.
+
+    That is the whole of #44: the two original runs differed only in whether
+    the agent ran one shell command before answering "hi". 19,501 was a
+    one-request turn (correct, by luck); 40,981 was a two-request turn.
+
+    So this parser returns the total only when the turn took exactly one
+    model request, and `None` otherwise. A blank column is the honest
+    outcome: the number that exists in the stream is a billing total, and
+    reporting it as a context size is what produced #44. Recovering the real
+    figure from a multi-request turn needs the per-request usage, which
+    `codex exec --json` does not emit (only the rollout log has it) — see
+    `codex_request_count` and the operator message in `main`."""
+    if codex_request_count(payload) > 1:
+        return None
     total = None
     for line in payload.splitlines():
         line = line.strip()
@@ -139,6 +157,51 @@ def codex_turn_count(payload: str) -> int:
     return count
 
 
+# Item types that represent the model *acting* rather than replying. Each one
+# is a tool call, and every tool call sends the conversation back for another
+# model request. Anything not in this set and not a plain message is counted
+# too (see codex_request_count): over-counting blanks the column, which is the
+# safe direction, while under-counting reports a billing total as a context.
+_CODEX_MESSAGE_ITEMS = frozenset({"agent_message", "reasoning", "user_message"})
+
+
+def codex_request_count(payload: str) -> int:
+    """How many model requests this turn took — the unit #44 actually varied.
+
+    A trivial prompt is supposed to produce one request, whose `input_tokens`
+    is the static context. But if the agent calls a tool first, the tool's
+    output goes back to the model and the whole context is re-sent, and
+    `turn.completed.input_tokens` reports the *sum*. On 2026-08-11 the three
+    runs took 3, 2 and 2 requests and reported 62,674, 41,816 and 41,872 for
+    a context that never moved off 19,787.
+
+    Counted as: one request per non-message item (each tool call round), plus
+    one for each terminal `turn.completed` — with a floor of 1 so a stream
+    with no items at all still counts as the single request that produced it.
+    """
+    tool_rounds = 0
+    turns = 0
+    for line in payload.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("type") == "turn.completed":
+            turns += 1
+            continue
+        if event.get("type") != "item.completed":
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") not in _CODEX_MESSAGE_ITEMS:
+            tool_rounds += 1
+    return tool_rounds + max(turns, 1)
+
+
 def parse_pi(payload: str) -> int | None:
     """Pi streams events; take the last non-zero usage, which is the final
     accounting rather than the zeroed `message_start`."""
@@ -175,14 +238,19 @@ PARSERS = {
 }
 
 
-# Harnesses whose reported number is known not to be trustworthy yet.
-# codex (#44): consecutive runs against an identical deployed state swung
-# 19,501 -> 40,981 (2.1x); the cause is unconfirmed (see parse_codex). A
-# number this volatile must not be printed as if it were comparable to the
-# other columns, so every codex row carries this marker regardless of value
-# -- silence is the failure mode being avoided here, not just a wrong number.
+# Harnesses whose reported number needs a caveat printed next to it.
+# codex (#44): the 2.1x swing is explained -- turn.completed.input_tokens is a
+# cumulative billing total across the turn's model requests, and the agent's
+# tool use varies run to run (see parse_codex). parse_codex now blanks a
+# multi-request turn rather than reporting the sum, so a codex number that
+# prints is a genuine one-request reading. The marker stays because the caveat
+# is still needed to read the column: a blank means "the probe turn used tools",
+# not "codex is unavailable", and 3 runs is not yet the >=5 #44 asked for.
 UNRELIABLE = {
-    "codex": "UNRELIABLE (#44) -- 2.1x swing between runs on unchanged state, cause unconfirmed",
+    "codex": (
+        "READ WITH CARE (#44) -- valid only for a one-request turn; blank means "
+        "the probe used tools and the reported total was a billing sum, not a context"
+    ),
 }
 
 
@@ -295,12 +363,20 @@ def main(argv: list[str]) -> int:
 
     print(format_rows(measured))
     if "codex" in probed:
-        turns = codex_turn_count(probed["codex"][1])
-        if turns > 1:
+        codex_payload = probed["codex"][1]
+        requests = codex_request_count(codex_payload)
+        turns = codex_turn_count(codex_payload)
+        if requests > 1:
             print(
-                f"\ncodex: {turns} turn.completed events in this run — "
-                "parse_codex trusts only the last, so this number likely "
-                "includes earlier turns' conversation history (see #44)."
+                f"\ncodex: this probe turn took {requests} model requests "
+                f"({turns} turn.completed event(s)), because the agent called "
+                "tools before answering. turn.completed.input_tokens is the "
+                "sum over those requests, not the context size, so the column "
+                "is blank rather than inflated (#44).\n"
+                "To recover the real figure, read the first `token_count` "
+                "event's `last_token_usage.input_tokens` from this thread's "
+                "rollout log under $CODEX_HOME/sessions — the thread id is in "
+                "the `thread.started` event of the saved payload."
             )
     print(
         "\nWhat this counts: everything sent before the model answered, "

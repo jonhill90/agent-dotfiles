@@ -49,17 +49,92 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(measure_context.codex_turn_count(payload), 1)
 
     def test_codex_turn_count_flags_more_than_one_turn(self) -> None:
-        """#44: parse_codex trusts the *last* turn.completed event. If a run
-        emits more than one, that event's input_tokens already folds in the
-        earlier turns' history — the exact shape that could explain a run
-        doubling on an unchanged deployed state. codex_turn_count surfaces
-        that instead of parse_codex silently returning the inflated total."""
+        """#44's original hypothesis, kept as a regression test for the
+        last-turn-wins behaviour even though the measured cause turned out to
+        be different. Three billed runs on 2026-08-11 emitted exactly *one*
+        `turn.completed` each and still swung 41,816 -> 62,674; the varying
+        unit was model requests inside one turn, not turns. See
+        `test_codex_refuses_a_turn_that_took_more_than_one_model_request`."""
         payload = (
             '{"type":"turn.completed","usage":{"input_tokens":19501}}\n'
             '{"type":"turn.completed","usage":{"input_tokens":40981}}\n'
         )
         self.assertEqual(measure_context.codex_turn_count(payload), 2)
-        self.assertEqual(measure_context.parse_codex(payload), 40981)
+        self.assertIsNone(measure_context.parse_codex(payload))
+
+    # --- #44: the measured cause -------------------------------------------
+    #
+    # Fixtures below are minimal reconstructions of the event shapes observed
+    # in three billed runs on 2026-08-11 (payloads under
+    # ~/.agent-dotfiles/measure-context-payloads, not committed: they contain
+    # system prompts and vault contents). The numbers are the real ones.
+    #
+    # What the rollout logs showed, per model request within the single turn:
+    #
+    #   run   requests   last_token_usage.input_tokens   turn.completed total
+    #   1     3          19,787 / 20,744 / 22,143        62,674
+    #   2     2          19,787 / 22,029                 41,816
+    #   3     2          19,787 / 22,085                 41,872
+    #
+    # `turn.completed.input_tokens` is codex's *cumulative* input across every
+    # request in the turn -- the same field the rollout log calls
+    # `total_token_usage`. It is a billing total, not a context size. The
+    # static context is the first request's figure, which was byte-identical
+    # (19,787) in all three runs.
+
+    def test_codex_request_count_is_one_when_the_model_answered_directly(self) -> None:
+        """No tool calls means one model request, so the turn total *is* the
+        static context and the number can be trusted."""
+        payload = (
+            '{"type":"thread.started","thread_id":"t"}\n'
+            '{"type":"turn.started"}\n'
+            '{"type":"item.completed","item":{"id":"item_0",'
+            '"type":"agent_message","text":"Hi."}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":19787}}\n'
+        )
+        self.assertEqual(measure_context.codex_request_count(payload), 1)
+        self.assertEqual(measure_context.parse_codex(payload), 19787)
+
+    def test_codex_request_count_counts_each_tool_call_round(self) -> None:
+        """Every tool call sends the conversation back to the model, so N tool
+        calls in a turn means N+1 requests. Run 1 of 2026-08-11: two shell
+        commands, three requests."""
+        payload = (
+            '{"type":"thread.started","thread_id":"t"}\n'
+            '{"type":"item.completed","item":{"id":"item_0",'
+            '"type":"agent_message","text":"I will check memory first."}}\n'
+            '{"type":"item.completed","item":{"id":"item_1",'
+            '"type":"command_execution","command":"sed -n 1,220p SKILL.md",'
+            '"exit_code":0}}\n'
+            '{"type":"item.completed","item":{"id":"item_2",'
+            '"type":"command_execution","command":"sed -n 1,220p index.md",'
+            '"exit_code":0}}\n'
+            '{"type":"item.completed","item":{"id":"item_3",'
+            '"type":"agent_message","text":"Hi."}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":62674}}\n'
+        )
+        self.assertEqual(measure_context.codex_request_count(payload), 3)
+
+    def test_codex_refuses_a_turn_that_took_more_than_one_model_request(self) -> None:
+        """The #44 swing, explained and refused. 41,816 is not a 41,816-token
+        context: it is two requests of roughly 20,900 summed. Returning it
+        would report a billing total as a context size -- and it is what
+        produced 19,501 -> 40,981, since those two runs differed only in
+        whether the agent ran one shell command before answering.
+
+        Blank is the correct output. An inflated number that reads as a
+        measurement is the fail-open this estate keeps removing."""
+        payload = (
+            '{"type":"thread.started","thread_id":"t"}\n'
+            '{"type":"item.completed","item":{"id":"item_1",'
+            '"type":"command_execution","command":"sed -n 1,220p index.md",'
+            '"exit_code":0}}\n'
+            '{"type":"item.completed","item":{"id":"item_2",'
+            '"type":"agent_message","text":"Hi."}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":41816}}\n'
+        )
+        self.assertEqual(measure_context.codex_request_count(payload), 2)
+        self.assertIsNone(measure_context.parse_codex(payload))
 
     def test_codex_ignores_usage_on_events_that_are_not_turn_completed(self) -> None:
         """Both docstrings say these functions key on `turn.completed`. Neither
@@ -240,23 +315,27 @@ class ReportTests(unittest.TestCase):
         self.assertIn("not measured", rows)
 
     def test_codex_row_carries_an_unreliability_marker_when_measured(self) -> None:
-        """#44: a swing this large (19,501 -> 40,981, 2.1x) means the number
-        cannot be used for deltas. It must not print as if it were as
-        trustworthy as the other three columns, even when a value came
-        back."""
+        """#44: the codex column must not print as if it were as trustworthy as
+        the other three, even when a value came back.
+
+        These three assert on `#44` rather than the literal word `UNRELIABLE`.
+        The wording changed once the cause was measured -- a number that prints
+        now means a one-request turn, which is a real reading, so "unreliable"
+        overstated it -- and a test that pins prose stops the note from being
+        corrected. What must not change is that every codex row carries a
+        marker pointing at the issue that explains how to read it."""
         rows = measure_context.format_rows({"codex": 19501})
         self.assertIn("19,501", rows)
-        self.assertIn("UNRELIABLE", rows)
         self.assertIn("#44", rows)
 
     def test_codex_row_carries_the_marker_even_when_not_measured(self) -> None:
         rows = measure_context.format_rows({"codex": None})
         self.assertIn("not measured", rows)
-        self.assertIn("UNRELIABLE", rows)
+        self.assertIn("#44", rows)
 
     def test_other_harnesses_carry_no_unreliability_marker(self) -> None:
         rows = measure_context.format_rows({"claude": 29708, "pi": 8198})
-        self.assertNotIn("UNRELIABLE", rows)
+        self.assertNotIn("#44", rows)
 
 
 if __name__ == "__main__":
