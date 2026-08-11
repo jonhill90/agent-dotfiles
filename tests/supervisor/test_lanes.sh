@@ -23,6 +23,8 @@ cat > "$D/fixture" <<'FIX'
 6|w-minute-tick|claude.exe|esc to interrupt 1m|30|0
 7|w-scrolled|claude.exe|❯ ready|1|1
 8|w-mentions|claude.exe|reviewing: grep -q 'esc to interrupt'\n\n❯ ready|900|0
+9|w-blocked|claude.exe|Enter to select · ↑/↓ to navigate · Esc to cancel|1|0
+10|w-mentions-blocked|claude.exe|reviewing: Enter to select · ↑/↓ to navigate · Esc to cancel\n\n❯ ready|900|0
 FIX
 out=$(PATH="$D/bin:$PATH" LANES_FIXTURE="$D/fixture" bash "$LANES" 2>&1)
 
@@ -55,9 +57,22 @@ want "a scrolled-up pane is not free"                    w-scrolled scrolled "$o
 # probe must read only the status line.
 want "a lane that merely printed the phrase is free"     w-mentions free    "$out"
 
+# The #123 case: a lane sitting on a selection menu is not idle, it is
+# waiting on a human, and must not be offered to the dispatcher.
+want "a lane on a selection menu is blocked, not free"   w-blocked blocked "$out"
+# Same #65 shape as w-mentions above, but for the blocked footer: a lane that
+# merely printed the footer text earlier, with a normal last line, is free.
+want "a lane that merely printed the footer is free"     w-mentions-blocked free "$out"
+
+if grep -qE '1 lane\(s\) (is|are) blocked' <<<"$out"; then
+  echo "  ok   the table prints a count line for blocked lanes"; pass=$((pass+1));
+else
+  echo "  FAIL no blocked count line in:"; sed 's/^/       /' <<<"$out"; fail=$((fail+1));
+fi
+
 # --free must never offer a lane that would swallow the dispatch.
 free=$(PATH="$D/bin:$PATH" LANES_FIXTURE="$D/fixture" bash "$LANES" --free 2>&1)
-for bad in arch w-dead w-hung w-busy w-copilot w-minute-tick w-scrolled; do
+for bad in arch w-dead w-hung w-busy w-copilot w-minute-tick w-scrolled w-blocked; do
   bi=$(awk -F'|' -v n="$bad" '$2==n{print $1}' "$D/fixture")
   if grep -qx ".*:$bi" <<<"$free"; then echo "  FAIL --free offered $bad"; fail=$((fail+1));
   else echo "  ok   --free withholds $bad"; pass=$((pass+1)); fi

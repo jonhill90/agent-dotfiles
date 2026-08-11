@@ -7,6 +7,7 @@
 #   free     an agent is running and waiting for work        -> dispatch to it
 #   busy     an agent is mid-turn                            -> leave alone
 #   hung     the pane looks busy but has stopped advancing   -> needs a human
+#   blocked  the agent is waiting on an interactive prompt    -> needs a human
 #   dead     no agent at all, just a shell                   -> restart the agent
 #   unknown  a non-Claude harness; no probe exists for it     -> ask a human
 #
@@ -104,6 +105,16 @@ emit_rows() {
       # Copilot pane was classified `hung` because that string appeared in its
       # scrollback. Report what is known and refuse to invent the rest.
       state=unknown
+    elif grep -qF 'Enter to select' <<<"$pane"; then
+      # A selection menu, not idle: the agent is waiting on a human, not on
+      # work. Must be decided before free, since that is the classification
+      # it is stealing from. Match the harness's own chrome (the footer
+      # "Enter to select · .../ Esc to cancel"), not the option text -- that
+      # is model-authored and varies per prompt. And match only the status
+      # line above, the same fix #65 required for the busy probe: an
+      # exact-match sweep over scrollback caught a lane merely displaying
+      # the phrase, not showing it.
+      state=blocked
     elif ! grep -q 'esc to interrupt' <<<"$pane"; then
       state=free
     else
@@ -141,7 +152,11 @@ case "$MODE" in
     awk -F'\t' '{printf("%-4s %-24s %-12s %s\n",$1,$2,$3,$4)}' <<<"$rows"
     dead=$(awk -F'\t' '$4=="dead"' <<<"$rows" | wc -l | tr -d ' ')
     hung=$(awk -F'\t' '$4=="hung"' <<<"$rows" | wc -l | tr -d ' ')
+    blocked=$(awk -F'\t' '$4=="blocked"' <<<"$rows" | wc -l | tr -d ' ')
     [ "$dead" -gt 0 ] && echo "  ${dead} lane(s) have no agent — restart before dispatching"
     [ "$hung" -gt 0 ] && echo "  ${hung} lane(s) look wedged — a dispatch there would queue forever"
+    # A blocked lane is a question nobody has heard -- surface it, don't just
+    # exclude it from --free.
+    [ "$blocked" -gt 0 ] && echo "  ${blocked} lane(s) are blocked on a prompt — a human must answer before dispatching"
     : ;;
 esac
