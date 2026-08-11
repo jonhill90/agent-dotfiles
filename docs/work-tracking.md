@@ -50,6 +50,16 @@ phase structure; mirroring it into GitHub is a second copy that drifts.
    from the evidence that settled them.
 4. Close with `Fixes #N` in the PR body — native GitHub behaviour, no
    integration required.
+5. **An assignee means the issue is claimed by a lane.** Dispatchers take
+   the claim with `scripts/supervisor/claim.sh take <n> <repo> <lane>`
+   before sending any brief, and select work with `claim.sh list`, which
+   omits claimed issues. Do not hand-assign an issue you are not
+   dispatching — it reads as taken and will be skipped. The claim goes
+   away when the PR closes the issue; `claim.sh release <n> <repo>` drops
+   it by hand, and `claim.sh stale <repo>` reports claims whose lane is
+   gone. Before this existed, nothing wrote a claim anywhere: #28 was
+   dispatched to two lanes ninety seconds apart and fixed twice (#68
+   merged, #69 closed).
 
 ## Flow
 
