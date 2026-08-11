@@ -50,8 +50,33 @@ FIX
 out=$(run "$D/one-blocked" "yes")
 rc=$?
 [ "$rc" -eq 0 ] && ok "exactly one blocked lane: exits 0" || bad "exited $rc" "$out"
-grep -q '^yes' "$D/panes/2" 2>/dev/null && ok "the reply lands in the blocked lane's pane" \
-  || bad "pane 2 does not contain the reply" "$(cat "$D/panes/2" 2>/dev/null)"
+# DELIVERY -- the reply reaching the lane -- which is the feature. Not "send-
+# keys was called", which exits 0 whether or not the lane ever saw the text.
+#
+# Read from <pane>.submitted, not from the input box. Enter SUBMITS (#141): it
+# empties the box, so after a successful delivery the box is EMPTY and the
+# submitted text is what the lane received. A test that looks for the reply
+# still sitting in the box is asserting the failure shape #141 is about --
+# text typed, Enter sent, nothing run. Both halves are asserted below, because
+# after #141 they are different claims.
+#
+# Diagnostics are dumped on failure rather than left bare: this assertion
+# failed on CI reading only `cat $D/panes/2`, which printed an empty line and
+# said nothing about why.
+pane_diag() {
+  echo "--- route output ---"; echo "$out"
+  echo "--- input box (\$D/panes/2) ---"; cat "$D/panes/2" 2>&1
+  echo "--- submitted (\$D/panes/2.submitted) ---"; cat "$D/panes/2.submitted" 2>&1
+  echo "--- keys the pane acted on (\$D/panes/2.keys) ---"; cat "$D/panes/2.keys" 2>&1
+  echo "--- files in \$D/panes ---"; ls -la "$D/panes" 2>&1
+  echo "--- what was sent (\$D/tmux.log) ---"; cat "$D/tmux.log" 2>&1
+}
+grep -qx 'yes' "$D/panes/2.submitted" 2>/dev/null \
+  && ok "the reply reaches the blocked lane's pane and is submitted" \
+  || bad "the reply was never submitted to pane 2" "$(pane_diag)"
+[ -s "$D/panes/2" ] \
+  && bad "the reply is still sitting unsent in pane 2's input box" "$(pane_diag)" \
+  || ok "the input box emptied -- the reply was submitted, not left unsent"
 [ -s "$D/curl.log" ] && bad "notify.sh was called even though delivery succeeded" "$(cat "$D/curl.log")" \
   || ok "no Telegram notification sent when delivery succeeds"
 
@@ -97,15 +122,18 @@ for key in "C-c" "Escape" "C-u"; do
   rc=$?
   [ "$rc" -eq 0 ] && ok "key-name reply ($key): exits 0" || bad "exited $rc" "$out"
   pane="$D/panes/2"
+  # Read the SUBMITTED text, not the box: the Enter that follows the message
+  # empties the box (#141), so by the time this looks the box is correctly
+  # blank and the submitted record is where the typed text now lives.
   if [ "$key" = "C-u" ]; then
     # C-u's real action is "clear the buffer" -- sent literally it must
     # instead APPEAR in the buffer as the two characters C and u (well,
     # the text "C-u"), not clear it.
-    grep -qF "$key" "$pane" 2>/dev/null && ok "C-u reply lands as literal text, not the clear action" \
-      || bad "pane 2 does not contain the literal text \"$key\" -- got: $(cat "$pane" 2>/dev/null)"
+    grep -qF "$key" "$pane.submitted" 2>/dev/null && ok "C-u reply lands as literal text, not the clear action" \
+      || bad "pane 2 never submitted the literal text \"$key\"" "$(pane_diag)"
   else
-    grep -qF "$key" "$pane" 2>/dev/null && ok "$key reply lands as literal text in the pane" \
-      || bad "pane 2 does not contain the literal text \"$key\" -- got: $(cat "$pane" 2>/dev/null)"
+    grep -qF "$key" "$pane.submitted" 2>/dev/null && ok "$key reply lands as literal text in the pane" \
+      || bad "pane 2 never submitted the literal text \"$key\"" "$(pane_diag)"
   fi
   [ -s "$pane.keys" ] && grep -q "^$key\$" "$pane.keys" 2>/dev/null \
     && bad "$key fired as a real key action instead of being typed literally" "$(cat "$pane.keys")" \
@@ -121,10 +149,66 @@ done
 out=$(run "$D/one-blocked" "yes")
 rc=$?
 [ "$rc" -eq 0 ] && ok "plain reply: exits 0" || bad "exited $rc" "$out"
-grep -q '^yes' "$D/panes/2" 2>/dev/null && ok "the plain reply lands in the blocked lane's pane" \
-  || bad "pane 2 does not contain the reply" "$(cat "$D/panes/2" 2>/dev/null)"
+grep -qx 'yes' "$D/panes/2.submitted" 2>/dev/null && ok "the plain reply lands in the blocked lane's pane" \
+  || bad "pane 2 never submitted the reply" "$(pane_diag)"
 grep -q 'send-keys -t t:2 Enter$' "$D/tmux.log" 2>/dev/null && ok "Enter was sent as its own key after the message" \
   || bad "no separate Enter send-keys call in the log" "$(cat "$D/tmux.log" 2>/dev/null)"
+grep -qx 'Enter' "$D/panes/2.keys" 2>/dev/null && ok "the pane acted on the Enter, it was not merely sent at it" \
+  || bad "pane 2 never acted on an Enter" "$(pane_diag)"
+
+# --- prove the delivery assertions can go red ------------------------------
+# The assertion that broke on CI is the one that matters: `delivered` must mean
+# the reply reached the lane, not that send-keys returned 0. A delivery check
+# that cannot be turned red by breaking delivery is not checking delivery, so
+# both ways of breaking it are exercised here rather than assumed.
+
+# (a) delivery removed outright: inbox-route still reports success and exits 0,
+#     and the lane never sees a thing.
+MUTANT="$D/inbox-route-nosend.sh"
+patch_rc=0
+python3 - "$ROUTE" "$MUTANT" <<'PY' || patch_rc=$?
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+text = open(src).read()
+marker = '''    if tmux send-keys -l -t "$LANE" "$MESSAGE" 2>/dev/null \\
+       && tmux send-keys -t "$LANE" Enter 2>/dev/null; then'''
+assert marker in text, "send-keys block not found -- inbox-route.sh shape changed"
+assert text.count(marker) == 1, "send-keys block not unique -- inbox-route.sh shape changed"
+open(dst, "w").write(text.replace(marker, "    if true; then", 1))
+PY
+if [ "$patch_rc" -ne 0 ]; then
+  bad "setup: patched a delivery-free copy of inbox-route.sh" \
+    "could not patch $ROUTE (exit $patch_rc) -- treating as a failure, not a skip"
+else
+  ok "setup: patched a delivery-free copy of inbox-route.sh"
+  : > "$D/tmux.log"; rm -rf "$D/panes"; mkdir -p "$D/panes"; : > "$D/curl.log"
+  PATH="$D/bin:$PATH" LANES_FIXTURE="$D/one-blocked" LANES_SESSION=t \
+    TMUX_LOG="$D/tmux.log" TMUX_PANES="$D/panes" \
+    HOME="$D/state" NOTIFY_ENV="$D/notify.env" CURL_LOG="$D/curl.log" \
+    bash "$MUTANT" "yes" t >/dev/null 2>&1
+  if [ ! -s "$D/panes/2.submitted" ]; then
+    ok "mutation confirmed: with delivery removed nothing is submitted (the arrival assertions above would be red)"
+  else
+    bad "mutation confirmed: with delivery removed nothing is submitted" \
+      "something was still submitted: $(cat "$D/panes/2.submitted")"
+  fi
+fi
+
+# (b) the #141 failure shape: the message is typed but the Enter that follows
+#     is swallowed by a repainting harness. The reply sits in the box and
+#     nothing runs -- and inbox-route still reports `delivered`. Both delivery
+#     assertions must go red on this, or "submitted" is not being tested.
+: > "$D/tmux.log"; rm -rf "$D/panes"; mkdir -p "$D/panes"; : > "$D/curl.log"
+PATH="$D/bin:$PATH" LANES_FIXTURE="$D/one-blocked" LANES_SESSION=t \
+  TMUX_LOG="$D/tmux.log" TMUX_PANES="$D/panes" DISPATCH_SWALLOW_ENTER=1 \
+  HOME="$D/state" NOTIFY_ENV="$D/notify.env" CURL_LOG="$D/curl.log" \
+  bash "$ROUTE" "yes" t >/dev/null 2>&1
+if [ ! -s "$D/panes/2.submitted" ] && grep -qx 'yes' "$D/panes/2" 2>/dev/null; then
+  ok "mutation confirmed: a swallowed Enter leaves the reply unsent in the box (both delivery assertions would be red)"
+else
+  bad "mutation confirmed: a swallowed Enter leaves the reply unsent in the box" \
+    "box='$(cat "$D/panes/2" 2>/dev/null)' submitted='$(cat "$D/panes/2.submitted" 2>/dev/null)'"
+fi
 
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
