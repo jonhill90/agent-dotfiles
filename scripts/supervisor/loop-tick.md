@@ -226,6 +226,28 @@ When it matters, do the decisive thing instead of reading a diff: merge into a
 scratch worktree and look. That is what found the genuine #96/#97 semantic
 conflict, which git reported as a clean merge.
 
+### Do not generalise this to "three-dot good, two-dot bad"
+
+Which diff is correct depends on the **question**, and the opposite case came up
+within two hours of this section being written.
+
+| question | correct diff | why |
+|---|---|---|
+| would merging this branch delete something? | `main...branch` | a merge applies the branch's changes since the merge base |
+| does `main` already contain this branch's work? | `main..branch` | that compares the two trees as they are now |
+
+The second question is the one you ask about an **unpushed branch** — is this
+work lost, or was it squash-merged already? Three-dot answers it wrongly: after a
+squash merge `main` holds the same content under a different commit, so the
+three-dot diff is still non-empty and reports finished work as outstanding.
+
+Neither form is a safe default. Both were used wrongly here on the same night, in
+opposite directions — see #120, where two attempts at the second question used
+the wrong instrument before the third worked.
+
+If you cannot say in one sentence which question you are asking, you are not
+ready to pick a diff.
+
 ## Before you finish the tick
 
 Keep `brief.md` current as state changes — it is what a cold session resumes
