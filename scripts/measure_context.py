@@ -87,6 +87,14 @@ def parse_codex(payload: str) -> int | None:
             event = json.loads(line)
         except ValueError:
             continue
+        # The event TYPE is checked, not merely the presence of usage. This
+        # function's contract has always been "the last turn.completed event",
+        # but it used to accept any event carrying usage.input_tokens -- and
+        # every test fixture contained only turn.completed events, so the
+        # difference was invisible. A non-terminal event with usage would have
+        # been read as the answer.
+        if event.get("type") != "turn.completed":
+            continue
         usage = event.get("usage")
         if isinstance(usage, dict) and "input_tokens" in usage:
             total = int(usage["input_tokens"])
@@ -105,6 +113,12 @@ def codex_turn_count(payload: str) -> int:
         try:
             event = json.loads(line)
         except ValueError:
+            continue
+        # Same type check as parse_codex, and for a sharper reason: this number
+        # is printed to the operator as "N turn.completed events in this run".
+        # Counting anything else makes the label a lie, and this counter exists
+        # precisely to be trusted when the codex column is not.
+        if event.get("type") != "turn.completed":
             continue
         usage = event.get("usage")
         if isinstance(usage, dict) and "input_tokens" in usage:
