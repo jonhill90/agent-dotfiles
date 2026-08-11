@@ -56,6 +56,38 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(measure_context.codex_turn_count(payload), 2)
         self.assertEqual(measure_context.parse_codex(payload), 40981)
 
+    def test_codex_ignores_usage_on_events_that_are_not_turn_completed(self) -> None:
+        """Both docstrings say these functions key on `turn.completed`. Neither
+        looked at the event type -- they took any event carrying
+        `usage.input_tokens`. Every fixture above contains only
+        `turn.completed` events, so all of them passed with or without the
+        filter, and the promise in the docstring was never tested.
+
+        This matters for #44 specifically: the count is reported to the operator
+        as "N turn.completed events in this run". If a non-terminal event
+        carries usage, that number names something it did not count, and the
+        diagnostic built to explain the 2.1x swing becomes another thing to
+        mistrust.
+        """
+        payload = (
+            '{"type":"thread.started"}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":19501}}\n'
+            '{"type":"item.completed","usage":{"input_tokens":999999}}\n'
+        )
+        self.assertEqual(measure_context.codex_turn_count(payload), 1)
+        self.assertEqual(measure_context.parse_codex(payload), 19501)
+
+    def test_codex_returns_none_when_usage_exists_but_no_turn_completed(self) -> None:
+        """Fail loud rather than quietly wrong. If codex ever renames the
+        terminal event, the honest outcome is an empty column that someone
+        investigates -- not a confident number taken from whatever event
+        happened to be last. An unreadable measurement reported as a reading is
+        the failure this estate keeps hitting.
+        """
+        payload = '{"type":"item.completed","usage":{"input_tokens":40981}}\n'
+        self.assertIsNone(measure_context.parse_codex(payload))
+        self.assertEqual(measure_context.codex_turn_count(payload), 0)
+
     def test_pi_sums_input_and_cache_read_from_the_last_usage(self) -> None:
         payload = (
             '{"message":{"usage":{"input":0,"cacheRead":0,"totalTokens":0}}}\n'
