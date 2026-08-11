@@ -11,6 +11,12 @@
 # reports it and fails, a conflict is reported as a conflict and not
 # silently folded into either of those, and the caller's own checkout is
 # untouched throughout.
+#
+# agent-dotfiles#119 found three more, all fixed here and covered below: a
+# scratch branch left behind on every run (not just the worktree), cleanup
+# not running when the process is actually killed mid-run, and a conflict
+# on one file hiding a genuine, silent deletion of another file in the
+# SAME merge -- the exact case this tool exists to catch.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WR="$HERE/../../scripts/supervisor/would-revert.sh"
@@ -71,6 +77,7 @@ if grep -q "DELETES" <<<"$out" && grep -q "mainfile.txt" <<<"$out"; then
 else
   bad "deleting branch: reports the deletion" "$out"
 fi
+if grep -qi "CONFLICT" <<<"$out"; then bad "deleting branch: does not also claim a conflict" "$out"; else ok "deleting branch: does not also claim a conflict"; fi
 
 # --- conflict case -----------------------------------------------------------
 git -C "$REPO" checkout -q main
@@ -85,8 +92,79 @@ git -C "$REPO" push -q origin main
 
 out=$(bash "$WR" conflict-branch origin/main 2>&1); rc=$?
 want_exit "conflict: exits non-zero" "$rc" 2
-if grep -qi "CONFLICT" <<<"$out"; then ok "conflict: reported as a conflict"; else bad "conflict: reported as a conflict" "$out"; fi
+# Not just `grep -qi CONFLICT` -- git's OWN raw merge output also contains
+# that word, so that alone would pass even with would-revert.sh's own
+# classification deleted (agent-dotfiles#119: confirmed by mutation, see
+# below). Assert on the script's own structured line and file list, and
+# that git's raw "Automatic merge failed" fallback text is NOT what
+# produced the match -- that text only appears on the unclassified-failure
+# path, never the classified one.
+if grep -q "would-revert:.*CONFLICTS" <<<"$out" && grep -qF "mainfile.txt" <<<"$out"; then
+  ok "conflict: reported as a conflict, by name, in would-revert.sh's own report"
+else
+  bad "conflict: reported as a conflict, by name, in would-revert.sh's own report" "$out"
+fi
+if grep -q "Automatic merge failed" <<<"$out"; then
+  bad "conflict: classified, not just git's raw failure text relayed" "$out"
+else
+  ok "conflict: classified, not just git's raw failure text relayed"
+fi
 if grep -q "DELETES" <<<"$out"; then bad "conflict: not reported as a deletion" "$out"; else ok "conflict: not reported as a deletion"; fi
+
+# --- conflict AND a genuine, silent deletion in the SAME merge -------------
+# A conflict on one file does not stop git from cleanly auto-resolving a
+# DELETION on a different file in the same merge attempt: main never
+# touching a file the branch removes is not a conflict, it just applies.
+# Before agent-dotfiles#119's fix, the deletion check was skipped entirely
+# whenever the merge conflicted, and the report said "not a deletion
+# either" while a real deletion had happened. The deletion is the
+# dangerous half; a conflict must not hide it.
+# A fresh pair of files, forked from a common point BOTH sides then
+# diverge from -- reusing mainfile.txt here would make branch the only
+# side to touch it (main already moved on to "main version" earlier in
+# this file and never changes it again), which merges clean and proves
+# nothing. sidefile.txt only main touches, so branch's deletion of it
+# applies without a fight.
+git -C "$REPO" checkout -q main
+echo "shared" > "$REPO/sharedfile.txt"
+echo "keep me" > "$REPO/sidefile.txt"
+git -C "$REPO" add sharedfile.txt sidefile.txt
+git -C "$REPO" commit -q -m "common base for the conflict+deletion case"
+git -C "$REPO" push -q origin main
+
+git -C "$REPO" checkout -q -b mixed-branch
+echo "branch version" > "$REPO/sharedfile.txt"
+git -C "$REPO" rm -q sidefile.txt
+git -C "$REPO" commit -q -am "branch edits sharedfile.txt, deletes sidefile.txt"
+
+git -C "$REPO" checkout -q main
+echo "main version" > "$REPO/sharedfile.txt"
+git -C "$REPO" commit -q -am "main edits sharedfile.txt too, never touches sidefile.txt"
+git -C "$REPO" push -q origin main
+
+out=$(bash "$WR" mixed-branch origin/main 2>&1); rc=$?
+want_exit "conflict+deletion: exits non-zero" "$rc" 2
+if grep -q "would-revert:.*CONFLICTS" <<<"$out" && grep -qF "sharedfile.txt" <<<"$out"; then
+  ok "conflict+deletion: the conflict is reported"
+else
+  bad "conflict+deletion: the conflict is reported" "$out"
+fi
+if grep -q "would-revert:.*DELETES" <<<"$out" && grep -qF "sidefile.txt" <<<"$out"; then
+  ok "conflict+deletion: the deletion is ALSO reported, not hidden by the conflict"
+else
+  bad "conflict+deletion: the deletion is ALSO reported, not hidden by the conflict" "$out"
+fi
+
+# --- neither classification bleeds into the other's single-issue case ------
+# Guards against "fixing" the false negative by reporting everything
+# always: a pure conflict must not claim a deletion, and (checked earlier
+# in the true-positive case above) a pure deletion must not claim a
+# conflict.
+if grep -q "would-revert:.*DELETES" <<<"$(bash "$WR" conflict-branch origin/main 2>&1)"; then
+  bad "conflict-only: does not also claim a deletion" "did"
+else
+  ok "conflict-only: does not also claim a deletion"
+fi
 
 # --- caller's working tree, index, and branch are untouched ----------------
 git -C "$REPO" checkout -q main
@@ -106,7 +184,56 @@ if [ "$before_status" = "$after_status" ]; then ok "caller working tree/index is
 leftover=$(git -C "$REPO" worktree list | grep -c "would-revert-" || true)
 if [ "$leftover" -eq 0 ]; then ok "no scratch worktree left behind"; else bad "no scratch worktree left behind" "$(git -C "$REPO" worktree list)"; fi
 
+# --- no scratch BRANCH is left behind either (agent-dotfiles#119) ----------
+# `worktree.sh new` creates `lane/would-revert-$$` for every run; `worktree.sh
+# done` only ever removes the WORKTREE. Every run above -- clean, deleting,
+# conflicting, and conflict+deleting -- must leave zero of these, or they
+# accumulate one per invocation forever.
+stray_branches=$(git -C "$REPO" branch --list 'lane/would-revert-*')
+if [ -z "$stray_branches" ]; then
+  ok "no scratch branch left behind by any run above"
+else
+  bad "no scratch branch left behind by any run above" "$stray_branches"
+fi
+
 rm -rf "$D"
+
+# --- an interrupted run leaves neither the worktree nor the branch ---------
+# `trap cleanup EXIT` alone does not fire when a signal lands while bash is
+# blocked in a command substitution (agent-dotfiles#119) -- send a REAL
+# SIGTERM, not a simulated failure, timed at 0.15s, the delay that
+# reproduced the leak against the unfixed script.
+D2=$(mktemp -d)
+mkdir -p "$D2/roots"
+git init -q --bare "$D2/origin.git"
+git clone -q "$D2/origin.git" "$D2/repo"
+REPO2="$D2/repo"
+git -C "$REPO2" config user.email test@example.com
+git -C "$REPO2" config user.name "Test"
+git -C "$REPO2" checkout -q -b main
+echo one > "$REPO2/f.txt"
+git -C "$REPO2" add f.txt
+git -C "$REPO2" commit -q -m initial
+git -C "$REPO2" push -q -u origin main
+git -C "$REPO2" checkout -q -b interrupt-branch
+echo a > "$REPO2/a.txt"
+git -C "$REPO2" add a.txt
+git -C "$REPO2" commit -q -m "branch work"
+git -C "$REPO2" checkout -q main
+
+WORKTREE_ROOT="$D2/roots" WOULD_REVERT_REPO="$REPO2" \
+  bash "$WR" interrupt-branch origin/main >"$D2/out.log" 2>&1 &
+WR_PID=$!
+sleep 0.15
+kill -TERM "$WR_PID" 2>/dev/null
+wait "$WR_PID" 2>/dev/null
+
+leftover_wt=$(git -C "$REPO2" worktree list | grep -c "would-revert-" || true)
+leftover_br=$(git -C "$REPO2" branch --list 'lane/would-revert-*')
+if [ "$leftover_wt" -eq 0 ]; then ok "an interrupted run leaves no worktree"; else bad "an interrupted run leaves no worktree" "$(git -C "$REPO2" worktree list)"; fi
+if [ -z "$leftover_br" ]; then ok "an interrupted run leaves no branch"; else bad "an interrupted run leaves no branch" "$leftover_br"; fi
+
+rm -rf "$D2"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
