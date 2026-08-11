@@ -96,6 +96,31 @@ This tool exists because a dispatch was sent into a dead lane and vanished, and
 because a lane wedged for 40 minutes was read as busy and left alone. Reading
 the table costs one command; both of those cost a whole tick.
 
+## An empty tmux target hits the ACTIVE window — always resolve it first
+
+`tmux send-keys -t agent-dotfiles:` with an empty index does **not** error. It
+targets whatever window is currently active, which is usually the supervisor.
+
+This happened on 2026-08-11. A dispatch computed its window index from
+`lanes.sh --free`, which returned nothing because that script did not exist on
+the branch that was checked out. The index was empty, the target collapsed to
+the session's active window, and the supervisor was `/clear`ed and handed a
+worker's brief — losing its loop context and spending a turn duplicating a
+review another lane was already running.
+
+Before any `send-keys` or `rename-window`, resolve the index and refuse to
+proceed if it is empty:
+
+```bash
+IDX=$(tmux list-windows -t agent-dotfiles -F '#{window_index} #{window_name}' \
+      | awk -v n="$LANE" '$2==n{print $1}')
+[ -n "$IDX" ] || { echo "no window named $LANE"; exit 1; }
+```
+
+The same rule covers the empty-variable family generally: a target built from
+a command's output is only as safe as that command's success, and `tmux`
+treats "no index" as "the one the human is looking at".
+
 ## Lane names must say what is happening right now
 
 Jon must be able to read the tmux window list and know what the estate is
