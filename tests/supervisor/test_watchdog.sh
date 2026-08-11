@@ -409,6 +409,88 @@ check "and the advance refuses rather than guessing" "^advance: *refused" "$A/s6
 if [ "$(at_sha)" = "$b7" ]; then say_ok "an unreadable comparison leaves live untouched"
 else say_bad "an unreadable comparison leaves live untouched" "moved to $(at_sha)"; fi
 
+# --- the race gate itself: outside the post-tick window, do not advance (#135)
+#
+# Everything above reaches advance-live.sh through watchdog.sh's exit trap,
+# which has just written a fresh `checked:` timestamp -- so `age` is ~0s and
+# inside the window in every one of those cases, and the gate's SKIP branch is
+# never taken. Three mutations of the window check (disabling it at its first
+# occurrence, at the pre-mutation re-check, and both) left the suite at
+# 50 passed, 0 failed. These two cases drive the skip outcome instead, by
+# seeding a stale timestamp and calling advance-live.sh DIRECTLY -- the trap
+# cannot produce a stale one.
+stamp_at() { # stamp_at <seconds-ago> -- a watchdog `checked:` timestamp in the past
+  python3 -c 'import datetime,sys
+print((datetime.datetime.now(datetime.timezone.utc)
+       - datetime.timedelta(seconds=int(sys.argv[1]))).strftime("%Y-%m-%dT%H:%M:%SZ"))' "$1"
+}
+seed_status() { # seed_status <status-file> <seconds-ago>
+  mkdir -p "$(dirname "$1")"
+  printf 'checked:  %s\nstate:    working\n' "$(stamp_at "$2")" >"$1"
+}
+adv_direct() { # adv_direct <state-dir> -- advance-live.sh alone, no watchdog tick
+  SUPERVISOR_STATE="$1" SUPERVISOR_STATUS="$1/st" SUPERVISOR_LIVE="$LIVE" \
+  ADVANCE_LOG="$1/advance.log" ADVANCE_ROLLBACK="$1/rollback" \
+    bash "$LIVE/scripts/supervisor/advance-live.sh" >"$1/out" 2>&1
+}
+
+# origin/main was deleted by 5b; restore it so there is something to advance.
+git -C "$LIVE" update-ref refs/remotes/origin/main "$t4"
+
+# 6. the initial check: a tick that is long past leaves the advance for a
+#    later pass rather than swapping the tree out from under the next one.
+b8=$(at_sha)
+SA="$A/s7"; rm -rf "$SA"; mkdir -p "$SA"
+seed_status "$SA/st" 600
+adv_direct "$SA"; rc8=$?
+want_exit "a stale watchdog tick is a skip, not a failure" "$rc8" 0 "$(cat "$SA/out" 2>/dev/null)"
+check "outside the post-tick window the advance is skipped" \
+      "outside the 0-150s post-tick window" "$SA/out"
+check "the skip is in the advance log" "SKIP:.*outside the 0-150s post-tick window" "$SA/advance.log"
+if [ "$(at_sha)" = "$b8" ]; then say_ok "a skipped advance leaves the live copy where it was"
+else say_bad "a skipped advance leaves the live copy where it was" "moved to $(at_sha) — the race gate did not hold"; fi
+if [ -e "$SA/rollback" ]; then say_bad "a skipped advance records no rollback target" "wrote $(cat "$SA/rollback")"
+else say_ok "a skipped advance records no rollback target"; fi
+
+# 7. the pre-mutation re-check: the window was open when the gate was first
+#    read and closed while the smoke test ran. That gap is variable-duration
+#    by construction -- a `git worktree add` plus a whole candidate watchdog
+#    run -- so the only check standing between a live tick and a tree swapped
+#    underneath it is the SECOND one, at the point of mutation. A test that
+#    only drives case 6 leaves this occurrence exactly as uncovered as before.
+#    Made deterministic rather than timed: the candidate's own watchdog.sh
+#    ages the live status while the gate is watching it.
+SB="$A/s8"; rm -rf "$SB"; mkdir -p "$SB"
+STALL=$(mktemp -d); rm -rf "$STALL"
+git -C "$SRC" worktree add -q --detach "$STALL" "$t4"
+stale_stamp=$(stamp_at 600)
+cat >"$STALL/scripts/supervisor/watchdog.sh" <<EOF
+#!/bin/bash
+# Test fixture, not a watchdog. It writes the well-formed status advance-live.sh's
+# run-gate demands, so the candidate passes the gate and the run reaches the
+# pre-mutation re-check -- and it ages the LIVE status out of the post-tick
+# window while it runs, which is what a tick overrunning its own cadence does.
+printf 'checked:  %s\nstate:    working\n' "\$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"\$SUPERVISOR_STATUS"
+printf 'checked:  %s\nstate:    working\n' '$stale_stamp' >'$SB/st'
+EOF
+git -C "$STALL" -c user.email=t@e.com -c user.name=T commit -aq -m "candidate whose run outlives the window"
+stall_sha=$(git -C "$STALL" rev-parse HEAD)
+git -C "$LIVE" update-ref refs/remotes/origin/main "$stall_sha"
+
+b9=$(at_sha)
+seed_status "$SB/st" 0
+adv_direct "$SB"; rc9=$?
+want_exit "a window that closes mid-smoke-test is a skip, not a failure" "$rc9" 0 "$(cat "$SB/out" 2>/dev/null)"
+check "the run got past the first check to the smoke test" "smoke test at $stall_sha passed" "$SB/advance.log"
+check "the window closing during the smoke test is caught before the checkout" \
+      "window closed while the smoke test ran" "$SB/out"
+if [ "$(at_sha)" = "$b9" ]; then say_ok "the re-check leaves the live copy where it was"
+else say_bad "the re-check leaves the live copy where it was" "moved to $(at_sha) — checked out after the window closed"; fi
+
+git -C "$LIVE" update-ref refs/remotes/origin/main "$t4"
+git -C "$SRC" worktree remove --force "$STALL" >/dev/null 2>&1
+git -C "$SRC" worktree prune >/dev/null 2>&1
+
 leftover=$(git -C "$SRC" worktree list --porcelain | grep -c 'ad99-advance-smoke' || true)
 if [ "$leftover" -eq 0 ]; then say_ok "no smoke-test worktrees left registered"
 else say_bad "no smoke-test worktrees left registered" "$leftover still registered"; fi
