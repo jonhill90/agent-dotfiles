@@ -228,23 +228,53 @@ conflict, which git reported as a clean merge.
 
 ### Do not generalise this to "three-dot good, two-dot bad"
 
-Which diff is correct depends on the **question**, and the opposite case came up
-within two hours of this section being written.
+Which diff is correct depends on the **question**, and for one common question
+**neither form is correct**. Constructed and measured, not reasoned:
 
-| question | correct diff | why |
-|---|---|---|
-| would merging this branch delete something? | `main...branch` | a merge applies the branch's changes since the merge base |
-| does `main` already contain this branch's work? | `main..branch` | that compares the two trees as they are now |
+| question | answer |
+|---|---|
+| would merging this branch delete something? | `main...branch` |
+| does `main` already contain this branch's work? | **neither — compare per file** |
 
-The second question is the one you ask about an **unpushed branch** — is this
-work lost, or was it squash-merged already? Three-dot answers it wrongly: after a
-squash merge `main` holds the same content under a different commit, so the
-three-dot diff is still non-empty and reports finished work as outstanding.
+The second question is the one you ask about an unpushed branch: is this work
+lost, or was it squash-merged already?
 
-Neither form is a safe default. Both were used wrongly here on the same night, in
-opposite directions — see #120, where two attempts at the second question used
-the wrong instrument before the third worked.
+**Three-dot is wrong for it.** After a squash merge `main` holds the same content
+under a different commit, so:
 
+```
+$ git diff --stat master...feature    # branch's work IS on master
+  work.txt | 1 +                      <- reports finished work as outstanding
+```
+
+**Two-dot is right only while the branch is current, and silently wrong once it
+is stale.** With the branch's work already on `master`, and `master` since
+advanced:
+
+```
+$ git diff --stat master..feature
+  base.txt  | 1 -
+  later.txt | 1 -                     <- master's OWN newer work, not the
+                                         branch's outstanding work
+```
+
+Two-dot answers "is this branch identical to `main`", which is a different
+question and coincides with the one you meant only when `main` has not moved.
+
+**What actually answers it** — compare each file the branch touched against
+`main`'s version of that same file, ignoring everything else:
+
+```bash
+for f in $(git diff --name-only $(git merge-base main "$b") "$b"); do
+    git diff --quiet "main:$f" "$b:$f" || echo "$f differs — genuinely outstanding"
+done
+```
+
+On the case above that prints nothing for `work.txt`, correctly: the content is
+on `main` and the branch is safe to delete.
+
+The record here is three wrong answers to this one question in one night — see
+#120 and #121 — two of them written by whoever was also writing the guidance.
 If you cannot say in one sentence which question you are asking, you are not
 ready to pick a diff.
 
