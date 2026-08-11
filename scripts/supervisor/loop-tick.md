@@ -176,6 +176,46 @@ An issue closed by accident is a louder false signal than almost anything else
 this loop produces: the tracker then says a problem is solved, and the next
 session believes it.
 
+## "This branch would revert X" — check with three-dot, not two-dot
+
+`git diff main..branch` compares the two **tips**. Every commit on `main` the
+branch does not have appears as a **deletion**, because the branch's tree does
+not contain it. That is a property of comparing tips. It is not a prediction
+about merging.
+
+A merge — including a squash merge — applies the **three-dot** diff: the
+branch's changes since the merge base. Everything else on `main` is left alone.
+
+Reproduced from scratch on 2026-08-11, after a PR was held on the two-dot
+reading:
+
+```
+$ git diff --stat master..feature     # two-dot
+  feature.txt  | 1 +
+  mainfile.txt | 1 -                  <- looks exactly like a revert
+
+$ git diff --stat master...feature    # three-dot -- what a merge applies
+  feature.txt | 1 +
+
+$ git merge feature        -> mainfile.txt PRESENT   (not reverted)
+$ git merge --squash ...   -> mainfile.txt PRESENT
+```
+
+Applied as written, the two-dot reading holds **every** branch that is behind
+`main` with a revert warning that is not real. In a repo merging several times an
+hour that is most of them, and the cost is not zero: it teaches the next reader
+to skim past a warning that is usually wrong, which is how a genuine one gets
+missed.
+
+Being behind is not sufficient to revert anything. It takes a real content
+conflict — the branch editing lines a newer commit changed, a rebase onto an
+older base, or a delete-versus-modify. All of those appear in a three-dot diff or
+as a merge conflict.
+
+When it matters, do the decisive thing instead of reading a diff: merge into a
+scratch worktree and look. That is what found the genuine #96/#97 semantic
+conflict, which git reported as a clean merge.
+
 ## Before you finish the tick
 
 Keep `brief.md` current as state changes — it is what a cold session resumes
