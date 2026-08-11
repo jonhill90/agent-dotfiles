@@ -567,6 +567,20 @@ Claude Code merges into skills and which therefore cost tokens; and a
 cached-but-disabled plugin costs nothing. Only Claude Code loads plugin
 skills — the neutral trio are not charged.
 
+Live E15 is itself blind to one population, and permanently so: Claude
+Code's **bundled** skills (`dataviz`, `claude-api`, `loop`, `run`, …)
+are in the model's context but are not on `.claude/skills`,
+`.agents/skills`, or `.claude/plugins/cache` — not merely missed by
+those three paths, but absent from disk entirely (agent-dotfiles#5,
+confirmed 2026-08-11 across eight bundled names on a machine that can
+see 552 other directories under `~/.claude`). No fourth path closes
+this; there is nothing on disk for one to read. `measure_e15.py`
+applies the same rule `validate_repository.py` applies repo-side (§6
+above, #145): it reports this population as unmeasured — named, with
+its last-measured cost and the lever that controls it, not folded into
+the total — rather than a total that silently omits it and reads as
+complete.
+
 ## 7. Sync Wrapper (`scripts/sync.py`)
 
 Python 3, stdlib only (the repo already standardizes on Python for
