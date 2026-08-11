@@ -263,3 +263,66 @@ class BlindSpotTests(unittest.TestCase):
 
     def test_pi_has_none(self) -> None:
         self.assertEqual(measure_e15.blind_spots("pi"), [])
+
+    def test_bundled_skills_are_unmeasured_on_every_real_machine(self) -> None:
+        """The bundled-skill blind spot is not a fixture artifact: nothing in
+        this test's home directory creates `.claude/skills/dataviz` (or any
+        other bundled name) because none of them are ever on disk (agent-
+        dotfiles#5) — so the report names the population as unmeasured
+        without needing a machine-specific setup."""
+        report = measure_e15.measure(
+            Path(tempfile.mkdtemp()), enabled=set(), memory_index=None
+        )
+        text, _ = measure_e15.format_report(report)
+        self.assertIn("bundled skills", text)
+        self.assertIn("NOT COUNTED ABOVE", text)
+
+    def test_a_bundled_name_that_did_appear_on_disk_would_be_counted(self) -> None:
+        """The blindness is reported because it is true today, not hard-coded
+        as permanent: if a bundled skill's directory ever did land on a read
+        path, the ordinary skill-counting code would pick it up like any
+        other skill."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        write_skill(root, "dataviz", "d" * 120)
+        total, names = measure_e15.skill_dir_bytes(root)
+        self.assertEqual(names, ["dataviz"])
+        self.assertEqual(total, 120)
+
+
+class TotalCompletenessTests(unittest.TestCase):
+    """A total that silently omits an unmeasured component reads as complete
+    — the same failure #145 fixed repo-side. The live-side report must mark
+    a harness's TOTAL when it has a named blind spot, and must not degrade
+    the sighted case (a harness with nothing unmeasured) to do it."""
+
+    def _row(self, total: float = 100.0) -> dict:
+        return {
+            "instructions": 10.0,
+            "skills": 10.0,
+            "plugin_skills": 0.0,
+            "memory": 0.0,
+            "skill_names": [],
+            "plugin_names": [],
+            "root_present": True,
+            "total": total,
+        }
+
+    def _report(self, **rows: dict) -> dict:
+        report = {"claude": self._row(total=0.0)}
+        report.update(rows)
+        return report
+
+    def test_claude_total_is_marked_incomplete(self) -> None:
+        report = self._report(claude=self._row())
+        text, _ = measure_e15.format_report(report)
+        self.assertIn("100*", text)
+        self.assertIn("not a complete static-context figure", text)
+
+    def test_pi_total_is_not_marked_because_pi_has_no_blind_spot(self) -> None:
+        report = self._report(pi=self._row())
+        text, _ = measure_e15.format_report(report)
+        self.assertNotIn("100*", text)
+        pi_line = next(line for line in text.splitlines() if line.startswith("pi "))
+        self.assertNotIn("*", pi_line)

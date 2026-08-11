@@ -8,6 +8,17 @@ repo-side check noticing (found 2026-07-26). This script measures the
 deployed reality on a machine: root instructions, that harness's skills
 path, enabled plugin skills, and the real memory index.
 
+It still cannot see everything. Claude Code's *bundled* skills (`dataviz`,
+`claude-api`, `loop`, `run`, …) are in the model's context and are not on
+`.claude/skills`, `.agents/skills`, or `.claude/plugins/cache` — not merely
+missed by those paths, but absent from disk entirely (agent-dotfiles#5,
+confirmed 2026-08-11 across eight bundled names on a machine that can see
+552 other directories under `~/.claude`). No fourth path fixes that; there
+is nothing on disk to point one at. This script reports that population as
+unmeasured, the same rule `validate_repository.py` applies repo-side
+(#145): silence reads as "measured, and it's zero," so a component this
+script cannot read must say so rather than being left out of the total.
+
 Python 3 stdlib only. Read-only — it never writes to a harness.
 """
 
@@ -307,6 +318,81 @@ def measure(
     return report
 
 
+def format_report(report: dict[str, dict]) -> tuple[str, int]:
+    """Render the report and return (text, over-cap count).
+
+    A harness with a named blind spot (`blind_spots(harness)` non-empty)
+    gets its TOTAL marked with `*` and the table gets a footnote spelling
+    out that the total is a floor, not a complete figure. Printing a bare
+    "TOTAL" next to a cap is how this script's own predecessor read as
+    complete while Claude Code was actually at 2,600 tokens against a
+    reported 490 (agent-dotfiles#5) — the marker exists so that mistake
+    cannot repeat silently.
+    """
+    lines = [
+        f"{'harness':9} {'instr':>7} {'skills':>7} {'plugin':>7} "
+        f"{'mem':>7} {'TOTAL':>8}  cap {TOTAL_STATIC_TOKEN_CAP}"
+    ]
+    over = 0
+    any_blind = False
+    for harness, row in sorted(report.items()):
+        flag = "" if row["total"] <= TOTAL_STATIC_TOKEN_CAP else "  OVER"
+        if flag:
+            over += 1
+        spots = blind_spots(harness)
+        marker = "*" if spots else ""
+        if spots:
+            any_blind = True
+        lines.append(
+            f"{harness:9} {row['instructions']:7.0f} {row['skills']:7.0f} "
+            f"{row['plugin_skills']:7.0f} {row['memory']:7.0f} "
+            f"{row['total']:8.0f}{marker}{flag}"
+        )
+        if not row["root_present"]:
+            lines.append(f"   ! root instruction file missing for {harness}")
+        descriptions = row["skills"] + row["plugin_skills"]
+        if descriptions > DESCRIPTION_TOKEN_CAP:
+            lines.append(
+                f"   ! {harness}: descriptions ~{descriptions:.0f} tokens "
+                f"exceed the {DESCRIPTION_TOKEN_CAP} cap"
+            )
+            over += 1
+    if any_blind:
+        lines.append(
+            "* TOTAL is a floor, not a complete static-context figure: this "
+            "harness has unmeasured populations, listed below and excluded "
+            "from every number above."
+        )
+    plugins = report["claude"]["plugin_names"]
+    lines.append(
+        f"\nplugins declared enabled for Claude Code: {', '.join(plugins) or 'none'}"
+    )
+    lines.append(
+        "  (declared, not observed: a plugin set to false may still load its "
+        "skills — check /context)"
+    )
+
+    # Name the blind spots. This script reads deployed files, so anything the
+    # harness itself ships is invisible to it — and printing a total without
+    # saying so is how Claude Code was reported at 490 tokens when the harness
+    # said 2,600 (#5).
+    lines.append("\nNOT COUNTED ABOVE — populations this script cannot read:")
+    for harness in HARNESS_LAYOUT:
+        for spot in blind_spots(harness):
+            cost = (f"~{spot['tokens']} tok" if spot["tokens"]
+                    else "cost unmeasured")
+            lines.append(
+                f"  {harness:8} {spot['count']:>3} {spot['population']:<28}"
+                f" {cost:<18} (checked {spot['measured']})"
+            )
+            lines.append(f"           lever: {spot['lever']}")
+    lines.append(
+        "  Ask the harness for the truth: Claude Code `/context`,"
+        " `codex exec`/`pi -p`/`copilot -p` skill listings."
+    )
+    return "\n".join(lines), over
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Measure live static context (E15)")
     parser.add_argument("--home", default=str(Path.home()))
@@ -317,54 +403,8 @@ def main() -> int:
     memory_index = Path(vault) / "agent" / "index.md" if vault else None
     report = measure(home, memory_index=memory_index)
 
-    print(
-        f"{'harness':9} {'instr':>7} {'skills':>7} {'plugin':>7} "
-        f"{'mem':>7} {'TOTAL':>8}  cap {TOTAL_STATIC_TOKEN_CAP}"
-    )
-    over = 0
-    for harness, row in sorted(report.items()):
-        flag = "" if row["total"] <= TOTAL_STATIC_TOKEN_CAP else "  OVER"
-        if flag:
-            over += 1
-        print(
-            f"{harness:9} {row['instructions']:7.0f} {row['skills']:7.0f} "
-            f"{row['plugin_skills']:7.0f} {row['memory']:7.0f} "
-            f"{row['total']:8.0f}{flag}"
-        )
-        if not row["root_present"]:
-            print(f"   ! root instruction file missing for {harness}")
-        descriptions = row["skills"] + row["plugin_skills"]
-        if descriptions > DESCRIPTION_TOKEN_CAP:
-            print(
-                f"   ! {harness}: descriptions ~{descriptions:.0f} tokens "
-                f"exceed the {DESCRIPTION_TOKEN_CAP} cap"
-            )
-            over += 1
-    plugins = report["claude"]["plugin_names"]
-    print(f"\nplugins declared enabled for Claude Code: {', '.join(plugins) or 'none'}")
-    print(
-        "  (declared, not observed: a plugin set to false may still load its "
-        "skills — check /context)"
-    )
-
-    # Name the blind spots. This script reads deployed files, so anything the
-    # harness itself ships is invisible to it — and printing a total without
-    # saying so is how Claude Code was reported at 490 tokens when the harness
-    # said 2,600 (#5).
-    print("\nNOT COUNTED ABOVE — populations this script cannot read:")
-    for harness in HARNESS_LAYOUT:
-        for spot in blind_spots(harness):
-            cost = (f"~{spot['tokens']} tok" if spot["tokens"]
-                    else "cost unmeasured")
-            print(
-                f"  {harness:8} {spot['count']:>3} {spot['population']:<28}"
-                f" {cost:<18} (checked {spot['measured']})"
-            )
-            print(f"           lever: {spot['lever']}")
-    print(
-        "  Ask the harness for the truth: Claude Code `/context`,"
-        " `codex exec`/`pi -p`/`copilot -p` skill listings."
-    )
+    text, over = format_report(report)
+    print(text)
     return 1 if over else 0
 
 
