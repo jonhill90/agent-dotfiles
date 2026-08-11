@@ -23,8 +23,9 @@
 #   - Sampling the pane twice separates hung from busy: a live turn's elapsed
 #     timer advances between samples, a wedged one does not.
 #
-# Usage: lanes.sh [session]        human-readable table
-#        lanes.sh --free [session] print only lane names safe to dispatch to
+# Usage: lanes.sh [session]           human-readable table
+#        lanes.sh --free [session]    print only lane names safe to dispatch to
+#        lanes.sh --blocked [session] print only lane names waiting on a human
 #        lanes.sh --json [session]
 #
 # Exit 0 always when the session exists; the states are the output, not the
@@ -35,7 +36,7 @@ set -uo pipefail
 SESSION="${2:-${LANES_SESSION:-agent-dotfiles}}"
 MODE="${1:-}"
 case "$MODE" in
-  --free|--json) ;;
+  --free|--blocked|--json) ;;
   "") ;;
   *) SESSION="$MODE"; MODE="" ;;
 esac
@@ -210,6 +211,12 @@ case "$MODE" in
     # session briefly had two windows both called ad65-lanes-review) and
     # `send-keys -t session:name` silently hits the first match.
     awk -F'\t' -v s="$SESSION" '$4=="free"{print s ":" $1}' <<<"$rows" ;;
+  --blocked)
+    # Same session:index shape as --free, for the same reason. This is the
+    # routing signal agent-dotfiles#142 builds inbound Telegram delivery on:
+    # a lane in `blocked` is waiting on an interactive prompt, and Jon's
+    # reply is presumed to be the answer to it.
+    awk -F'\t' -v s="$SESSION" '$4=="blocked"{print s ":" $1}' <<<"$rows" ;;
   --json)
     printf '['
     awk -F'\t' 'BEGIN{c=0}
