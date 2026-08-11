@@ -34,7 +34,11 @@ want "a pane running a shell is dead, not idle"          w-dead    dead    "$out
 # 2026-08-11 a healthy idle Copilot pane was called `hung` because that
 # string appeared in its scrollback.
 want "a non-Claude harness is unknown, never guessed"    w-copilot unknown "$out"
-want "an idle Claude lane is free"                       arch      free    "$out"
+# Window 1 is the supervisor. It is idle between ticks and therefore looks
+# exactly like a free worker -- --free offered it twice on 2026-08-11 and a
+# worker brief /clear'ed the loop both times. "Free" and "yours to take" are
+# different questions.
+want "the supervisor window is never a worker lane"      arch      supervisor "$out"
 # Found in review of #65: Claude Code's elapsed footer is minute-granular past
 # 60s, so a turn running 61-119s prints identical bytes for a whole minute. The
 # original text-diff detector called that hung and would have paged a human
@@ -53,7 +57,7 @@ want "a lane that merely printed the phrase is free"     w-mentions free    "$ou
 
 # --free must never offer a lane that would swallow the dispatch.
 free=$(PATH="$D/bin:$PATH" LANES_FIXTURE="$D/fixture" bash "$LANES" --free 2>&1)
-for bad in w-dead w-hung w-busy w-copilot w-minute-tick w-scrolled; do
+for bad in arch w-dead w-hung w-busy w-copilot w-minute-tick w-scrolled; do
   bi=$(awk -F'|' -v n="$bad" '$2==n{print $1}' "$D/fixture")
   if grep -qx ".*:$bi" <<<"$free"; then echo "  FAIL --free offered $bad"; fail=$((fail+1));
   else echo "  ok   --free withholds $bad"; pass=$((pass+1)); fi

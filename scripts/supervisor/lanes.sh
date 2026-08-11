@@ -38,6 +38,12 @@ esac
 
 # Shells mean "the agent exited and left the pane behind".
 SHELLS="bash|zsh|sh|fish|login"
+# The supervisor's own pane. It is never a dispatch target: sending a worker
+# brief there /clear's the loop and replaces it with someone else's task.
+# Done twice on 2026-08-11 -- once via an empty tmux target, once because
+# --free cheerfully offered window 1 while the supervisor sat idle between
+# ticks. "Free" and "yours to take" are different questions.
+SUPERVISOR_WINDOW="${LANES_SUPERVISOR_WINDOW:-1}"
 # A lane is hung if it looks busy but tmux has seen no output from it for this
 # long. Must exceed the slowest legitimate repaint interval -- Claude Code's
 # footer drops to MINUTE granularity past 60s, so a live turn can go ~60s
@@ -81,7 +87,9 @@ emit_rows() {
     # harness-specific, it was the capture window.
     pane=$(tmux capture-pane -p -t "$SESSION:$w" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -1)
 
-    if [ "${mode:-0}" != "0" ]; then
+    if [ "$w" = "$SUPERVISOR_WINDOW" ]; then
+      state=supervisor
+    elif [ "${mode:-0}" != "0" ]; then
       # A pane in copy mode still captures its underlying screen, so an idle
       # agent someone scrolled up reads free -- but keys sent there are eaten
       # by the copy-mode key table and never reach the agent. Reproduced live
