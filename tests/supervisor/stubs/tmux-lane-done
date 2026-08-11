@@ -1,0 +1,50 @@
+#!/bin/bash
+# Stub tmux for lane-done.sh tests.
+#
+# LANES_FIXTURE holds one line per window, same format the other lane stubs
+# use, only the name column matters here:
+#   <index>|<name>
+#
+# WAIT_DIR holds one marker file per signaled channel, <channel>.signaled.
+# `wait-for -L` is NOT a blocking simulation -- a stub cannot reproduce
+# tmux's real inter-process block without hanging the test process, and
+# lane-done.sh's own contract is "block, then act only on success", so the
+# stub only needs to report whether the channel has already been signaled:
+# present -> exit 0 (signaled), absent -> exit 1 (not yet). `wait-for -S`
+# creates the marker, for tests that signal from the stub itself.
+F="${LANES_FIXTURE:?}"
+LOG="${TMUX_LOG:-/dev/null}"
+WD="${WAIT_DIR:?}"
+sub="$1"; shift
+
+case "$sub" in
+  wait-for)
+    mode="${1:-}"; ch="${2:-}"
+    case "$mode" in
+      -L) [ -f "$WD/$ch.signaled" ] && exit 0 || exit 1 ;;
+      -S) mkdir -p "$WD"; : > "$WD/$ch.signaled"; exit 0 ;;
+      *) exit 1 ;;
+    esac ;;
+  rename-window)
+    printf '%s %s\n' "$sub" "$*" >> "$LOG"
+    exit 0 ;;
+esac
+
+target=""; fmt=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -t) target="$2"; shift 2 ;;
+    -p) shift ;;
+    -*) shift ;;
+    *) fmt="$1"; shift ;;
+  esac
+done
+win="${target##*:}"; win="${win%%.*}"
+line=$(awk -F'|' -v w="$win" '$1==w' "$F")
+case "$sub" in
+  display-message)
+    case "$fmt" in
+      '#{window_name}') cut -d'|' -f2 <<<"$line" ;;
+    esac ;;
+esac
+exit 0
