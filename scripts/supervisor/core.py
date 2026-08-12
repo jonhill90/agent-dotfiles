@@ -42,6 +42,39 @@ CLAIM_TASK_PREFIX = "ledger-claim:"
 # to mention the word -- parses as `None` and is never reaped.
 CLAIM_OWNER_RE = re.compile(r" \[owner=(?P<host>[^\]\s:]+):(?P<pid>[1-9][0-9]*)\]$")
 
+# A claim placeholder has exactly two states, and the difference between them
+# is the whole of agent-dotfiles#209 round 2.
+#
+# RESERVED -- the claim exists, nothing has been sent into the pane. Nobody is
+# working this lane, so both cleanup paths (`release_lane_claim` on the
+# dispatcher's own trap, `reap_stale_lane_claims` when the dispatcher died
+# where nothing could trap) MAY free it. That is what #209 round 1 built.
+#
+# LIVE -- `commit_lane_claim` has been called, which `dispatch.sh` does
+# IMMEDIATELY BEFORE the `send-keys Enter` that submits the brief. From here a
+# worker may be running in that pane, so NEITHER cleanup path may free it: a
+# lane wrongly held costs capacity and has a documented manual recovery, while
+# a lane wrongly freed costs a running lane's work, which is the loss this
+# whole subsystem exists to prevent (#102/#123/#126, and #124/#126's one-way
+# ratchet).
+#
+# Round 1 drew that line with an in-process bash flag set ~70 lines AFTER the
+# submit, so a signal landing in between freed a lane whose brief was already
+# live -- reproduced in tests/supervisor/test_dispatch.sh. Both cleanup paths
+# scope themselves to RESERVED, so moving a row to LIVE is what puts it out of
+# their reach, and it is a durable ledger fact rather than a variable in a
+# process that may be killed a microsecond later.
+#
+# `delivered` is the status LIVE maps onto, and the choice is load-bearing in
+# one non-obvious way: `_register_lane_tx` excludes `delivery_pending` from
+# the outstanding-task query it cancels through (#871's reconciliation escape
+# valve), so a claim parked there would survive `record_dispatch` and then
+# collide with its task INSERT under `one_open_task_per_lane`, failing every
+# clean dispatch. `delivered` is not excluded, so the ordinary success path
+# still cancels this placeholder and replaces it with the real task.
+CLAIM_STATUS_RESERVED = "created"
+CLAIM_STATUS_LIVE = "delivered"
+
 
 def claim_owner_token(pid, *, host=None):
     """The `host:pid` string `claim_lane` records for `owner`.
@@ -1143,6 +1176,56 @@ class Ledger:
                 return {"lane": lane, "claimed": False, "reason": "occupied", "holder": row["id"] if row else None}
             return {"lane": lane, "claimed": True, "reason": None, "token": token}
 
+    def commit_lane_claim(self, lane, *, token):
+        """Mark a claim as having a LIVE brief behind it, so no cleanup frees it.
+
+        agent-dotfiles#209 round 2. `claim_lane` reserves a lane; this is the
+        point of no return, and `dispatch.sh` calls it IMMEDIATELY BEFORE the
+        `send-keys Enter` that submits the brief into the pane. After it
+        returns `committed`, the lane may be working, and both cleanup paths
+        stop being allowed to touch the row:
+
+        * `release_lane_claim` (the dispatcher's own EXIT/TERM/INT trap) is
+          scoped to `CLAIM_STATUS_RESERVED` and matches nothing here.
+        * `reap_stale_lane_claims` selects only `CLAIM_STATUS_RESERVED` rows,
+          so a LIVE claim survives even when its owner pid is provably gone --
+          which is the case the reap's liveness rule ALONE cannot decide.
+          "The owner is dead" does not distinguish "claim taken, nothing sent"
+          from "claim taken, brief live in the pane"; before this existed both
+          were `created` with a dead owner, and the reap cleared both.
+
+        This has to be a LEDGER fact, not a flag in the dispatcher, for the
+        SIGKILL case specifically: a bash variable dies with the process that
+        set it, and at that instant this row is the only record that the lane
+        is occupied at all -- `record_dispatch` has not run yet.
+
+        Idempotent: committing an already-LIVE claim succeeds and changes
+        nothing, so a retry cannot walk the row backwards.
+
+        Refuses rather than invents state. A claim that is missing (never
+        made, or already released) is not committed into existence here --
+        `dispatch.sh` treats that refusal as fatal and does not send, which is
+        the fail-closed direction: nothing has gone into the pane yet, so
+        unwinding is still free.
+        """
+        now = int(self.clock())
+        task_id = f"{CLAIM_TASK_PREFIX}{lane}:{token}"
+        with self._locked(), self._transaction() as connection:
+            row = connection.execute(
+                "SELECT status FROM tasks WHERE id = ? AND lane = ?", (task_id, lane)
+            ).fetchone()
+            if row is None:
+                return {"lane": lane, "committed": False, "reason": "missing", "token": token}
+            if row["status"] == CLAIM_STATUS_LIVE:
+                return {"lane": lane, "committed": True, "reason": None, "token": token}
+            if row["status"] != CLAIM_STATUS_RESERVED:
+                return {"lane": lane, "committed": False, "reason": row["status"], "token": token}
+            connection.execute(
+                "UPDATE tasks SET status = ?, updated_at = ?, delivered_at = ? WHERE id = ?",
+                (CLAIM_STATUS_LIVE, now, now, task_id),
+            )
+            return {"lane": lane, "committed": True, "reason": None, "token": token}
+
     def release_lane_claim(self, lane, *, token):
         """Undo a `claim_lane` this same caller made, and ONLY that claim.
 
@@ -1164,13 +1247,31 @@ class Ledger:
         outstanding), so by the time that has happened this DELETE matches
         no row and is a safe no-op -- the caller does not need to know
         which case it is in before calling this.
+
+        agent-dotfiles#209 round 2: that `status` scope is now load-bearing in
+        a second way, and it is not incidental. `CLAIM_STATUS_RESERVED` means
+        nothing has been sent into the pane; once `commit_lane_claim` has
+        moved the row to `CLAIM_STATUS_LIVE` this DELETE deliberately matches
+        nothing, because a brief is live behind that claim and freeing it
+        would hand a working lane to the next dispatcher. The dispatcher's
+        trap calls this unconditionally on every exit including a signal, so
+        this scope -- not the caller's own bookkeeping -- is what makes that
+        safe.
         """
         task_id = f"{CLAIM_TASK_PREFIX}{lane}:{token}"
         with self._locked(), self._transaction() as connection:
-            connection.execute(
-                "DELETE FROM tasks WHERE id = ? AND lane = ? AND status = 'created'",
-                (task_id, lane),
+            cursor = connection.execute(
+                "DELETE FROM tasks WHERE id = ? AND lane = ? AND status = ?",
+                (task_id, lane, CLAIM_STATUS_RESERVED),
             )
+            # Returns whether a row actually went away, so a CALLER can report
+            # what happened instead of what it attempted. `dispatch.sh`'s trap
+            # ignores it -- every no-op case there is expected -- but the
+            # refusal text points an OPERATOR at this command, and a CLI that
+            # printed `released: true` after matching nothing would tell them
+            # a lane was freed when it was not. That is the message/state
+            # mismatch #145, #170 and #188 were each filed over.
+            return cursor.rowcount > 0
 
     def reap_stale_lane_claims(self, *, host=None, is_alive=None):
         """Delete `claim_lane` placeholders whose owning process is provably gone.
@@ -1203,9 +1304,21 @@ class Ledger:
         * Only rows whose owner pid is provably gone -- see `pid_is_alive`,
           which resolves every ambiguity as "alive". A recycled pid means a
           claim is not reaped; it never means a live one is.
+        * Only rows still in `CLAIM_STATUS_RESERVED` (agent-dotfiles#209 round
+          2). This is the constraint a liveness rule cannot supply on its own:
+          a SIGKILLed dispatcher's pid is provably gone whether it died before
+          sending anything or a microsecond after its brief went live in the
+          pane, and in the second case this placeholder is the ONLY record
+          that the lane is occupied, because `record_dispatch` never ran. Both
+          looked identical -- `created`, dead owner -- so the reap cleared
+          both, and the next dispatcher typed a whole second brief into a pane
+          that was already working. `commit_lane_claim` writes the fact that
+          tells them apart, before the send rather than after it, and a LIVE
+          claim is left for the documented manual path instead.
 
         That is the one-way ratchet of #124/#126 held: this can make a lane
-        available only by clearing a claim whose owner no longer exists.
+        available only by clearing a claim whose owner no longer exists AND
+        which never got as far as putting a brief in front of a worker.
 
         DELETEs rather than cancels, for `release_lane_claim`'s reason: the
         row was a reservation, never a dispatch, and the abort cases in
@@ -1217,8 +1330,8 @@ class Ledger:
         reaped = []
         with self._locked(), self._transaction() as connection:
             rows = connection.execute(
-                "SELECT * FROM tasks WHERE status = 'created' AND id LIKE ? ORDER BY id",
-                (f"{CLAIM_TASK_PREFIX}%",),
+                "SELECT * FROM tasks WHERE status = ? AND id LIKE ? ORDER BY id",
+                (CLAIM_STATUS_RESERVED, f"{CLAIM_TASK_PREFIX}%"),
             ).fetchall()
             for row in rows:
                 match = CLAIM_OWNER_RE.search(row["summary"] or "")

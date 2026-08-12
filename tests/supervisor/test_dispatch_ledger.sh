@@ -219,6 +219,16 @@ mutated = '''  # MUTATED: reproduces the pre-#174 bug -- trust the window name o
     break
   fi'''
 text = text.replace(marker, mutated, 1)
+# agent-dotfiles#209 round 2 adds a THIRD guard on the same path, for the same
+# reason the claim had to be skipped above: step 4.5 refuses to send unless it
+# can mark THIS dispatch's claim live, and a mutant that never claimed has
+# none to mark. Left in, the fallback copy aborts at the commit instead of
+# dispatching to an occupied lane, and this case would report the pre-#174 bug
+# as closed by a guard that has nothing to do with reading the ledger.
+commit_guard = 'if ! grep -qF \'"committed":true\' <<<"$COMMIT_OUT"; then'
+assert commit_guard in text, "commit guard not found -- script shape changed"
+assert text.count(commit_guard) == 1, "commit guard not unique -- script shape changed"
+text = text.replace(commit_guard, 'if false; then  # MUTATED: step 4.5 commit guard bypassed', 1)
 here = 'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
 assert text.count(here) == 1, "HERE assignment not found or not unique -- script shape changed"
 text = text.replace(here, 'HERE=%r' % os.path.dirname(os.path.abspath(src)), 1)

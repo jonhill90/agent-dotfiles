@@ -204,16 +204,24 @@ CLAIM_TOKEN="$WINDOW_NAME"
 #
 # CLAIM_LANE: nothing has been claimed yet, so there is nothing to release.
 #
-# CLAIM_COMMITTED: the brief is LIVE in a real pane and this dispatch is no
-# longer unwindable. Past that point releasing the claim would free a lane
-# that is actively working -- #102/#126's failure, caused by the cleanup
-# rather than prevented by it. It matters because of the trap below, which
-# fires on the SUCCESS path too: on a clean dispatch `record_dispatch`'s own
-# `_register_lane_tx` has already cancelled this placeholder, so the release
-# would be a harmless no-op -- but when `record_dispatch` FAILS (non-fatal by
-# design, step 6) the placeholder is still `created` and still the only thing
-# holding the lane, and deleting it would hand a working lane to the next
-# dispatcher. The flag is what makes the trap safe to install unconditionally.
+# CLAIM_COMMITTED: step 4.5 has marked the claim LIVE and the brief is going
+# into a real pane, so this dispatch is no longer unwindable. Past that point
+# releasing the claim would free a lane that is actively working --
+# #102/#126's failure, caused by the cleanup rather than prevented by it. It
+# matters because of the trap below, which fires on the SUCCESS path too: on a
+# clean dispatch `record_dispatch`'s own `_register_lane_tx` has already
+# cancelled this placeholder, so the release would be a harmless no-op -- but
+# when `record_dispatch` FAILS (non-fatal by design, step 6) the placeholder is
+# still the only thing holding the lane, and deleting it would hand a working
+# lane to the next dispatcher.
+#
+# THIS FLAG IS A FAST PATH, NOT THE GUARANTEE (agent-dotfiles#209 round 2).
+# Round 1 had only this flag, set ~70 lines after the brief was submitted, and
+# a signal landing in between freed a working lane. The durable half is now
+# step 4.5's `commit-lane-claim`, which moves the row to a status
+# `release-lane-claim` is scoped away from -- so even a signal arriving
+# between that ledger write and the assignment of this variable is safe, and
+# so is a SIGKILL that never lets this shell run anything again.
 release_lane_claim() {
   [ -n "${CLAIM_LANE:-}" ] || return 0
   [ -z "${CLAIM_COMMITTED:-}" ] || return 0
@@ -237,6 +245,13 @@ release_lane_claim() {
 # trap does not cover them and does not claim to; step 0.5's reap is what
 # covers what the trap cannot, and the two together are the whole of #209's
 # cleanup. Neither alone is sufficient.
+#
+# And neither is allowed past step 4.5 (agent-dotfiles#209 round 2). A SIGKILL
+# AFTER the brief goes live leaves a claim the reap deliberately will not
+# clear, so that one case ends at the documented manual recovery rather than
+# at an automatic cleanup -- because the alternative is handing the next
+# dispatcher a lane with a worker in it, and that is the loss this whole
+# subsystem exists to prevent.
 #
 # release_lane_claim is idempotent (a scoped DELETE that matches no row the
 # second time), so the TERM/INT handlers re-entering it via EXIT is a no-op.
@@ -315,12 +330,23 @@ if [ -z "$LANE" ]; then
   # a claim whose owner pid is still alive (or has been recycled), a claim
   # written on a different host, or a `ledger-hold:` row from a failed
   # `record_dispatch` (#188) that is waiting on a human by design.
+  #
+  # agent-dotfiles#209 round 2 adds a FOURTH case that must be named here,
+  # because it is the one the fail-closed reordering deliberately creates and
+  # `release-lane-claim` deliberately will not clear: a claim marked live
+  # (status `delivered`) whose dispatcher then died or aborted. Telling an
+  # operator to run a command that silently matches no row would be worse than
+  # printing nothing, so the status is what selects the command.
   echo "dispatch: if this is wrong and a lane is held by a claim nobody owns:" >&2
   echo "dispatch:   1. $LEDGER_PYTHON $LEDGER_CLI status   # look for '\"id\":\"ledger-claim:<lane>:<token>\"' -- the id IS the lane and token" >&2
   echo "dispatch:   2. $LEDGER_PYTHON $LEDGER_CLI release-lane-claim --lane <lane> --token <token>" >&2
+  echo "dispatch: that clears a claim still at status 'created' -- one that never sent anything." >&2
+  echo "dispatch: a claim at status 'delivered' is a claim with a live brief behind it: its dispatcher got as far as submitting" >&2
+  echo "dispatch: into the pane, so release-lane-claim will NOT touch it (that is the guard, not a bug). If the pane really is idle:" >&2
+  echo "dispatch:   $LEDGER_PYTHON $LEDGER_CLI cancel-open-task --lane <lane>" >&2
   echo "dispatch: a lane held by a 'ledger-hold:' row instead is a failed ledger record awaiting reconciliation, not a stranded claim --" >&2
-  echo "dispatch: clear that one with: $LEDGER_PYTHON $LEDGER_CLI cancel-open-task --lane <lane>   (frees whatever outstanding task owns the lane)" >&2
-  echo "dispatch: CHECK THE PANE FIRST. Both commands make the lane dispatchable again; on a lane that is actually working, that is #102." >&2
+  echo "dispatch: clear that one with the same cancel-open-task --lane <lane>   (frees whatever outstanding task owns the lane)" >&2
+  echo "dispatch: CHECK THE PANE FIRST. All of these make the lane dispatchable again; on a lane that is actually working, that is #102." >&2
   "$HERE/lanes.sh" "$SESSION" >&2
   exit 1
 fi
@@ -408,6 +434,18 @@ abort_send() {
   "$HERE/worktree.sh" done "$WORKTREE" >/dev/null 2>&1
   release_claim
   release_lane_claim
+  # agent-dotfiles#209 round 2. Past step 4.5 the lane claim is LIVE and
+  # `release_lane_claim` above is a deliberate no-op, so this abort leaves the
+  # lane held while releasing the issue and the worktree. That is the
+  # fail-closed side of moving the commit point to the send, and an operator
+  # must not have to infer it from a silent absence -- an abort that says
+  # "NOT dispatched" while a lane stays occupied is exactly the kind of
+  # mismatch between message and state this estate keeps filing bugs about.
+  if [ -n "${CLAIM_COMMITTED:-}" ]; then
+    echo "dispatch: $LANE STAYS HELD -- the brief may have gone live in it, and a lane wrongly freed is not recoverable." >&2
+    echo "dispatch: CHECK THE PANE. If nothing is running there, free it with:" >&2
+    echo "dispatch:   $LEDGER_PYTHON $LEDGER_CLI cancel-open-task --lane $LANE" >&2
+  fi
   exit 1
 }
 
@@ -533,6 +571,52 @@ done
 
 [ "$sent" = 1 ] || abort_send "the brief did not land intact in $LANE -- #$ISSUE_ARG was NOT dispatched (check the pane by hand)"
 
+# --- 4.5 THE POINT OF NO RETURN, AND IT IS THE SEND -----------------------
+# agent-dotfiles#209 round 2. `CLAIM_COMMITTED` used to be set ~70 lines below
+# this, after step 5's confirmation loop -- and step 5 costs up to
+# DISPATCH_CONFIRM_TRIES x DISPATCH_SETTLE (10s by default) of wall clock. So
+# for that whole window the lane was renamed and the brief was ABOUT to be
+# live, while both cleanup paths still believed the dispatch was unwindable. A
+# SIGTERM landing there ran the trap and deleted the claim, and
+# `lane_available` answered True for a lane that was actively working -- #102's
+# shape produced BY the cleanup, which step 6's own comment below says in its
+# own words must not happen. Reproduced against the stubs, both directions, in
+# tests/supervisor/test_dispatch.sh.
+#
+# So the commit happens HERE, before the Enter rather than after the
+# confirmation, because "the brief is live" starts at the submit and not at
+# the moment the bookkeeping finishes noticing.
+#
+# IT IS WRITTEN TO THE LEDGER, not just to this shell. `CLAIM_COMMITTED` below
+# is only a fast path for the trap; it dies with this process, and the SIGKILL
+# case is exactly the one where this process stops existing while the pane
+# keeps working. `commit-lane-claim` moves the placeholder to a status both
+# `release_lane_claim` and `reap-lane-claims` refuse to touch, so the
+# protection survives a kill that no shell can trap. That ordering also means
+# a signal arriving BETWEEN the ledger write and the assignment below is
+# already safe: the trap's release matches no row.
+#
+# WHAT THE REORDERING COSTS, stated rather than discovered later. From here
+# every failure leaves the lane HELD -- including a send that fails outright,
+# and step 5 concluding the brief never left the input box. Those used to free
+# the lane. That is deliberate and it is the fail-closed direction: a lane
+# wrongly held costs capacity and is recovered by the documented command the
+# "no free lane" refusal prints; a lane wrongly freed costs a running lane's
+# work and is recovered by nothing. `lanes.sh` still shows such a lane
+# `unsent`, so the cost is visible rather than silent.
+#
+# FATAL IF IT FAILS, and that is the same argument pointing the other way:
+# nothing has gone into the pane yet, so refusing is still free, and sending a
+# brief we could not first mark as live would leave the exact window this
+# block exists to close.
+COMMIT_OUT=$("$LEDGER_PYTHON" "$LEDGER_CLI" commit-lane-claim --lane "$LANE" --token "$CLAIM_TOKEN" 2>&1) \
+  || COMMIT_OUT="${COMMIT_OUT:-commit-lane-claim failed to run}"
+if ! grep -qF '"committed":true' <<<"$COMMIT_OUT"; then
+  sed 's/^/  /' <<<"$COMMIT_OUT" >&2
+  abort_send "could not mark $LANE's claim live before sending -- #$ISSUE_ARG was NOT dispatched (nothing was submitted)"
+fi
+CLAIM_COMMITTED=1
+
 tmux send-keys -t "$LANE" Enter 2>/dev/null \
   || abort_send "could not submit the brief in $LANE -- #$ISSUE_ARG was not dispatched"
 
@@ -590,19 +674,18 @@ if [ -z "$submitted" ]; then
   echo "dispatch: #$ISSUE_ARG is claimed and the worktree exists; CHECK THE PANE BY HAND." >&2
 fi
 
-# THE DISPATCH IS NOW COMMITTED, and this line is what makes the trap safe.
-# Every path that reaches here has a brief live in a real pane -- either
-# confirmed submitted, or unconfirmable and therefore not unwindable (the
-# WARNING branch above says exactly that: unwinding would strand a worker that
-# may well be working). From here on the lane claim must SURVIVE this
-# process's exit: on a clean run step 6 supersedes it, and when step 6 fails
-# the placeholder is the only thing keeping a working lane out of the next
-# dispatcher's hands. Releasing it here would be #102 caused by the cleanup.
-#
-# It must sit ABOVE step 6 for that second case: a `record_dispatch` failure
-# is non-fatal by design and falls straight through to the exit below, where
-# the EXIT trap runs.
-CLAIM_COMMITTED=1
+# The dispatch was committed at step 4.5, not here. This comment used to
+# introduce a `CLAIM_COMMITTED=1` on this line, and that placement was
+# agent-dotfiles#209's blocking defect: everything it says about a brief being
+# live in a real pane was already true ~70 lines and up to
+# DISPATCH_CONFIRM_TRIES x DISPATCH_SETTLE earlier, at the `send-keys Enter`
+# above. The reasoning was right and the position was wrong, so the position
+# moved; do not move it back. What that reasoning still buys, unchanged, is
+# the case below: a `record_dispatch` FAILURE is non-fatal by design and falls
+# straight through to the exit, where the EXIT trap runs -- and the claim
+# placeholder is then the only thing keeping a working lane out of the next
+# dispatcher's hands. Step 4.5's ledger commit is what makes both the trap and
+# the reap leave it alone.
 
 # --- 6. record what was dispatched. BEST EFFORT, NEVER FATAL --------------
 #

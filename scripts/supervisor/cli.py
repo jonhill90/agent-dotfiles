@@ -137,6 +137,16 @@ def parser():
     # matches what `reap-lane-claims` compares against on the way back out.
     claim_lane_parser.add_argument("--owner-pid", type=int, default=None)
 
+    # agent-dotfiles#209 round 2: the point of no return, called by
+    # `dispatch.sh` immediately before the `send-keys Enter` that submits the
+    # brief. See `Ledger.commit_lane_claim` for why this is a ledger fact
+    # written BEFORE the send rather than a flag in the dispatcher set after
+    # it. No `--owner-pid`: this does not change who owns the claim, only
+    # whether a cleanup path is still allowed to free it.
+    commit_lane_claim_parser = sub.add_parser("commit-lane-claim")
+    commit_lane_claim_parser.add_argument("--lane", required=True)
+    commit_lane_claim_parser.add_argument("--token", required=True)
+
     release_lane_claim_parser = sub.add_parser("release-lane-claim")
     release_lane_claim_parser.add_argument("--lane", required=True)
     release_lane_claim_parser.add_argument("--token", required=True)
@@ -440,9 +450,19 @@ def main(argv=None):
     elif args.command == "claim-lane":
         owner = None if args.owner_pid is None else claim_owner_token(args.owner_pid)
         value = ledger.claim_lane(args.lane, token=args.token, owner=owner)
+    elif args.command == "commit-lane-claim":
+        value = ledger.commit_lane_claim(args.lane, token=args.token)
     elif args.command == "release-lane-claim":
-        ledger.release_lane_claim(args.lane, token=args.token)
-        value = {"lane": args.lane, "token": args.token, "released": True}
+        # `released` reports whether a row actually went away, not whether the
+        # command ran (agent-dotfiles#209 round 2). It is `false` for a claim
+        # that never existed AND for one already marked live by
+        # `commit-lane-claim`, which this deliberately will not free -- and an
+        # operator following the refusal's recovery steps has to be able to
+        # see that from the output rather than by re-reading `status`.
+        released = ledger.release_lane_claim(args.lane, token=args.token)
+        value = {"lane": args.lane, "token": args.token, "released": released}
+        if not released:
+            value["hint"] = "no reserved claim matched; a claim with a live brief behind it needs cancel-open-task"
     elif args.command == "reap-lane-claims":
         reaped = ledger.reap_stale_lane_claims()
         value = {"reaped": reaped, "count": len(reaped)}

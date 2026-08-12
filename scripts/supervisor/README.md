@@ -325,9 +325,6 @@ prevent it. Two mechanisms cover it, and neither is sufficient alone:
 - **A trap**, on `EXIT`/`TERM`/`INT`, releasing the claim on every exit the
   shell can observe — the same guard `advance-live.sh`, `would-revert.sh`,
   `watchdog.sh` and `inbox-poll.sh` already put on their own held resources.
-  It stops being armed the moment the brief is live in a pane: past that
-  point the dispatch is not unwindable and releasing would hand a working
-  lane to the next dispatcher.
 - **A reap**, run by `dispatch.sh` itself before it picks a lane
   (`cli.py reap-lane-claims`), covering what no shell can trap: SIGKILL, an
   OOM kill, a host crash. It is **not a TTL**. A TTL short enough to be
@@ -339,15 +336,43 @@ prevent it. Two mechanisms cover it, and neither is sufficient alone:
   this can only ever clear a claim nobody owns, never grant a lane
   (agent-dotfiles#124/#126's one-way ratchet).
 
-If a lane is still held after that, `dispatch.sh`'s `no free lane` refusal
-names the two manual recoveries rather than leaving them to be reconstructed:
-`cli.py release-lane-claim --lane <lane> --token <token>` for a specific claim
-(both parts are readable straight out of `cli.py status`, whose task id is
-`ledger-claim:<lane>:<token>`), and `cli.py cancel-open-task --lane <lane>`
-for whatever else holds it — including a `ledger-hold:` row from a failed
-`record-dispatch` (agent-dotfiles#188), which the automatic reap deliberately
-will not touch because it is a deliberate hold against a live pane. Check the
-pane before running either: both make the lane dispatchable again.
+**Both stop at the same line, and the line is the send.** A claim is
+`created` while it is only a reservation, and `cli.py commit-lane-claim` moves
+it to `delivered` — which `dispatch.sh` calls immediately *before* the
+`send-keys Enter` that submits the brief. Neither the trap nor the reap will
+touch a claim past that point, because from the instant a brief is in front of
+a worker, freeing the lane is agent-dotfiles#102 caused by the cleanup rather
+than prevented by it. It is a ledger fact rather than a flag in the dispatcher
+precisely because the SIGKILL case is one where the dispatcher stops existing:
+at that moment the placeholder is the only record the lane is occupied at all,
+since `record-dispatch` has not run yet. A dead owner does not distinguish
+"claim taken, nothing sent" from "claim taken, brief live in the pane"; this
+status does.
+
+That ordering is deliberately fail-closed and it has a price. Every failure
+after the commit — a send that errors, or the agent-dotfiles#141 confirmation
+concluding the brief never left the input box — now leaves the lane **held**
+where it used to be freed. A lane wrongly held costs capacity and is recovered
+by one command; a lane wrongly freed costs a running lane's work and is
+recovered by nothing. The abort says so and prints the command, and `lanes.sh`
+still reports such a lane `unsent`.
+
+If a lane is still held after all that, `dispatch.sh`'s `no free lane` refusal
+names the manual recoveries rather than leaving them to be reconstructed, and
+**which one applies depends on the claim's status**, readable straight out of
+`cli.py status` (whose task id is `ledger-claim:<lane>:<token>`):
+
+- `created` — a reservation that never sent anything. Clear it with
+  `cli.py release-lane-claim --lane <lane> --token <token>`.
+- `delivered` — a claim with a live brief behind it. `release-lane-claim`
+  deliberately will not touch this one; that is the guard working. If the pane
+  really is idle, `cli.py cancel-open-task --lane <lane>`.
+- a `ledger-hold:` row instead of a claim — a failed `record-dispatch`
+  (agent-dotfiles#188) awaiting reconciliation, which the automatic reap also
+  deliberately will not touch. Same `cancel-open-task --lane <lane>`.
+
+Check the pane before running any of them: all of them make the lane
+dispatchable again.
 
 It exists because `worktree.sh` shipped (#79) with no automated caller
 (agent-dotfiles#81): `grep -rn worktree.sh` found three code fences in

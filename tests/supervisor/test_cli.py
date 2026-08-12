@@ -580,6 +580,63 @@ class StrandedClaimRecoveryIsReachable(unittest.TestCase):
             self.assertEqual(0, json.loads(proc.stdout)["count"])
             self.assertFalse(ledger.lane_available("free-9"))
 
+    def test_commit_lane_claim_is_runnable_and_puts_the_claim_out_of_reap_range(self):
+        """agent-dotfiles#209 round 2. `dispatch.sh` calls this immediately
+        before the `send-keys Enter` that submits the brief, so from the CLI's
+        side the contract is: after it returns committed, a reap that finds
+        the owner provably dead must still leave the lane held."""
+        with tempfile.TemporaryDirectory() as root:
+            ledger = self._lane(root)
+            dead = subprocess.Popen([sys.executable, "-c", "pass"])
+            dead.wait()
+            self.assertEqual(0, self._run(
+                root, "claim-lane", "--lane", "free-9", "--token", "ad1-x", "--owner-pid", str(dead.pid),
+            ).returncode)
+
+            proc = self._run(root, "commit-lane-claim", "--lane", "free-9", "--token", "ad1-x")
+            self.assertEqual(0, proc.returncode, proc.stderr)
+            self.assertTrue(json.loads(proc.stdout)["committed"])
+
+            reap = self._run(root, "reap-lane-claims")
+            self.assertEqual(0, reap.returncode, reap.stderr)
+            self.assertEqual(0, json.loads(reap.stdout)["count"])
+            self.assertFalse(ledger.lane_available("free-9"))
+
+            # ...and the scoped release the trap uses will not free it either,
+            # and says so: an operator following the refusal's recovery steps
+            # must not read `released: true` off a command that freed nothing.
+            rel = self._run(root, "release-lane-claim", "--lane", "free-9", "--token", "ad1-x")
+            self.assertEqual(0, rel.returncode, rel.stderr)
+            self.assertFalse(json.loads(rel.stdout)["released"])
+            self.assertIn("cancel-open-task", json.loads(rel.stdout)["hint"])
+            self.assertFalse(Ledger(Path(root)).lane_available("free-9"))
+
+    def test_release_lane_claim_reports_true_only_when_it_freed_something(self):
+        """The control: the same command on a claim that is still only a
+        reservation reports the release it actually performed."""
+        with tempfile.TemporaryDirectory() as root:
+            ledger = self._lane(root)
+            self.assertEqual(0, self._run(
+                root, "claim-lane", "--lane", "free-9", "--token", "ad1-x", "--owner-pid", "4242",
+            ).returncode)
+            rel = self._run(root, "release-lane-claim", "--lane", "free-9", "--token", "ad1-x")
+            self.assertEqual(0, rel.returncode, rel.stderr)
+            self.assertTrue(json.loads(rel.stdout)["released"])
+            self.assertTrue(ledger.lane_available("free-9"))
+
+    def test_commit_lane_claim_refuses_a_claim_that_was_never_made(self):
+        """`dispatch.sh` treats a non-committed result as fatal and does not
+        send, so this refusal has to be visible in the exit-0 JSON rather than
+        implied by an absence."""
+        with tempfile.TemporaryDirectory() as root:
+            self._lane(root)
+            proc = self._run(root, "commit-lane-claim", "--lane", "free-9", "--token", "never-claimed")
+            self.assertEqual(0, proc.returncode, proc.stderr)
+            value = json.loads(proc.stdout)
+            self.assertFalse(value["committed"])
+            self.assertEqual("missing", value["reason"])
+            self.assertTrue(Ledger(Path(root)).lane_available("free-9"))
+
     def test_cancel_open_task_is_the_operators_hammer_and_is_runnable(self):
         """The manual half of the recovery `dispatch.sh`'s refusal now names:
         it clears whatever outstanding task holds the lane, including a
