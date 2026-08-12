@@ -82,7 +82,21 @@ POSITIONAL=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --reviews-pr)
-      REVIEWS_PR="${2:-}"
+      # A `--reviews-pr` with no value after it (flag last, value forgotten)
+      # must refuse rather than hang: `shift 2` with only 1 arg left ($#=1)
+      # fails under `set -uo pipefail` (no `set -e` here), and a `case` loop
+      # that never shifts on a failed shift spins at ~100% CPU forever --
+      # indistinguishable from outside from a lane still working. Refusing
+      # loudly here is also why this is a dedicated check rather than
+      # `shift 2 || shift`: silently falling back to `shift 1` would make the
+      # flag consume the next positional argument (e.g. the brief path) as
+      # its value instead, which is its own defect, not a fix for this one.
+      if [ $# -lt 2 ]; then
+        echo "dispatch: --reviews-pr requires a PR number" >&2
+        sed -n '/^# Usage:/,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+        exit 1
+      fi
+      REVIEWS_PR="$2"
       shift 2
       ;;
     *)
@@ -91,7 +105,16 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
-set -- "${POSITIONAL[@]}"
+# bash 3.2 (macOS's real /bin/bash, no associative arrays -- see #213's
+# `declare -A` removal in this same file) treats "${arr[@]}" on an EMPTY
+# array as an unbound-variable error under `set -u`, even though modern bash
+# treats it as zero words. POSITIONAL is empty on dispatch.sh's own
+# zero-argument path (the usage-error branch just below), which every
+# invocation with a typo hits, so the 3.2-safe idiom is required here, not
+# optional: "${arr[@]+"${arr[@]}"}" expands to nothing when the array is
+# empty (the `+` alternate-value test never triggers) and to the array's
+# words otherwise.
+set -- "${POSITIONAL[@]+"${POSITIONAL[@]}"}"
 
 ISSUE_ARG="${1:-}"
 SLUG="${2:-}"
@@ -230,7 +253,11 @@ AUTHOR_TASK=""
 if [ -n "$REVIEWS_PR" ]; then
   GH_REPO_ARGS=()
   [ -n "$REPO" ] && GH_REPO_ARGS=(-R "$REPO")
-  PR_JSON=$(gh pr view "$REVIEWS_PR" "${GH_REPO_ARGS[@]}" --json headRefName 2>&1)
+  # Same bash 3.2 empty-array hazard as POSITIONAL above: [repo] is
+  # documented as optional on this exact flag (`--reviews-pr` with [repo]
+  # omitted), so GH_REPO_ARGS is empty on that path and "${GH_REPO_ARGS[@]}"
+  # alone would abort under 3.2 before `gh` ever runs.
+  PR_JSON=$(gh pr view "$REVIEWS_PR" "${GH_REPO_ARGS[@]+"${GH_REPO_ARGS[@]}"}" --json headRefName 2>&1)
   if [ $? -ne 0 ]; then
     echo "dispatch: cannot read PR #$REVIEWS_PR -- refusing to dispatch its review (authorship unknown, failing closed)" >&2
     sed 's/^/  /' <<<"$PR_JSON" >&2
