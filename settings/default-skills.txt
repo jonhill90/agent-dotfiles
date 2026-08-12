@@ -11,3 +11,24 @@ safe-deletion
 sanity-check
 supervised-lane-loop
 tmux
+
+# Authored (jonhill90/skills) but deliberately withheld from every
+# harness's roster, each with a stated reason (agent-dotfiles#181). Ship
+# public opt-in per SPEC §10.1 rule 5: nothing joins the roster on
+# evidence credit until it clears failed x2 baseline, passed x3 with the
+# model pinned, and a counter-scenario at x2. The 2026-08-11 cost-gate
+# exception (PR #43, issue #45) named five specific, already-existing
+# skills — it is not a standing policy, and none of the eleven below was
+# named in it.
+[benched]
+ask-a-council          # authored in jonhill90/skills#147, which does not discuss rostering; no §10.1 rule 5 evidence bar run
+distill                # jonhill90/skills#136: "a new skill still earns its roster slot rather than arriving with one"
+keep-me-honest         # jonhill90/skills#129: rostering "is a separate step ... governed by the §10.1 evidence bar"
+loop-contract          # jonhill90/skills#133: "Do not roster it on arrival"; §10.1 rule 5 unmet
+loop-memory            # jonhill90/skills#134: "Ship public opt-in; §10.1 rule 5 forbids rostering on arrival"
+mine-transcripts       # jonhill90/skills#137: user-invoked periodic review tool, ship public opt-in
+notify                 # jonhill90/skills#146: user-invoked only per its own description; no evidence bar run
+prd                    # jonhill90/skills#129: rostering deferred to the §10.1 evidence bar
+spec                   # jonhill90/skills#129: rostering deferred to the §10.1 evidence bar
+tdd                    # jonhill90/skills#129: rostering deferred to the §10.1 evidence bar
+verify-the-instrument  # jonhill90/skills#135: "Ship public opt-in; §10.1 rule 5 forbids rostering on arrival"

@@ -813,3 +813,163 @@ class RealApmYmlShapeTests(unittest.TestCase):
         for dep in deps:
             self.assertRegex(dep["ref"], r"^[0-9a-fA-F]{40}$")
         self.assertEqual(validator.validate_skill_source_pins(repo_root), [])
+
+
+class SkillBenchTests(unittest.TestCase):
+    """agent-dotfiles#181 — a benched skill is a stated decision, not an
+    absence, and the estate must be able to tell "withheld" apart from
+    "authored and forgotten"."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def write_roster(self, text: str) -> Path:
+        settings = self.root / "settings"
+        settings.mkdir(parents=True, exist_ok=True)
+        path = settings / "default-skills.txt"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def make_skill_dir(self, name: str) -> None:
+        skill = self.root / "skills" / name
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: d\n---\n\n# {name}\n",
+            encoding="utf-8",
+        )
+
+    def test_orphaned_skill_is_reported(self) -> None:
+        # Test 1: present in skills/, absent from both roster and bench.
+        skills = sorted(validator.DEFAULT_APM_SKILLS)
+        self.write_roster("\n".join(skills) + "\n")
+        self.make_skill_dir("orphan-skill")
+        for name in skills:
+            self.make_skill_dir(name)
+        findings = validator.validate_skill_roster_delta(self.root)
+        self.assertTrue(
+            any("orphan-skill" in f.message for f in findings),
+            f"orphaned skill not reported: {findings}",
+        )
+
+    def test_missing_skills_dir_warns_instead_of_silent(self) -> None:
+        # PR #185 review, blocking finding: no local skills/ (the normal
+        # state of this repo since #9) must produce a warning Finding, not
+        # a silent []  indistinguishable from "checked, found no orphans".
+        skills = sorted(validator.DEFAULT_APM_SKILLS)
+        self.write_roster("\n".join(skills) + "\n")
+        findings = validator.validate_skill_roster_delta(self.root)
+        self.assertEqual(len(findings), 1, f"expected one warning: {findings}")
+        self.assertEqual(findings[0].level, "warning")
+        self.assertIn("orphan check cannot run", findings[0].message)
+
+    def test_benched_skill_is_not_reported(self) -> None:
+        # Test 2 (part 1): a benched skill with a reason is not flagged
+        # as orphaned.
+        skills = sorted(validator.DEFAULT_APM_SKILLS)
+        self.write_roster(
+            "\n".join(skills) + "\n\n[benched]\nbenched-skill  # reason here\n"
+        )
+        for name in skills:
+            self.make_skill_dir(name)
+        self.make_skill_dir("benched-skill")
+        findings = validator.validate_skill_roster_delta(self.root)
+        self.assertEqual(
+            findings, [], f"benched skill flagged as orphaned: {findings}"
+        )
+
+    def test_empty_bench_reason_fails(self) -> None:
+        # Test 2 (part 2): a bench entry without a reason is itself an error.
+        skills = sorted(validator.DEFAULT_APM_SKILLS)
+        self.write_roster(
+            "\n".join(skills) + "\n\n[benched]\nbenched-skill\n"
+        )
+        findings = validator.validate_skill_bench(self.root)
+        self.assertTrue(
+            any(
+                "benched-skill" in f.message and "no reason" in f.message
+                for f in findings
+            ),
+            f"empty bench reason not rejected: {findings}",
+        )
+
+    def test_benched_and_rostered_is_a_contradiction(self) -> None:
+        skills = sorted(validator.DEFAULT_APM_SKILLS)
+        name = skills[0]
+        self.write_roster(
+            "\n".join(skills) + f"\n\n[benched]\n{name}  # reason\n"
+        )
+        findings = validator.validate_skill_bench(self.root)
+        self.assertTrue(
+            any("both rostered and benched" in f.message for f in findings),
+            f"contradiction not reported: {findings}",
+        )
+
+    def test_benched_section_is_not_installed(self) -> None:
+        # A [benched] header must never behave like a harness section --
+        # roster_union() must not fold its members into the install set.
+        skills = sorted(validator.DEFAULT_APM_SKILLS)
+        self.write_roster(
+            "\n".join(skills) + "\n\n[benched]\nbenched-skill  # reason\n"
+        )
+        from sync import roster_union  # noqa: E402
+
+        self.assertNotIn("benched-skill", roster_union(self.root))
+
+    def test_benched_skills_are_not_in_default_apm_package(self) -> None:
+        # Test 3: existing roster validation is unchanged -- a benched
+        # skill must not be treated as part of the default package, and
+        # validate_apm_skill_roster must keep rejecting foreign names.
+        skills = sorted(validator.DEFAULT_APM_SKILLS)
+        self.write_roster(
+            "\n".join(skills) + "\n\n[benched]\nverify-the-instrument  # reason\n"
+        )
+        findings = [
+            f
+            for f in validator.validate_apm_skill_roster(self.root)
+            if f.level == "error"
+        ]
+        self.assertEqual(
+            findings, [], f"benched skill counted toward default package: {findings}"
+        )
+
+        self.write_roster(
+            "\n".join(sorted(validator.DEFAULT_APM_SKILLS | {"not-a-real-skill"}))
+        )
+        findings = validator.validate_apm_skill_roster(self.root)
+        self.assertTrue(
+            any(
+                "unexpected default-package skills: not-a-real-skill" in f.message
+                for f in findings
+            )
+        )
+
+    def test_the_eleven_are_each_rostered_or_benched(self) -> None:
+        # Test 4, against the real committed roster.
+        eleven = {
+            "ask-a-council",
+            "distill",
+            "keep-me-honest",
+            "loop-contract",
+            "loop-memory",
+            "mine-transcripts",
+            "notify",
+            "prd",
+            "spec",
+            "tdd",
+            "verify-the-instrument",
+        }
+        repo_root = Path(__file__).resolve().parents[1]
+        from sync import benched_skills, roster_union  # noqa: E402
+
+        accounted = set(roster_union(repo_root)) | set(benched_skills(repo_root))
+        missing = eleven - accounted
+        self.assertEqual(missing, set(), f"silently absent: {missing}")
+        for name in eleven & set(benched_skills(repo_root)):
+            self.assertTrue(
+                benched_skills(repo_root)[name],
+                f"{name} is benched with an empty reason",
+            )
