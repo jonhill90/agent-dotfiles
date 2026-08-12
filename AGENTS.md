@@ -255,23 +255,23 @@ the past, and reading it is nonetheless correct — it is tmux's value, not ours
 
 A window name may be a *projection* of a record. It may not be the record.
 
-**This describes the target state, not today's code.** As of 2026-08-11, the
-window name IS the record in all three places below, and #174 is Jon's decided
-direction for changing that — not a completed change. PR #183 implements it and
-is **open and held**, blocked by two independent REQUEST CHANGES reviews filed
-as #188: a failed ledger write can leave a working lane readable as `free`, and
-`lane-free` is a query, not a claim. Nothing here has merged. Do not assume one
-issue closes all three, and do not read PR #183 existing as PR #183 landing:
+**This is now partly true of the code, and #174 is Jon's decided direction for
+the rest.** Two of the three call sites below migrated in merged code on
+2026-08-11 (PR #183 as `27e6a67`, PR #200 as `860b5ae`); the third has not, and
+no issue is filed for it. Read each row against the code before relying on it —
+these rows were stale once, and this table lying about merged code is what #205
+exists to repair:
 
-| call site | what the name decides | status as of 2026-08-11 |
+| call site | what the name decides | status as of 2026-08-12 |
 |---|---|---|
-| `dispatch.sh:122` | availability (`^free-[0-9]+$`) | **unmigrated** — still the window-name gate; #174/PR #183 (open, held on #188) is the plan |
-| `lane-done.sh:92` | completion (the rename *is* the record) | **unmigrated** — the rename is still `\|\| exit 1`; PR #183, once it clears #188, adds a ledger write but by its own diff leaves the rename load-bearing rather than cosmetic, short of #174's own test 5 |
+| `dispatch.sh:176` → `cli.py:194` | availability (`^free-[0-9]+$`) | **migrated** (#174/PR #183, merged `27e6a67`) — the ledger answers for any lane it knows, whatever the window is called; the name is consulted only to backfill a lane the ledger has *never* seen, and never again after that |
+| `lane-done.sh:90-93`, `:115-118`, `:140` | completion (the rename *was* the record) | **migrated** (#194/PR #200, merged `860b5ae`) — the ledger release runs first and unconditionally, and the rename is no longer `\|\| exit 1` but a cosmetic projection. The name-match guard at `:90-93` remains, and is now the *only* gate between a fired `wait-for` channel and that release — covered by `test_lane_done.sh`'s name-mismatch section since #205 |
 | `claim.sh:141` | ownership (parses the issue number out of the name) | **unmigrated, unplanned** — outside #174's stated scope, no issue filed |
 
-`loop-tick.md` instructs the renaming behaviour (L483, L540) and **remains
-operative for all three today.** This paragraph updates as each call site
-actually migrates in merged code, and goes when the table is empty.
+`loop-tick.md` instructs the renaming behaviour (L490, L494) and **remains
+operative for all three today** — renaming did not stop, it stopped being the
+record for the two migrated rows. This paragraph updates as each call site
+actually migrates in merged code, and goes once every row reads migrated.
 
 Do not read this rule as licence to stop renaming windows.
 
