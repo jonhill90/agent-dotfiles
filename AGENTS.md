@@ -240,24 +240,40 @@ Jon, twice and emphatically: **"TMUX IS NOT A DATABASE."**
 tmux is for persistent terminals, multiplexing, and plugins. Those are the
 reasons it was chosen and they are not in question.
 
-**What must never be stored in it:** anything the system *decided* and needs to
-*remember* — whether a lane is available, who owns a task, that work completed.
-Those belong in the ledger.
+**The test is authorship.** Did *this system* write the value, or did tmux or the
+OS produce it as a byproduct?
 
-**What may be read from it:** observations about what a pane is doing right
-now — busy, blocked, scrolled, hung. Those are measurements, not records.
+- **We wrote it** → it is a **record**, and records belong in the ledger.
+  Whether a lane is available, who owns a task, that work completed.
+- **tmux or the kernel produced it** → it is a **measurement**, and measurements
+  may be read freely. `#{window_activity}`, `#{pane_in_mode}`, `#{pane_pid}`,
+  and the pane's own process via `ps`.
 
-The distinction is **decided-and-remembered versus observed-in-the-moment.**
+Authorship is the test rather than "decided versus observed" because that
+phrasing does not resolve `#{window_activity}`: tmux persists it, it describes
+the past, and reading it is nonetheless correct — it is tmux's value, not ours.
 
-This is written down because it was not a design decision, it accreted: window
-names started as labels for a human, a script needed the cheapest available
-signal for "is this lane idle", claims reused the same string, and completion
-became a rename. Five reasonable steps summing to something nobody would choose.
-It failed twice in one day (#102, and five idle lanes reading as zero because
-their names were stale) and it is why "no tmux on Windows" costs a state store as
-well as a terminal.
+A window name may be a *projection* of a record. It may not be the record.
 
-A window name may be a *projection* of state. It may not be the state. See #174.
+**This describes the target state, not today's code.** Right now the window name
+IS the record in three places — `dispatch.sh:122` gates dispatch on
+`^free-[0-9]+$`, `claim.sh:141` parses the issue number out of the name to decide
+whether a claim is live, and `lane-done.sh:92`'s rename *is* the completion
+record. `loop-tick.md` instructs that behaviour (L483, L540) and **remains
+operative until the migration lands**. #174 is that migration; when it does,
+`loop-tick.md` changes in the same breath and this paragraph goes.
+
+Do not read this rule as licence to stop renaming windows.
+
+**Why it is written down at all:** nobody chose this. Window names began as
+labels for a human, a script reached for the cheapest available "is this lane
+idle" signal, claims reused the string, and completion became a rename. Five
+locally-reasonable steps summing to something nobody would pick — which is why
+nobody defended it when it failed. #102 is that failure: dispatch capacity
+silently fell to zero while five lanes sat idle, and it was repaired by editing
+the "database" with `tmux rename-window`.
+
+It is also why "no tmux on Windows" costs a state store as well as a terminal.
 
 ## Guardrails
 
