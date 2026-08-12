@@ -23,8 +23,18 @@ dependencies:
     # "*" resolves against this pin. Now at jonhill90/skills main HEAD,
     # which carries all 24 skills including the eleven `default-skills.txt`
     # newly benches.
+    #
+    # Bumped 2026-08-12 (#220): the prior pin (b220b9e9) predated
+    # jonhill90/skills#166, which documents lanes.sh's eleven states in
+    # supervised-lane-loop/SKILL.md. With the stale pin,
+    # validate_lane_state_docs() (#196) read a copy with zero documented
+    # states and reported all eleven as undocumented -- drift that did not
+    # exist, caused by the pin lagging the manual it checks against. Now at
+    # jonhill90/skills main HEAD (resolved directly via
+    # `git ls-remote https://github.com/jonhill90/skills.git refs/heads/main`),
+    # which carries the documented state table.
     - git: https://github.com/jonhill90/skills.git
-      ref: b220b9e990b8de16e7dff8f898f2cad5dbe0ff61
+      ref: 882a707e51d5e1355e96e53badd557367956d63c
       skills: ["*"]
       alias: skills-public
     # Private companion collection (#9). Pinned the same way. Currently
