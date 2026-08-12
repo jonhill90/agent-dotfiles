@@ -1440,6 +1440,137 @@ else
   fi
 fi
 
+# --- agent-dotfiles#212: a review must not land on the lane that wrote it -
+#
+# WHY: on 2026-08-12 the review of #204 was dispatched to lane 4, the same
+# lane that had written the code under review (ad193/ad204), and its APPROVE
+# had to be thrown away and a second review dispatched. The fix is
+# `--reviews-pr`: the caller names which PR is under review, and dispatch.sh
+# resolves that PR's authoring task from the ledger -- never from a window
+# name -- and refuses to hand it back to its own author.
+#
+# Two free lanes this time (t:3 and t:4), so there is a genuine choice to
+# make: skipping the author must land on the OTHER free lane, not just fail.
+cat > "$D/lanes" <<'FIX'
+1|arch|claude.exe|❯ ready|1|0
+3|free-3|claude.exe|❯ ready|1|0
+4|free-4|claude.exe|❯ ready|1|0
+FIX
+printf '193|| the code PR #204 was written from\n' >> "$D/issues"
+printf '205|| review PR #204, first attempt\n' >> "$D/issues"
+printf '206|| review PR #204, second attempt\n' >> "$D/issues"
+# PR #204's branch names the authoring dispatch's slug -- see worktree.sh
+# new's `BRANCH="lane/$SLUG"`, called with dispatch.sh's own
+# `${ISSUE}-${SLUG}` -- which is the exact mapping step 0.5 verifies before
+# trusting it.
+printf '204|Fixes #193|lane/193-telegram-to-director\n' >> "$D/prs"
+
+out=$(LEDGER_STATE="$D/state-212" run 193 telegram-to-director "$D/brief.md" acme/agent-dotfiles "$REPO"); rc=$?
+want_exit "the authoring dispatch (#193) succeeds" "$rc" 0 "$out"
+log=$(tmuxlog)
+want_contains "and lands on the first free lane, t:3" "send-keys -t t:3" "$log"
+
+# The authoring lane finishes and goes idle again -- exactly what makes it
+# eligible for ordinary dispatch, and exactly the case #212 exists for: a
+# lane that is free right now can still be the wrong lane for THIS review.
+LEDGER_STATE="$D/state-212" ledger record-completion --task ad193-telegram-to-director --note done >/dev/null
+
+out=$(LEDGER_STATE="$D/state-212" run 205 rev-204 "$D/brief.md" acme/agent-dotfiles "$REPO" --reviews-pr 204); rc=$?
+want_exit "a review of PR #204 is still dispatched" "$rc" 0 "$out"
+want_contains "the author's lane is named and skipped" "skipping t:3" "$out"
+want_contains "the skip names the authoring task" "ad193-telegram-to-director" "$out"
+log=$(tmuxlog)
+want_contains "and the review lands on the OTHER free lane, t:4" "send-keys -t t:4" "$log"
+want_missing "never on the author's lane" "send-keys -t t:3 " "$log"
+
+# Now t:4 (from the review just dispatched) is the only thing standing
+# between t:3 (free, but the author) and a refusal -- leave it occupied and
+# confirm the SAME PR's review is refused outright when the author is the
+# only free lane, not silently sent anyway.
+out=$(LEDGER_STATE="$D/state-212" run 206 rev-204-again "$D/brief.md" acme/agent-dotfiles "$REPO" --reviews-pr 204); rc=$?
+want_exit "a review refused when the only free lane is the author" "$rc" 1 "$out"
+want_contains "names the PR" "PR #204" "$out"
+want_contains "names the authoring task, not just the lane" "ad193-telegram-to-director" "$out"
+if [ -z "$(assignees 206)" ]; then ok "the refused review takes no claim on its own issue"
+else bad "the refused review takes no claim on its own issue" "still assigned: $(assignees 206)"; fi
+
+# --- fails closed: authorship that cannot be determined refuses the WHOLE
+# dispatch, not just the candidate it could not clear -------------------
+cat > "$D/lanes" <<'FIX'
+1|arch|claude.exe|❯ ready|1|0
+3|free-3|claude.exe|❯ ready|1|0
+FIX
+printf '207|| review of a PR with no lane/ branch\n' >> "$D/issues"
+printf '299|Fixes #100|some-hand-pushed-branch\n' >> "$D/prs"
+out=$(LEDGER_STATE="$D/state-212-closed" run 207 rev-299 "$D/brief.md" acme/agent-dotfiles "$REPO" --reviews-pr 299); rc=$?
+want_exit "authorship that cannot be read from the branch refuses the dispatch" "$rc" 1 "$out"
+want_contains "and says why: not the lane/<issue>-<slug> convention" "not a lane/<issue>-<slug> branch" "$out"
+want_contains "and says authorship is unknown, not assumed safe" "authorship unknown" "$out"
+if [ -z "$(assignees 207)" ]; then ok "a fail-closed refusal takes no claim"
+else bad "a fail-closed refusal takes no claim" "still assigned: $(assignees 207)"; fi
+
+printf '208|| review of a PR from an untracked branch\n' >> "$D/issues"
+printf '300|Fixes #101|lane/101-never-dispatched\n' >> "$D/prs"
+out=$(LEDGER_STATE="$D/state-212-closed" run 208 rev-300 "$D/brief.md" acme/agent-dotfiles "$REPO" --reviews-pr 300); rc=$?
+want_exit "a branch the ledger has no task for also refuses, not assumes free" "$rc" 1 "$out"
+want_contains "and names the unresolvable task" "ad101-never-dispatched" "$out"
+
+# A dispatch that never says --reviews-pr is unaffected by any of the above
+# -- ordinary work is not held to the review rule.
+printf '209|| ordinary dispatch, not a review\n' >> "$D/issues"
+out=$(LEDGER_STATE="$D/state-212-closed" run 209 ordinary "$D/brief.md" acme/agent-dotfiles "$REPO"); rc=$?
+want_exit "a dispatch with no --reviews-pr is not held to the authorship check" "$rc" 0 "$out"
+
+# --- MUTATION-CHECK: remove the refusal and watch dispatch send a review
+# straight to its own author --------------------------------------------
+#
+# The load-bearing assertion this proves alive: "the author's lane is named
+# and skipped" above, and "the review lands on the OTHER free lane" -- if
+# the exclusion in the lane-selection loop is deleted, both go red because
+# dispatch sends the self-review to t:3 instead of refusing/rerouting it.
+MUTATED="$D/dispatch-no-author-guard.sh"
+patch_rc=0
+python3 - "$DISPATCH" "$MUTATED" <<'PY' || patch_rc=$?
+import os
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+text = open(src).read()
+marker = 'if [ -n "$AUTHOR_LANE" ] && [ "$candidate" = "$AUTHOR_LANE" ]; then'
+assert marker in text, "author-exclusion guard not found -- script shape changed"
+assert text.count(marker) == 1, "author-exclusion guard not unique -- script shape changed"
+text = text.replace(marker, "if false; then  # MUTATED: author-exclusion always skipped", 1)
+here = 'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
+assert text.count(here) == 1, "HERE assignment not found or not unique -- script shape changed"
+text = text.replace(here, 'HERE=%r' % os.path.dirname(os.path.abspath(src)), 1)
+open(dst, "w").write(text)
+PY
+if [ "$patch_rc" -ne 0 ]; then
+  bad "setup: patched a copy of dispatch.sh whose author-exclusion is disabled" \
+    "could not patch $DISPATCH (exit $patch_rc) -- treating as a failure, not a skip"
+else
+  ok "setup: patched a copy of dispatch.sh whose author-exclusion is disabled"
+  chmod +x "$MUTATED"
+  cat > "$D/lanes" <<'FIX'
+1|arch|claude.exe|❯ ready|1|0
+3|free-3|claude.exe|❯ ready|1|0
+4|free-4|claude.exe|❯ ready|1|0
+FIX
+  # A fresh issue number for this second authoring dispatch -- #193 is
+  # already claimed (permanently, on GitHub) by the earlier, unmutated run
+  # above, and reusing it here would confuse the claim on GH state left over
+  # from that case rather than exercise the mutation.
+  printf '194|| the code PR #220 was written from\n' >> "$D/issues"
+  printf '210|| review PR #220 against the mutated guard\n' >> "$D/issues"
+  LEDGER_STATE="$D/state-212-mutant" run 194 telegram-to-director-2 "$D/brief.md" acme/agent-dotfiles "$REPO" >/dev/null
+  LEDGER_STATE="$D/state-212-mutant" ledger record-completion --task ad194-telegram-to-director-2 --note done >/dev/null
+  printf '220|Fixes #194|lane/194-telegram-to-director-2\n' >> "$D/prs"
+  out=$(DISPATCH_SCRIPT="$MUTATED" LEDGER_STATE="$D/state-212-mutant" \
+        run 210 rev-220 "$D/brief.md" acme/agent-dotfiles "$REPO" --reviews-pr 220); rc=$?
+  want_exit "mutation confirmed: the unguarded copy dispatches a self-review" "$rc" 0 "$out"
+  log=$(tmuxlog)
+  want_contains "mutation confirmed: it lands on the author's own lane, t:3" "send-keys -t t:3" "$log"
+fi
+
 rm -rf "$D"
 
 
