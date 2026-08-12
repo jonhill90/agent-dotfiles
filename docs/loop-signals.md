@@ -25,7 +25,7 @@ Well covered, three ways:
 `ScheduleWakeup` at the end of each tick (`loop-tick.md:122`, "Never stop the
 loop"). *Observed, not authored by this codebase* — it is a harness runtime
 primitive; `sleepcheck.py` reads it back out of the live transcript
-(`decide_liveness`, `sleepcheck.py:41`) rather than trusting a cooperating
+(`decide_liveness`, `sleepcheck.py:47`) rather than trusting a cooperating
 writer, for the same reason completion is never inferred from echoed prompt
 text. **Status: works.** Verified 2026-08-11 against a real transcript
 showing 11 `ScheduleWakeup` calls and zero crashes while `watchdog.sh` kept
@@ -43,7 +43,13 @@ prompt when idle with actionable work (`watchdog.sh:566-576`). *Authored*:
 every tick's decision. **Status: works**, with one open gap of its own kind:
 nothing watches the watchdog to the same degree it watches the loop
 (`watchdog.sh:72-82`) — if the LaunchAgent itself stops firing, nothing
-pages anyone. That gap is named in code, not filed as a numbered issue.
+pages anyone. That gap **is** filed, as [#170](https://github.com/jonhill90/agent-dotfiles/issues/170)
+(closed 2026-08-12, "watchdog's 'what watches the watcher' comment
+overstates what is wired for its own staleness"): the fix that closed #170
+was correcting the comment to say so honestly, not wiring an observer, so
+the underlying gap this paragraph describes is still open — only its
+documentation changed. `watchdog.sh:72` itself now cites `#170` in the same
+sentence this document draws from.
 
 **Telegram inbound.** `inbox-poll.sh` long-polls Telegram
 (`inbox-poll.sh:1-40`) and routes every message to the Director via
@@ -79,7 +85,7 @@ error, no log line, nothing — the lane just never completes.
 
 **Pane-scraping (`lanes.sh`, inferred/observed).** `lanes.sh` classifies
 every lane by reading the pane's own content — `pane_current_command` for
-dead vs. alive (`lanes.sh:206-212`), the status line's last line against a
+dead vs. alive (`lanes.sh:251`), the status line's last line against a
 per-harness ready/busy/blocked regex (`lanes.sh:216-331`), and
 `#{window_activity}` to distinguish hung from busy (`lanes.sh:294-310`).
 *Wholly observed*: every field it reads (`pane_current_command`,
@@ -116,6 +122,23 @@ except the same mechanism that already silently fails to fire.
 `(complete, failed, cancelled)` — so a lane stuck at `delivered` reads
 occupied forever, correctly reflecting that nothing told the ledger
 otherwise, but with no way for the ledger to notice that on its own.
+
+**Scoped out: the ledger's `attention:`/`completion:` events.**
+`Ledger.observe_attention` (`core.py:1105`) and the `completion:<task>`
+event `Ledger.complete` inserts as a side effect (`core.py:1099`, noted in
+`record_completion`'s own docstring at `cli.py:326-347`) are both
+**authored** records in the same sense as `record-dispatch`/
+`record-completion` above. They are left out of the enumeration above
+because nothing in this estate's running supervisor writes them today:
+`observe_lane`/`observe_attention` are called only from `adapter.py`
+(`adapter.py:133-138`), and no `.sh` script under `scripts/supervisor/`
+calls into `adapter.py` at all (`grep -rn "adapter.py\|observe_lane("
+scripts/supervisor/*.sh` returns no hits) — they belong to the ledger
+supervisor variant that `docs/supervisor-disposition.md` documents as the
+one of the two supervisors that "has never run" (its own §5 phrasing, on
+the ledger generally). A signal nothing calls cannot be evaluated by this
+document's own four-column test (status, failure mode) without inventing
+a caller, so this is named rather than silently dropped.
 
 **The measured cost.** On every supervisor tick tonight (2026-08-12),
 lanes that had finished and shipped — an open PR, a merged PR, a posted
@@ -213,7 +236,7 @@ between the issue and the code.
 | Signal | Kind | Authored / observed | Status | Silent failure? |
 |---|---|---|---|---|
 | `ScheduleWakeup` self-wakeup | 1 | observed (read back by `sleepcheck.py`) | works | no — fails toward "not asleep" |
-| launchd/cron watchdog restart | 1 | authored (`watchdog.status`) | works | watchdog-of-the-watchdog gap, named not filed |
+| launchd/cron watchdog restart | 1 | authored (`watchdog.status`) | works | watchdog-of-the-watchdog gap, filed as #170 (comment corrected, gap itself still open) |
 | Telegram inbound → Director | 1 | authored (durable queue) | works | no |
 | `tmux wait-for` completion | 2 | authored, but cooperative | works only if worker cooperates | **yes — no error, lane just never completes** |
 | `lanes.sh` pane classification | 2/3 | observed | partial — no "finished" state; used for hung/blocked (Kind 3), not completion | no (visible in table), but cannot see completion at all |
