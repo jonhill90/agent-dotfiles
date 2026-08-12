@@ -17,6 +17,15 @@
 #   digest.sh              human-readable summary
 #   digest.sh --json       one JSON object
 #
+# REQUIRES: jq. This is the first script in scripts/supervisor/ to need a
+# binary the rest of the estate does not already assume -- every other script
+# here is plain bash, and the `gh ... --jq` calls in watchdog.sh and
+# loop-tick.md use gh's own bundled implementation, which is present with
+# standalone jq absent. #139/#175 are actively looking at running this estate
+# on other machines, so the dependency is stated here rather than discovered
+# by a reader on a machine where it is missing. A missing jq is refused up
+# front (below), named, and exits 1 -- it never degrades to a silent digest.
+#
 # Exit 0 when the digest was produced. Exit 1 only when it could not be built at
 # all -- a partial digest is still emitted, with the failures NAMED. This matters
 # more here than usual: this file is what a reader trusts instead of looking, so

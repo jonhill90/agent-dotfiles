@@ -76,19 +76,49 @@ grep -q "no lane rows" <<<"$out" && ok "header-only lanes.sh is reported, not re
 
 # 8. jq missing is named, not silently empty. Reproduced before the fix:
 # `--json` with jq removed from PATH printed nothing at all to stdout.
-NOJQ_PATH=""
-while IFS= read -r d; do
-  [ -n "$d" ] || continue
-  [ -x "$d/jq" ] && continue
-  NOJQ_PATH="${NOJQ_PATH:+$NOJQ_PATH:}$d"
-done <<<"$(tr ':' '\n' <<<"$PATH")"
-out=$(PATH="$D/bin:$NOJQ_PATH" SUPERVISOR_STATE="$D/state" LANES_SESSION=nosuch bash "$DIGEST" 2>/dev/null)
+#
+# HOW THE JQ-FREE ENVIRONMENT IS BUILT MATTERS, and getting it wrong is what
+# turned this test red on CI while it stayed green on macOS. The first version
+# built the PATH by DROPPING every directory that contains a jq. That is a
+# machine-shaped assumption: on macOS jq is a homebrew binary in its own
+# prefix, so dropping its directory costs nothing, but on ubuntu jq is
+# /usr/bin/jq -- the same directory as bash, awk and every coreutil, with /bin
+# a symlink to it. Dropping it removed the harness's own interpreter, so
+# `PATH=... bash "$DIGEST"` exited 127, command-not-found, with digest.sh never
+# entered at all. CI then reported "want '1', got '127'", which reads exactly
+# like the unguarded-jq defect this test exists to catch, from a script that
+# already guards it correctly.
+#
+# So: construct a bindir that HAS what the script needs and simply lacks jq,
+# and invoke bash by absolute path resolved before PATH is touched, so the
+# harness can never lose its own interpreter no matter where jq lives.
+BASH_BIN="$(command -v bash)"
+NOJQ_BIN="$D/nojq"; mkdir -p "$NOJQ_BIN"
+for t in dirname date awk pgrep paste wc tr sed; do
+  p="$(command -v "$t")" && ln -sf "$p" "$NOJQ_BIN/$t"
+done
+cp "$D/bin/gh" "$NOJQ_BIN/gh"
+# Guard the guard: if jq were still reachable on that PATH, digest.sh would
+# just work and all three assertions below would pass for the wrong reason.
+# The lookup has to happen in a FRESH process, the way digest.sh's own will:
+# `PATH=... command -v jq` in this shell can answer from bash's hash table,
+# which already holds the real jq from the assertions above -- it reported a
+# leak that the child process does not actually see.
+if PATH="$NOJQ_BIN" "$BASH_BIN" -c 'command -v jq' >/dev/null 2>&1; then
+  bad "the no-jq PATH really has no jq" "found $(PATH="$NOJQ_BIN" "$BASH_BIN" -c 'command -v jq')"
+else
+  ok "the no-jq PATH really has no jq"
+fi
+nojq() { PATH="$NOJQ_BIN" SUPERVISOR_STATE="$D/state" LANES_SESSION=nosuch "$BASH_BIN" "$DIGEST" "$@" 2>/dev/null; }
+out=$(nojq)
 rc=$?
 grep -q "jq is required" <<<"$out" && ok "missing jq is named, not silent" \
   || bad "missing jq named" "$out"
 chk "missing jq exits 1" "1" "$rc"
-jout=$(PATH="$D/bin:$NOJQ_PATH" SUPERVISOR_STATE="$D/state" LANES_SESSION=nosuch bash "$DIGEST" --json 2>/dev/null)
+jout=$(nojq --json)
 [ -n "$jout" ] && ok "missing jq --json is not a zero-byte payload" || bad "missing jq --json non-empty" "$jout"
+jq -e . >/dev/null 2>&1 <<<"$jout" && ok "missing jq --json is still valid JSON" \
+  || bad "missing jq --json valid" "$jout"
 
 # 9-12. THE BLOCKING FINDING (agent-dotfiles#192): the per-PR jq assembly
 # (repo, number, title, head, run_sha, run_conclusion, ci_is_current,
