@@ -132,14 +132,18 @@ That is a transport with no delivery receipt, no schema, and no way to tell a
 prompt from a menu. Its cost is on the record:
 
 - **#159/#161** — the router printed `delivered` and exited 0 while the
-  characters operated a selection menu. In a reviewer's reproduction it
-  **granted read/edit/execute filesystem trust.** "I sent" and "it arrived" are
-  different claims; only the second was worth printing, and it was the one not
-  checked.
+  characters operated a selection menu; the live reproduction changed a
+  lane's `/theme` setting. "I sent" and "it arrived" are different claims;
+  only the second was worth printing, and it was the one not checked.
+  Folder trust is one of four menu shapes the same mechanism can reach
+  (#159's own list: folder trust, `/model`, bash tool-permission approval,
+  `/theme`); #201 names **granted read/edit/execute filesystem trust** as
+  the hazard *class*, not as something #159/#161 drove live.
 - **#141** — work that existed only in a pane, lost.
 - **#184** — a lane offered as free while still holding work.
-- **#201** — `codex` opens on a selection menu, so the same hazard class
-  reappears on every new harness.
+- **#201** — of three harnesses tested, `codex` opened on a selection menu
+  and hit this hazard; `opencode` and `copilot` failed differently (not
+  staying resident, and an unrecognised ready state) and did not.
 
 None of those are loop bugs. Every one is a transport bug wearing a loop's
 clothes, which is exactly what the conflation predicts.
