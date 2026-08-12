@@ -1025,6 +1025,177 @@ FIX
   want_contains "mutation confirmed: it lands on the author's own lane, t:3" "send-keys -t t:3" "$log"
 fi
 
+# --- agent-dotfiles#225: --reviews-pr with no value must refuse, not hang -
+#
+# WHY: `REVIEWS_PR="${2:-}"; shift 2` -- with the flag last and its value
+# forgotten, $# is 1 when the case arm runs, so `shift 2` fails and shifts
+# nothing. Under `set -uo pipefail` (this script has no `set -e`), a failed
+# `shift` does not abort -- the `while [ $# -gt 0 ]` loop just re-enters the
+# same arm forever. That is a hang, not a crash, so it needs `timeout` to
+# reproduce and to prove fixed: an ordinary `$(...)` capture would sit here
+# for the life of the test run.
+: > "$D/tmux.log"
+rm -rf "$D/panes"; mkdir -p "$D/panes"
+printf '213|| a dangling --reviews-pr must refuse, not hang\n' >> "$D/issues"
+out=$(timeout 10 env PATH="$D/bin:$PATH" GH_ISSUES="$D/issues" GH_PRS="$D/prs" \
+  LANES_FIXTURE="$D/lanes" LANES_SESSION=t TMUX_LOG="$D/tmux.log" \
+  TMUX_PANES="$D/panes" DISPATCH_SETTLE=0 \
+  AGENT_SUPERVISOR_STATE_DIR="$(mktemp -d "$D/state.XXXXXX")" \
+  STUB_PANE_PATH="$REPO" WORKTREE_ROOT="$D/roots" \
+  "$DISPATCH" 213 dangling-flag "$D/brief.md" acme/agent-dotfiles "$REPO" --reviews-pr 2>&1); rc=$?
+want_exit "a --reviews-pr with no value refuses instead of hanging" "$rc" 1 "$out"
+want_contains "and explains the usage" "--reviews-pr requires a PR number" "$out"
+if [ -z "$(assignees 213)" ]; then ok "the refused dispatch takes no claim on its own issue"
+else bad "the refused dispatch takes no claim on its own issue" "still assigned: $(assignees 213)"; fi
+
+# MUTATION-CHECK: put the un-guarded `${2:-}; shift 2` back and confirm the
+# suite actually notices -- a test that only ever ran the fixed script would
+# pass whether or not the guard exists.
+MUTATED_225A="$D/dispatch-no-flag-guard.sh"
+patch_rc=0
+python3 - "$DISPATCH" "$MUTATED_225A" <<'PY' || patch_rc=$?
+import os
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+text = open(src).read()
+guarded = '''      if [ $# -lt 2 ]; then
+        echo "dispatch: --reviews-pr requires a PR number" >&2
+        sed -n '/^# Usage:/,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \\{0,1\\}//' >&2
+        exit 1
+      fi
+      REVIEWS_PR="$2"
+      shift 2'''
+assert text.count(guarded) == 1, "flag-value guard not found or not unique -- script shape changed"
+text = text.replace(guarded, '      REVIEWS_PR="${2:-}"\n      shift 2', 1)
+here = 'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
+assert text.count(here) == 1, "HERE assignment not found or not unique -- script shape changed"
+text = text.replace(here, 'HERE=%r' % os.path.dirname(os.path.abspath(src)), 1)
+open(dst, "w").write(text)
+PY
+if [ "$patch_rc" -ne 0 ]; then
+  bad "setup: patched a copy of dispatch.sh with the flag-value guard reverted" \
+    "could not patch $DISPATCH (exit $patch_rc) -- treating as a failure, not a skip"
+else
+  ok "setup: patched a copy of dispatch.sh with the flag-value guard reverted"
+  chmod +x "$MUTATED_225A"
+  : > "$D/tmux.log"
+  rm -rf "$D/panes"; mkdir -p "$D/panes"
+  mut_rc=0
+  timeout 10 env PATH="$D/bin:$PATH" GH_ISSUES="$D/issues" GH_PRS="$D/prs" \
+    LANES_FIXTURE="$D/lanes" LANES_SESSION=t TMUX_LOG="$D/tmux.log" \
+    TMUX_PANES="$D/panes" DISPATCH_SETTLE=0 \
+    AGENT_SUPERVISOR_STATE_DIR="$(mktemp -d "$D/state.XXXXXX")" \
+    STUB_PANE_PATH="$REPO" WORKTREE_ROOT="$D/roots" \
+    "$MUTATED_225A" 213 dangling-flag-2 "$D/brief.md" acme/agent-dotfiles "$REPO" --reviews-pr \
+    >/dev/null 2>&1 || mut_rc=$?
+  want_exit "mutation confirmed: the unguarded copy hangs (killed by timeout)" "$mut_rc" 124
+fi
+
+
+# --- agent-dotfiles#225: two empty-array expansions break under bash 3.2 --
+#
+# WHY: dispatch.sh is `#!/bin/bash`, and loop-tick.md invokes it directly, so
+# on macOS that is /bin/bash 3.2.57 -- where "${arr[@]}" on an EMPTY array
+# under `set -u` is an unbound-variable error, not zero words (bash >= 4.4
+# fixed this; 3.2 never will). Both cases below invoke "$DISPATCH" directly
+# (not `bash "$DISPATCH"`, which would pick up PATH's bash and never see the
+# bug), the same style #199's stderr-clean case above uses, so the script's
+# own shebang selects the interpreter exactly as production does.
+echo "--- agent-dotfiles#225: bash 3.2 empty-array sites ---"
+
+# Site 1: dispatch.sh:82's `set -- "${POSITIONAL[@]}"` on the zero-argument
+# path, where POSITIONAL is empty. Every invocation with a missing/typo'd
+# argument hits this before anything else runs.
+STDERR_225B="$D/dispatch225-zeroarg.err"
+"$DISPATCH" 1>"$D/dispatch225-zeroarg.out" 2>"$STDERR_225B"
+rc=$?
+zeroarg_err=$(cat "$STDERR_225B")
+want_exit "dispatch.sh with no args still exits 2 (usage), not a 3.2 crash" "$rc" 2 "$zeroarg_err"
+want_missing "no unbound-variable error on the zero-arg path" "unbound variable" "$zeroarg_err"
+
+# Site 2: dispatch.sh:188's `"${GH_REPO_ARGS[@]}"`, empty whenever [repo] is
+# omitted on a --reviews-pr dispatch -- documented as supported in the flag's
+# own usage text. Uses the real gh stub so the call reaches line 188 and
+# fails (or succeeds) for a REASON, not because `gh` itself is missing.
+printf '212|| review of a PR, [repo] omitted\n' >> "$D/issues"
+printf '301|Fixes #102|lane/102-omitted-repo\n' >> "$D/prs"
+STDERR_225C="$D/dispatch225-reviewargs.err"
+: > "$D/tmux.log"
+rm -rf "$D/panes"; mkdir -p "$D/panes"
+PATH="$D/bin:$PATH" GH_ISSUES="$D/issues" GH_PRS="$D/prs" \
+  LANES_FIXTURE="$D/lanes" LANES_SESSION=t TMUX_LOG="$D/tmux.log" \
+  TMUX_PANES="$D/panes" DISPATCH_SETTLE=0 \
+  AGENT_SUPERVISOR_STATE_DIR="$(mktemp -d "$D/state.XXXXXX")" \
+  STUB_PANE_PATH="$REPO" WORKTREE_ROOT="$D/roots" \
+  "$DISPATCH" 212 rev-301 "$D/brief.md" "" "$REPO" --reviews-pr 301 \
+  1>"$D/dispatch225-reviewargs.out" 2>"$STDERR_225C"
+reviewargs_err=$(cat "$STDERR_225C")
+want_missing "no unbound-variable error with [repo] omitted on --reviews-pr" "unbound variable" "$reviewargs_err"
+# With [repo] empty, NAME_PART falls back to basename($REPO_PATH) -- here
+# the test clone's directory, literally named "repo" -- so the task id this
+# resolves to is repo102-omitted-repo, not ad102-omitted-repo; see
+# dispatch.sh's own NAME_PART fallback just above step 0. The ledger has no
+# record of it (nothing ever dispatched #301's branch), so this still
+# refuses -- fails closed, same outcome the finding describes, just for the
+# right reason (`gh` actually ran) instead of the wrong one (`gh` never ran
+# because the shell crashed first).
+want_contains "and still fails closed for the documented reason: no ledger record" "repo102-omitted-repo" "$reviewargs_err"
+
+# MUTATION-CHECK: put both raw "${arr[@]}" expansions back and confirm the
+# suite actually notices under real /bin/bash.
+MUTATED_225B="$D/dispatch-no-array-guard.sh"
+patch_rc=0
+python3 - "$DISPATCH" "$MUTATED_225B" <<'PY' || patch_rc=$?
+import os
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+text = open(src).read()
+n = text.count('set -- "${POSITIONAL[@]+"${POSITIONAL[@]}"}"')
+assert n == 1, "POSITIONAL 3.2-safe expansion not found or not unique -- script shape changed"
+text = text.replace('set -- "${POSITIONAL[@]+"${POSITIONAL[@]}"}"', 'set -- "${POSITIONAL[@]}"', 1)
+n = text.count('gh pr view "$REVIEWS_PR" "${GH_REPO_ARGS[@]+"${GH_REPO_ARGS[@]}"}" --json headRefName')
+assert n == 1, "GH_REPO_ARGS 3.2-safe expansion not found or not unique -- script shape changed"
+text = text.replace(
+    'gh pr view "$REVIEWS_PR" "${GH_REPO_ARGS[@]+"${GH_REPO_ARGS[@]}"}" --json headRefName',
+    'gh pr view "$REVIEWS_PR" "${GH_REPO_ARGS[@]}" --json headRefName',
+    1,
+)
+here = 'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
+assert text.count(here) == 1, "HERE assignment not found or not unique -- script shape changed"
+text = text.replace(here, 'HERE=%r' % os.path.dirname(os.path.abspath(src)), 1)
+open(dst, "w").write(text)
+PY
+if [ "$patch_rc" -ne 0 ]; then
+  bad "setup: patched a copy of dispatch.sh with both 3.2-safe expansions reverted" \
+    "could not patch $DISPATCH (exit $patch_rc) -- treating as a failure, not a skip"
+else
+  ok "setup: patched a copy of dispatch.sh with both 3.2-safe expansions reverted"
+  chmod +x "$MUTATED_225B"
+  mut_zeroarg_err=$("$MUTATED_225B" 2>&1 1>/dev/null)
+  want_contains "mutation confirmed: the zero-arg path crashes under 3.2" "unbound variable" "$mut_zeroarg_err"
+
+  : > "$D/tmux.log"
+  rm -rf "$D/panes"; mkdir -p "$D/panes"
+  mut_reviewargs_err=$(PATH="$D/bin:$PATH" GH_ISSUES="$D/issues" GH_PRS="$D/prs" \
+    LANES_FIXTURE="$D/lanes" LANES_SESSION=t TMUX_LOG="$D/tmux.log" \
+    TMUX_PANES="$D/panes" DISPATCH_SETTLE=0 \
+    AGENT_SUPERVISOR_STATE_DIR="$(mktemp -d "$D/state.XXXXXX")" \
+    STUB_PANE_PATH="$REPO" WORKTREE_ROOT="$D/roots" \
+    "$MUTATED_225B" 212 rev-301-2 "$D/brief.md" "" "$REPO" --reviews-pr 301 2>&1 1>/dev/null)
+  want_contains "mutation confirmed: [repo]-omitted --reviews-pr crashes under 3.2" "unbound variable" "$mut_reviewargs_err"
+fi
+
+# --- agent-dotfiles#225: does the existing stderr-clean guard (#199) catch
+# finding 2's message on its own? -------------------------------------------
+#
+# The brief asks this explicitly: #199's assertion is `[ -z "$err" ]` over a
+# SUCCESSFUL dispatch's stderr, and both of finding 2's sites only run at
+# all on the --reviews-pr path, which #199's own case never takes (it
+# dispatches ordinary work, no --reviews-pr). So the existing guard's reach
+# does not cover this: it was never exercised against this path, not
+# defeated by it. The dedicated cases above are what actually catch it.
+echo "  (agent-dotfiles#199's stderr-clean case never takes the --reviews-pr path, so it could not have caught finding 2 either way -- confirmed by inspection, not a case here)"
+
 rm -rf "$D"
 
 
