@@ -1064,3 +1064,5 @@ of an adapter.
 
 All three first-class harnesses already expose a structured drive surface
 beyond typing into a terminal; #23 is the source for these figures.
+
+<!-- mergecheck scratch: simulates a regeneration that picked up a new #301 -->
