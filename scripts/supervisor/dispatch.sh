@@ -147,6 +147,20 @@ fi
 # under "an empty tmux target hits the ACTIVE window", reached through a stray
 # environment variable instead of an empty string. Nothing called it. An
 # escape hatch around the only guard is not worth a caller it does not have.
+# agent-dotfiles#188 finding 2: `lane-free` below is a QUERY, not a claim --
+# see `cli.py lane_free`'s own docstring for the measured proof and the
+# terms `claim.sh`'s header uses for its own sub-second race. Nothing here
+# re-checks between a candidate reading free (this loop) and the first
+# `send-keys` several steps below, and unlike `claim.sh`'s race this window
+# is not sub-second: it spans claim, worktree creation and the send itself.
+# Two dispatchers on unrelated cadences CAN both read this lane free and
+# both type into the same pane -- that collision is not prevented here.
+# Step 6's `record_dispatch` (`one_open_task_per_lane`) only protects the
+# LEDGER once both sends have already happened: the second writer gets
+# refused and held (#188 finding 1), so the ledger never lies about which
+# dispatch won, but the pane itself may already carry two competing briefs.
+# "Authoritative" names which source wins an availability READ, not an
+# exclusive claim on it.
 declare -A WINDOW_NAME_BY_INDEX
 while IFS=$'\t' read -r idx wname; do
   [ -n "$idx" ] || continue
@@ -455,14 +469,29 @@ fi
 # unwinding the claim and the worktree here would strand a worker that is
 # actively working, which is strictly worse than a stale ledger row. So the
 # failure mode this block accepts is not "the estate may dispatch to a lane
-# that is actually busy" (step 1's fail-closed read already rules that out --
-# an unrecorded lane reads UNKNOWN, not free, until someone reconciles it by
-# hand or a later dispatch re-registers it) -- it is "this ONE lane stops
-# being offered until that reconciliation happens". That cost is bounded and
-# visible (the LOUD message below, and `lanes.sh` still showing the window
-# doing nothing); trading the live worker for it would not be. Do not "fix"
-# it into an abort_send; tests/supervisor/test_dispatch.sh mutation-checks
-# that removing this tolerance turns the suite red.
+# that is actually busy" -- it is "this ONE lane stops being offered until
+# reconciliation happens". That cost is bounded and visible (the LOUD message
+# below, and `lanes.sh` still showing the window doing nothing); trading the
+# live worker for it would not be. Do not "fix" it into an abort_send;
+# tests/supervisor/test_dispatch.sh mutation-checks that removing this
+# tolerance turns the suite red.
+#
+# agent-dotfiles#188 finding 1: step 1's fail-closed read does NOT rule out
+# "actually busy" on its own here. `Ledger.record_dispatch` is one
+# transaction, so a failure rolls back every one of its five writes -- and
+# for a lane the ledger already had registered free (every lane after its
+# first backfill, and every lane `lane-done.sh` has ever freed, which is
+# ordinary steady state, not an edge case), rollback restores exactly that
+# pre-existing FREE row, not UNKNOWN. A comment here used to claim the
+# unrecorded lane reads UNKNOWN regardless; it does not, and #188 is the
+# defect that shape produces (also #145, #170: a comment asserting a
+# protection the code does not have). `cli.py`'s `record_dispatch` now closes
+# that window itself -- on any failure it calls `Ledger.mark_lane_held`
+# before re-raising, which writes a placeholder outstanding task for the
+# lane so `lane_available` reads occupied, not whatever it read before the
+# call. That write happens inside the Python process handling this exact
+# failure, so it is not conditional on this bash block at all; what follows
+# here is only the loud, human-facing report of what already happened.
 #
 # WHY IT RUNS LAST, after the final Enter and past every abort path: a record
 # asserting work is in flight, left behind by a dispatch that then aborted, is
@@ -478,7 +507,7 @@ fi
 ledger_record_failed() {
   echo "dispatch: LEDGER RECORD FAILED for $WINDOW_NAME -- the dispatch STANDS, the record does not" >&2
   sed 's/^/  /' <<<"${1:-}" >&2
-  echo "dispatch: the lane is working, but is now UNKNOWN to the ledger -- it will not be offered again until this is reconciled by hand (cli.py register / record-dispatch) or overwritten by a later dispatch" >&2
+  echo "dispatch: the lane is working, and cli.py has marked it HELD (a placeholder occupied task) so it will not be offered again -- reconcile it by hand (cli.py register / record-dispatch) or let a later dispatch overwrite it" >&2
   return 0  # the ledger write is never fatal -- agent-dotfiles#140
 }
 

@@ -161,6 +161,28 @@ def lane_free(ledger, transport, *, lane, target, window_name):
       UNKNOWN, and unknown is not free. This is the fail-closed default: a
       lane this code cannot positively place is never offered, the same
       posture `lanes.sh`'s own whitelist (#126) already takes for pane state.
+
+    WHAT THIS DOES NOT DO (agent-dotfiles#188 finding 2, in the terms
+    `claim.sh`'s own header uses for its sub-second race): this is a QUERY,
+    not a claim. It takes no lock, writes no assignment for the caller, and
+    grants no exclusion. Two dispatchers that both call this for the same
+    lane within the same tick both read `"free":true` -- measured, on one
+    seeded ledger, two consecutive calls with nothing written in between
+    returned the identical answer both times. Nothing re-checks between a
+    caller picking this lane and its first `send-keys`, and that window is
+    not sub-second the way `claim.sh`'s is: it spans claim, worktree
+    creation and the send itself, and NOTHING here stops two dispatchers
+    from both typing a competing brief into the same live pane during it.
+    `record_dispatch`'s `one_open_task_per_lane` constraint (see its
+    docstring) only protects the LEDGER, and only after both sends have
+    already happened: the second writer is refused and held (agent-
+    dotfiles#188 finding 1), so the ledger never ends up claiming both
+    dispatches succeeded, but that is bookkeeping honesty, not pane
+    exclusion. Before that write lands, this function's "free" is honest
+    only as of the instant it was asked, exactly as `claim.sh` says of its
+    own assignee check. This estate runs two dispatchers on unrelated
+    cadences and has already paid for a duplicate dispatch once (#70); the
+    name of this function is not a claim that the gap is closed.
     """
     known = ledger.lane_available(lane)
     if known is not None:
@@ -248,36 +270,49 @@ def record_dispatch(
     occupied for a dispatch nothing else records. `Ledger.record_dispatch`
     does the same five writes in ONE transaction now; this function's job is
     just shaping `dispatch.sh`'s raw inputs into that call.
+
+    agent-dotfiles#188 finding 1: a failure here used to just raise and let
+    the caller (`dispatch.sh`) print a warning. The transaction's own
+    rollback is not a safe failure mode by itself -- for a lane the ledger
+    already knew as free, rollback restores exactly that free row, and the
+    brief is already running in the pane. On ANY failure this now also calls
+    `Ledger.mark_lane_held` before re-raising, so the lane reads occupied
+    instead of whatever it read before this call, regardless of which of
+    the five writes failed or why.
     """
-    harness = harness or HARNESS_BY_COMMAND.get(command)
-    if harness is None:
-        raise RuntimeError(f"cannot tell which harness pane command {command!r} is -- pass --harness")
-    primary = issues[0]
-    source_url = (
-        f"https://github.com/{github}/issues/{primary}" if github else f"issue:{primary}@{Path(pane_path).name}"
-    )
-    return ledger.record_dispatch(
-        lane=lane,
-        pane_id=pane_id,
-        nonce=secrets.token_hex(16),
-        harness=harness,
-        # The pane's own working directory, which is what
-        # `TmuxAdapter._verified_lane` compares this column against. NOT the
-        # lane's worktree -- that belongs to the task and is carried in its
-        # summary, because the tasks table has no column for it.
-        repo=pane_path,
-        server_id=server_id,
-        session_id=session_id,
-        command=command,
-        task_id=task,
-        source_kind="issue",
-        source_url=source_url,
-        source_ref=str(primary),
-        summary=summary,
-        source_state="OPEN",
-        evidence=[f"claimed by dispatch.sh for lane {lane}", f"issues: {','.join(str(i) for i in issues)}"],
-        status_marker=None,
-    )
+    try:
+        harness = harness or HARNESS_BY_COMMAND.get(command)
+        if harness is None:
+            raise RuntimeError(f"cannot tell which harness pane command {command!r} is -- pass --harness")
+        primary = issues[0]
+        source_url = (
+            f"https://github.com/{github}/issues/{primary}" if github else f"issue:{primary}@{Path(pane_path).name}"
+        )
+        return ledger.record_dispatch(
+            lane=lane,
+            pane_id=pane_id,
+            nonce=secrets.token_hex(16),
+            harness=harness,
+            # The pane's own working directory, which is what
+            # `TmuxAdapter._verified_lane` compares this column against. NOT
+            # the lane's worktree -- that belongs to the task and is carried
+            # in its summary, because the tasks table has no column for it.
+            repo=pane_path,
+            server_id=server_id,
+            session_id=session_id,
+            command=command,
+            task_id=task,
+            source_kind="issue",
+            source_url=source_url,
+            source_ref=str(primary),
+            summary=summary,
+            source_state="OPEN",
+            evidence=[f"claimed by dispatch.sh for lane {lane}", f"issues: {','.join(str(i) for i in issues)}"],
+            status_marker=None,
+        )
+    except Exception as error:
+        ledger.mark_lane_held(lane, note=f"record_dispatch failed for task {task}: {error}")
+        raise
 
 
 def record_completion(ledger, *, task, note):

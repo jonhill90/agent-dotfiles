@@ -728,6 +728,17 @@ want_contains "the write failure is loud, not swallowed" "LEDGER RECORD FAILED" 
 want_contains "and says which dispatch lost its record" "ad148-ledger-write-broken" "$out"
 want_contains "the claim is NOT unwound over a bookkeeping failure" "jonhill90" "$(assignees 148)"
 
+# agent-dotfiles#188 finding 1: lane t:3 was ALREADY registered free before
+# this dispatch (seed_conflicting_task's first register_lane call) -- the
+# case #144's own recovery argument does not cover. `record_dispatch` rolled
+# back every write it attempted for t:3, which restores that pre-existing
+# free row unless the caller (`cli.py record_dispatch`) explicitly closes it.
+# A lane running a live, unrecorded brief must never read free again.
+free_check=$(AGENT_SUPERVISOR_STATE_DIR="$LSTATE" python3 "$HERE/../../scripts/supervisor/cli.py" \
+  lane-free --lane t:3 --target t:3 --window-name ad148-ledger-write-broken 2>&1)
+want_missing "the lane a failed record just wrote to no longer reads free" '"free":true' "$free_check"
+want_contains "the ledger already knows this lane, so the answer is not a name-based backfill" '"known":true' "$free_check"
+
 # ...and that tolerance is load-bearing. Patch a copy that makes the write
 # fatal and confirm the case above goes red against it -- a suite that still
 # passes with the failure-tolerance removed has not tested the property.

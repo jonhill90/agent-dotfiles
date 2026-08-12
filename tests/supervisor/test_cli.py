@@ -355,6 +355,52 @@ class RecordDispatchCliTest(unittest.TestCase):
             # And no partial record was left behind by the refusal.
             self.assertIsNone(Ledger(Path(root)).get_task("ad999-node"))
 
+    def _dispatch_subprocess(self, root, *, lane, task, issue, pane_id="%3"):
+        proc = subprocess.run(
+            [sys.executable, str(SUPERVISOR_DIR / "cli.py"), "--state-dir", root,
+             "record-dispatch", "--lane", lane, "--task", task, "--summary", f"#{issue} summary",
+             "--pane-id", pane_id, "--pane-path", root, "--command", "claude.exe",
+             "--server-id", "socket:1", "--session-id", "$0",
+             "--issue", str(issue), "--github", "jonhill90/agent-dotfiles"],
+            capture_output=True, text=True,
+        )
+        return proc.returncode, proc.stderr
+
+    def test_a_failed_record_dispatch_leaves_the_lane_held_not_free(self):
+        """agent-dotfiles#188 finding 1, exercised through `cli.main` itself
+        (via subprocess, the way `dispatch.sh` actually invokes it) -- not
+        `Ledger.mark_lane_held` directly -- so this actually proves the
+        wiring in `cli.record_dispatch`'s except clause, not just that the
+        method works in isolation. Without that except clause calling
+        `mark_lane_held` before re-raising, `lane_available` would still
+        read True after the failed call below: this is the mutation this
+        test is written to catch."""
+        with tempfile.TemporaryDirectory() as root:
+            ledger = Ledger(Path(root))
+            ledger.register_lane(
+                lane="free-9", pane_id="%9", nonce="nonce-9", harness="claude",
+                repo=root, server_id="socket:1", session_id="$0", command="claude.exe",
+            )
+            self.assertTrue(ledger.lane_available("free-9"))
+            rc1, out1 = self._dispatch(root, lane="free-9", task="ad900-collide", issue=900, pane_id="%9")
+            self.assertEqual(0, rc1, out1)
+            self.assertFalse(Ledger(Path(root)).lane_available("free-9"))
+            ledger2 = Ledger(Path(root))
+            ledger2.cancel_open_task("free-9")
+            self.assertTrue(ledger2.lane_available("free-9"))
+
+            # Re-dispatch to the same lane reusing the exact task id, but
+            # under a different issue (so the summary no longer matches the
+            # cancelled row) -- `_assign_tx` refuses this outright (agent-
+            # dotfiles#144 finding 2's docstring), which is exactly the
+            # collision step 6 of `dispatch.sh` can hit against a live pane.
+            rc2, err2 = self._dispatch_subprocess(root, lane="free-9", task="ad900-collide", issue=901, pane_id="%9")
+            self.assertNotEqual(0, rc2, err2)
+            self.assertFalse(
+                Ledger(Path(root)).lane_available("free-9"),
+                "a failed record-dispatch left a previously-free lane reading free again",
+            )
+
 
 class FakeMetadataTransport:
     """Stands in for `TmuxTransport.metadata` -- lane_free's only tmux touch."""
