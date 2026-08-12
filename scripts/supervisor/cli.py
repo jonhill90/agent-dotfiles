@@ -125,6 +125,17 @@ def parser():
     lane_free_parser.add_argument("--target", required=True)
     lane_free_parser.add_argument("--window-name", required=True)
 
+    # agent-dotfiles#184: the claim side `lane-free` (a query) never had. See
+    # `Ledger.claim_lane`'s docstring for why a read-then-write pair of
+    # separate calls does not close the race and this is one atomic write.
+    claim_lane_parser = sub.add_parser("claim-lane")
+    claim_lane_parser.add_argument("--lane", required=True)
+    claim_lane_parser.add_argument("--token", required=True)
+
+    release_lane_claim_parser = sub.add_parser("release-lane-claim")
+    release_lane_claim_parser.add_argument("--lane", required=True)
+    release_lane_claim_parser.add_argument("--token", required=True)
+
     sub.add_parser("status")
     return root
 
@@ -405,6 +416,11 @@ def main(argv=None):
         value = lane_free(
             ledger, adapter.transport, lane=args.lane, target=args.target, window_name=args.window_name
         )
+    elif args.command == "claim-lane":
+        value = ledger.claim_lane(args.lane, token=args.token)
+    elif args.command == "release-lane-claim":
+        ledger.release_lane_claim(args.lane, token=args.token)
+        value = {"lane": args.lane, "token": args.token, "released": True}
     elif args.command == "record-completion":
         value = record_completion(ledger, task=args.task, note=args.note)
     elif args.command == "accept":

@@ -596,7 +596,16 @@ want_contains "the guard names the failure as an unreadable pane probe" \
   "could not read pane metadata" "$out"
 status=$(LEDGER_STATE="$D/state-145" ledger status 2>&1)
 want_contains "the pre-registered lane is still the only one on record" '"lane":"t:3"' "$status"
-want_contains "no garbage task is recorded from the malformed probe" '"tasks":[]' "$status"
+# agent-dotfiles#184: this used to assert `"tasks":[]` -- true before this
+# dispatch's own step-1 `claim-lane` call existed, because nothing wrote to
+# the tasks table until step 6, and step 6 never runs a real record-dispatch
+# call down this branch (the malformed probe is caught before it). Now step
+# 1's claim placeholder is what is left behind, and that is correct, not
+# garbage: the brief DID go out (asserted above), so the lane must keep
+# reading occupied even though bookkeeping past the claim degraded -- the
+# same property #188 added `mark_lane_held` for on the record-dispatch side.
+want_contains "the claim placeholder is what is left recording the lane occupied" \
+  '"id":"ledger-claim:t:3:ad145-ledger-meta-broken"' "$status"
 
 # ...and that guard is load-bearing. Patch a copy that always takes the
 # "well-formed" branch regardless of what LANE_META actually contains, and
@@ -892,6 +901,157 @@ want_exit "a dispatch run under its own shebang still succeeds" "$rc" 0 "$out"
 # that something is wrong, so a legitimate message belongs on stdout instead.
 if [ -z "$err" ]; then ok "stderr is clean on a successful dispatch (agent-dotfiles#199)"
 else bad "stderr is clean on a successful dispatch (agent-dotfiles#199)" "expected empty stderr, got: $err"; fi
+
+# --- agent-dotfiles#184: two dispatchers racing the SAME candidate lane ---
+#
+# Every case above dispatches once, in isolation -- the second dispatcher
+# never exists. #184 is specifically about what happens when it does: two
+# dispatchers can both read `lanes.sh --free` + `cli.py lane-free` and see
+# the SAME lane free before either one finishes acting on it. A test that
+# only calls dispatch.sh twice IN SEQUENCE proves nothing (the second call
+# losing is what happens either way) -- this drives dispatcher A into the
+# stub, splices a WHOLE second dispatch (dispatcher B, for a different
+# issue, against the real unmodified dispatch.sh) in via a test-only hook
+# right after A reads the lane free and before A can act on that read, and
+# only then lets A continue. That is "dispatcher A reads availability, then
+# B completes a whole dispatch, then A sends" -- #184's own required shape,
+# not two calls back to back.
+#
+# DISPATCH_TEST_RACE_HOOK is dispatch.sh's only concession to this: a command
+# run with the candidate lane as $1, at exactly the point a second dispatcher
+# would need to land a competing dispatch to prove the race. No caller sets
+# it outside this file.
+cat > "$D/race-hook.sh" <<'HOOK'
+#!/bin/bash
+set -uo pipefail
+env -u DISPATCH_TEST_RACE_HOOK bash "$RACE_DISPATCH" "$RACE_B_ISSUE" "$RACE_B_SLUG" \
+  "$RACE_B_BRIEF" "$RACE_B_REPO_SLUG" "$RACE_B_REPO_PATH" > "$RACE_B_LOG" 2>&1
+echo $? > "$RACE_B_RC"
+HOOK
+chmod +x "$D/race-hook.sh"
+
+# Runs dispatcher A for issue $1 through dispatch script $2 (the real
+# dispatch.sh, or a mutated copy), with dispatcher B (issue $3, ALWAYS the
+# real, unmutated dispatch.sh -- the race is about what A does with a
+# genuine competing dispatch, not about B's own correctness) spliced in via
+# the hook. Leaves $RACE_RC_A/$RACE_OUT_A for A and $RACE_RC_B/$RACE_OUT_B
+# for B, plus $RACE_LOG (the shared tmux log both dispatchers wrote to).
+run_race() {
+  local issue_a="$1" script="$2" issue_b="$3"
+  local state="$D/state-race-$issue_a"
+  printf '%s|| dispatcher A races for the only free lane\n%s|| dispatcher B wins the same race\n' \
+    "$issue_a" "$issue_b" >> "$D/issues"
+  : > "$D/race-b.out"; : > "$D/race-b.rc"
+  local out
+  out=$(LEDGER_STATE="$state" \
+        DISPATCH_TEST_RACE_HOOK="$D/race-hook.sh" \
+        RACE_DISPATCH="$DISPATCH" RACE_B_ISSUE="$issue_b" RACE_B_SLUG="race-b-$issue_b" \
+        RACE_B_BRIEF="$D/brief.md" RACE_B_REPO_SLUG=acme/agent-dotfiles \
+        RACE_B_REPO_PATH="$REPO" RACE_B_LOG="$D/race-b.out" RACE_B_RC="$D/race-b.rc" \
+        DISPATCH_SCRIPT="$script" \
+        run "$issue_a" "race-a-$issue_a" "$D/brief.md" acme/agent-dotfiles "$REPO")
+  RACE_RC_A=$?
+  RACE_OUT_A="$out"
+  RACE_OUT_B=$(cat "$D/race-b.out" 2>/dev/null)
+  RACE_RC_B=$(cat "$D/race-b.rc" 2>/dev/null)
+  RACE_LOG=$(tmuxlog)
+}
+
+# --- the fixed shape: exactly one dispatcher wins, the other is refused loud
+run_race 501 "$DISPATCH" 502
+want_exit "dispatcher B (spliced in mid-A's selection) completes its own dispatch" "$RACE_RC_B" 0 "$RACE_OUT_B"
+want_contains "...and B's brief actually went out" "dispatch: #502 -> " "$RACE_OUT_B"
+want_exit "dispatcher A is refused: B already won the only free lane" "$RACE_RC_A" 1 "$RACE_OUT_A"
+want_contains "...and the refusal is LOUD, not silent" "no free lane" "$RACE_OUT_A"
+cnt=$(grep -c "rename-window -t t:3" <<<"$RACE_LOG")
+if [ "$cnt" = 1 ]; then
+  ok "only one brief reaches the shared lane t:3"
+else
+  bad "only one brief reaches the shared lane t:3" "rename-window -t t:3 appeared $cnt times: $RACE_LOG"
+fi
+if [ "$(assignees 501)" = "" ]; then
+  ok "A's issue is never claimed -- refused before claim.sh even runs"
+else
+  bad "A's issue is never claimed" "assignees: $(assignees 501)"
+fi
+want_contains "B's issue IS claimed" "jonhill90" "$(assignees 502)"
+
+# --- RED BEFORE THE FIX: a copy with no atomic claim at all, the exact shape
+# dispatch.sh had on origin/main before agent-dotfiles#184 -- `lane-free`'s
+# read picked a candidate and nothing closed the gap before send-keys.
+NO_CLAIM_MUTANT="$D/dispatch-no-claim.sh"
+patch_rc=0
+python3 - "$DISPATCH" "$NO_CLAIM_MUTANT" <<'PY' || patch_rc=$?
+import os
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+text = open(src).read()
+marker = '''  CLAIM=$("$LEDGER_PYTHON" "$LEDGER_CLI" claim-lane --lane "$candidate" --token "$CLAIM_TOKEN" 2>/dev/null) || continue
+  if grep -qF '"claimed":true' <<<"$CLAIM"; then
+    LANE="$candidate"
+    CLAIM_LANE="$candidate"
+    break
+  fi'''
+assert marker in text, "claim-lane block not found -- script shape changed"
+assert text.count(marker) == 1, "claim-lane block not unique -- script shape changed"
+replacement = '''  LANE="$candidate"  # MUTATED: no atomic claim at all -- agent-dotfiles#184 pre-fix shape
+  break'''
+text = text.replace(marker, replacement, 1)
+here = 'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
+assert text.count(here) == 1, "HERE assignment not found or not unique -- script shape changed"
+text = text.replace(here, 'HERE=%r' % os.path.dirname(os.path.abspath(src)), 1)
+open(dst, "w").write(text)
+PY
+if [ "$patch_rc" -ne 0 ]; then
+  bad "setup: patched a copy of dispatch.sh with no lane claim at all" \
+    "could not patch $DISPATCH (exit $patch_rc) -- treating as a failure, not a skip"
+else
+  ok "setup: patched a copy of dispatch.sh with no lane claim at all"
+  run_race 503 "$NO_CLAIM_MUTANT" 504
+  cnt=$(grep -c "rename-window -t t:3" <<<"$RACE_LOG")
+  if [ "$RACE_RC_A" = 0 ] && [ "$cnt" -ge 2 ]; then
+    ok "RED before the fix: with no atomic claim, BOTH dispatchers land a brief in lane t:3 (x$cnt) -- this is the race #184 reports"
+  else
+    bad "RED before the fix: with no atomic claim, BOTH dispatchers land a brief in lane t:3" \
+      "expected A to also succeed (exit 0) and t:3 renamed >=2 times; rcA=$RACE_RC_A count=$cnt outA=$RACE_OUT_A"
+  fi
+fi
+
+# --- MUTATION KILL: the fix's own verify-read, made non-fatal on mismatch --
+# #184 names this explicitly: mutate the verify-read's mismatch to non-fatal
+# and confirm the suite goes red, or the test proves nothing. This defeats
+# dispatch.sh's OWN check of the claim result -- the bash-side half of
+# claim-then-verify -- while leaving the ledger call itself untouched.
+VERIFY_DEFEATED_MUTANT="$D/dispatch-verify-defeated.sh"
+patch_rc=0
+python3 - "$DISPATCH" "$VERIFY_DEFEATED_MUTANT" <<'PY' || patch_rc=$?
+import os
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+text = open(src).read()
+marker = 'if grep -qF \'"claimed":true\' <<<"$CLAIM"; then'
+assert marker in text, "claim verify guard not found -- script shape changed"
+assert text.count(marker) == 1, "claim verify guard not unique -- script shape changed"
+text = text.replace(marker, 'if true; then  # MUTATED: claim-lane verify-read mismatch made non-fatal', 1)
+here = 'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
+assert text.count(here) == 1, "HERE assignment not found or not unique -- script shape changed"
+text = text.replace(here, 'HERE=%r' % os.path.dirname(os.path.abspath(src)), 1)
+open(dst, "w").write(text)
+PY
+if [ "$patch_rc" -ne 0 ]; then
+  bad "setup: patched a copy of dispatch.sh whose claim verify-read is non-fatal" \
+    "could not patch $DISPATCH (exit $patch_rc) -- treating as a failure, not a skip"
+else
+  ok "setup: patched a copy of dispatch.sh whose claim verify-read is non-fatal"
+  run_race 505 "$VERIFY_DEFEATED_MUTANT" 506
+  cnt=$(grep -c "rename-window -t t:3" <<<"$RACE_LOG")
+  if [ "$RACE_RC_A" = 0 ] && [ "$cnt" -ge 2 ]; then
+    ok "mutation confirmed: an ignored claim verify-read reopens the race (the assertions above would now be red)"
+  else
+    bad "mutation confirmed: an ignored claim verify-read reopens the race" \
+      "expected A to also succeed (exit 0) and t:3 renamed >=2 times; rcA=$RACE_RC_A count=$cnt outA=$RACE_OUT_A"
+  fi
+fi
 
 rm -rf "$D"
 
