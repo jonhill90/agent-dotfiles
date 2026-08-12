@@ -97,21 +97,41 @@ fi
 
 # Which adapter owns $PANE. SUPERVISOR_HARNESS names it outright; otherwise it
 # is inferred from the pane's own command, the same signal lanes.sh keys on.
-# That inference is imperfect and the imperfection is filed: `pane_current_
-# command` is `node` for EVERY Node-based harness (agent-dotfiles#216), so a
-# second Node CLI in the supervisor pane would be handed copilot's chrome.
-# It fails toward `unknown` rather than toward a false idle -- another
-# harness's markers do not match this one's paint -- so #216 is a precision
-# bug here, not a safety one, and is left to #216 rather than fixed in passing.
+#
+# agent-dotfiles#234 corrects what this comment used to claim. It said the
+# Node collision (#216: `pane_current_command` is `node` for EVERY Node-based
+# harness) was "a precision bug here, not a safety one", because a mismatched
+# adapter's markers do not match the pane's paint. That is exactly backwards
+# for the TOLD branch, and #234's reviewers reproduced it: this probe's
+# not-busy answer is IDLE, and idle is what the watchdog acts on. Told
+# `codex` while a copilot pane is mid-turn, codex's `esc to interrupt` does
+# not match copilot's `esc interrupt`, so a working supervisor reads dead and
+# gets restarted. Measured before the fix, on tests/supervisor/stubs:
+# `state: restarted`, `/loop` delivered into a busy pane.
+#
+# So a told name is not taken on trust: the pane's own command has to be one
+# the named adapter claims. Corroborated, it decides as before; contradicted
+# or unreadable, this returns non-zero and the caller reports cannot-tell,
+# which this script already treats as busy.
+#
+# Deliberately NOT the argv disambiguation the Python side got for the same
+# collision (adapter.py's `command_verdict`, #234). Nothing here needs to
+# tell codex-under-node from copilot-under-node: `harness_index_for_command`
+# never could place a node pane as codex anyway (harness/codex.sh's
+# COMMAND_RE is `^codex$`), and the cost of withholding differs by orders of
+# magnitude between the two seams -- there, a lane never dispatchable; here,
+# one skipped restart, reported by name in the status file.
 harness_slot() {
-  local cmd
+  local cmd want
   [ "$HARNESS_REGISTRY_OK" = 1 ] || return 1
-  if [ -n "${SUPERVISOR_HARNESS:-}" ]; then
-    harness_index_for_name "$SUPERVISOR_HARNESS"
-    return $?
-  fi
   cmd=$(tmux display-message -p -t "$PANE" '#{pane_current_command}' 2>/dev/null) || return 1
   [ -n "$cmd" ] || return 1
+  if [ -n "${SUPERVISOR_HARNESS:-}" ]; then
+    want=$(harness_index_for_name "$SUPERVISOR_HARNESS") || return 1
+    [[ "$cmd" =~ ${H_COMMAND_RE[$want]} ]] || return 1
+    printf '%s\n' "$want"
+    return 0
+  fi
   harness_index_for_command "$cmd"
 }
 
@@ -147,7 +167,17 @@ harness_note() {
   [ "$HARNESS_REGISTRY_OK" = 1 ] || { printf 'no harness-registry.sh beside this watchdog'; return 0; }
   if ! hidx=$(harness_slot); then
     if [ -n "${SUPERVISOR_HARNESS:-}" ]; then
-      printf 'no adapter under harness/ is named %s' "$SUPERVISOR_HARNESS"
+      # Two different cannot-tells behind one told name (agent-dotfiles#234):
+      # the name matches no adapter at all, or it matches one the pane's own
+      # command contradicts. The second is an operator error worth naming
+      # outright -- SUPERVISOR_HARNESS is set to the wrong harness.
+      if harness_index_for_name "$SUPERVISOR_HARNESS" >/dev/null 2>&1; then
+        printf 'SUPERVISOR_HARNESS=%s is not what pane command %s runs' \
+          "$SUPERVISOR_HARNESS" \
+          "$(tmux display-message -p -t "$PANE" '#{pane_current_command}' 2>/dev/null || echo '<unreadable>')"
+      else
+        printf 'no adapter under harness/ is named %s' "$SUPERVISOR_HARNESS"
+      fi
     else
       printf 'no adapter under harness/ claims pane command %s' \
         "$(tmux display-message -p -t "$PANE" '#{pane_current_command}' 2>/dev/null || echo '<unreadable>')"

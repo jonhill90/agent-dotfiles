@@ -263,7 +263,7 @@ case "$sub" in
     # scheme stubs/tmux-lanes uses; no fixture here models a service pane, so
     # the value itself is never looked up.
     now=$(date +%s)
-    while IFS='|' read -r i n c t a m; do
+    while IFS='|' read -r i n c t a m argv; do
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$i" "$n" "$c" "$((now-a))" "${m:-0}" "$((9000+i))" "$(wid_for "$i")"
     done < "$F" ;;
   display-message)
@@ -310,6 +310,11 @@ case "$sub" in
         value="${value//'#{socket_path}'/${STUB_SOCKET_PATH:-/tmp/stub-tmux-socket}}"
         value="${value//'#{session_created}'/${STUB_SESSION_CREATED:-1700000000}}"
         value="${value//'#{session_id}'/${STUB_SESSION_ID:-\$0}}"
+        # agent-dotfiles#234: `TmuxTransport.metadata` asks for the pane's tty
+        # too, and reads the harness's real argv off it (stubs/ps-dispatch),
+        # because `#{pane_current_command}` is `node` for BOTH Node harnesses
+        # and cannot tell copilot from codex.
+        value="${value//'#{pane_tty}'/${STUB_PANE_TTY:-/dev/ttyad$win}}"
         # agent-dotfiles#216: a pane option read (`cli.py`'s `get_option`
         # always asks for exactly one bare `#{@name}` token, never combined
         # with other fields) -- read back whatever `set-option` persisted for

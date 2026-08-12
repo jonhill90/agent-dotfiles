@@ -30,6 +30,10 @@ echo "dispatch.sh"
 D=$(mktemp -d); mkdir -p "$D/bin" "$D/roots"
 cp "$HERE/stubs/gh-claim" "$D/bin/gh"
 cp "$HERE/stubs/tmux-dispatch" "$D/bin/tmux"
+# agent-dotfiles#234: `cli.py lane-free` reads the pane's foreground argv to
+# tell the two Node harnesses apart. The stub answers for this suite's
+# synthetic ttys and delegates everything else to the real ps.
+cp "$HERE/stubs/ps-dispatch" "$D/bin/ps"
 
 # A minimal origin + clone, standing in for the shared checkout every lane
 # would otherwise share.
@@ -599,9 +603,14 @@ want_contains "the record carries the issue it was dispatched for" '"source_ref"
 # `bootstrap-session.sh`/`cli.py register` would have set), the same dispatch
 # reaches it end to end: claimed, briefed, and recorded with the harness
 # that was actually running, not a guess from `node`.
+#
+# agent-dotfiles#234 added the 7th fixture column: the pane's foreground
+# argv, which is what tells this `node` pane from the OTHER Node harness.
+# The recorded option alone is no longer enough for a command two harnesses
+# share -- see the refusal case immediately below.
 cat > "$D/lanes" <<'FIX'
 1|arch|claude.exe|❯ ready|1|0
-7|free-7|node|← open sidebar|1|0
+7|free-7|node|← open sidebar|1|0|node /opt/homebrew/bin/copilot --allow-all
 FIX
 printf '216|| a copilot lane must be dispatchable\n' >> "$D/issues"
 RUN_PRESEED_PANES='tmux set-option -p -t t:7 @hill90_lane_harness copilot' \
@@ -613,6 +622,47 @@ want_contains "the brief is submitted to the copilot lane" "send-keys -t t:@107 
 status=$(LEDGER_STATE="$D/state-216" ledger status 2>&1)
 want_contains "the lane the brief went to is recorded" '"lane":"t:7"' "$status"
 want_contains "the RECORDED harness is copilot, not guessed from 'node'" '"harness":"copilot"' "$status"
+
+# --- agent-dotfiles#234: a WRONG record, end to end through dispatch.sh ---
+#
+# The gap #216 left behind, at the seam that actually hands out work. The
+# same `node` lane, recorded `codex` this time, with a pane really running
+# copilot. Before #234 the plausibility table accepted `node` for either
+# harness, so this dispatched: a codex brief typed into a copilot pane, and
+# a ledger row asserting a harness that was never there. It is the one
+# failure in this estate shaped "told something false, cannot check it, so
+# accept" -- every other one refuses what it cannot place.
+#
+# The two cases around it are what make this one mean anything: the case
+# above (argv names copilot, record says copilot -> dispatched) and the case
+# below (nothing recorded at all -> refused). This is the third: recorded,
+# but contradicted.
+cat > "$D/lanes" <<'FIX'
+1|arch|claude.exe|❯ ready|1|0
+9|free-9|node|← open sidebar|1|0|node /opt/homebrew/bin/copilot --allow-all
+FIX
+printf '234|| a wrong recorded harness must be refused, not accepted\n' >> "$D/issues"
+RUN_PRESEED_PANES='tmux set-option -p -t t:9 @hill90_lane_harness codex' \
+  out=$(LEDGER_STATE="$D/state-234" run 234 wrong-harness "$D/brief-orig.md" acme/agent-dotfiles "$REPO"); rc=$?
+want_exit "a lane recorded codex whose pane runs copilot is refused" "$rc" 1 "$out"
+want_contains "the refusal names the lane as unavailable" "no free lane" "$out"
+log=$(tmuxlog)
+want_missing "no brief reaches a lane whose recorded harness is wrong" "send-keys -t t:9" "$log"
+
+# ...and the residue, stated as behaviour: a `node` lane whose argv cannot be
+# read is UNCONFIRMABLE, and unconfirmable withholds. This is the ratchet
+# tightening -- the lane really is copilot and really is recorded copilot,
+# and it is still refused, because nothing available can confirm it. Said
+# here rather than discovered later.
+cat > "$D/lanes" <<'FIX'
+1|arch|claude.exe|❯ ready|1|0
+9|free-9|node|← open sidebar|1|0|/usr/bin/env some-other-node-cli
+FIX
+RUN_PRESEED_PANES='tmux set-option -p -t t:9 @hill90_lane_harness copilot' \
+  out=$(LEDGER_STATE="$D/state-234b" run 234 unconfirmable-node "$D/brief-orig.md" acme/agent-dotfiles "$REPO"); rc=$?
+want_exit "a node lane whose argv confirms nothing is refused" "$rc" 1 "$out"
+log=$(tmuxlog)
+want_missing "no brief reaches an unconfirmable node lane" "send-keys -t t:9" "$log"
 
 # The unidentifiable case still refuses (agent-dotfiles#216's own rule): the
 # SAME node lane with no harness option recorded must not be dispatched to --

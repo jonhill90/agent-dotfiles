@@ -1,0 +1,41 @@
+#!/bin/bash
+# Stub `ps` for dispatch.sh tests (agent-dotfiles#234).
+#
+# `TmuxTransport.foreground_argv` asks exactly one question of ps --
+#
+#   ps -t <tty> -o stat=,args=
+#
+# -- and stubs/tmux-dispatch reports `#{pane_tty}` as `/dev/ttyad<window>`,
+# so this maps that tty back to the fixture's 7th column and prints it as the
+# window's FOREGROUND process (`S+`). A row that omits the column falls back
+# to its command column, which is right for every harness whose process name
+# is unique: `claude.exe` needs no argv to be identified, and only the shared
+# `node` name does.
+#
+# Anything else is delegated to the real ps rather than guessed at: lanes.sh
+# asks its own, different question here (`ps -o args= -p <pane_pid>`, #154),
+# and before this stub existed that call reached the real binary. A stub that
+# swallowed it would silently change what the rest of this suite measures.
+F="${LANES_FIXTURE:?}"
+
+prev=""
+tty=""
+for arg in "$@"; do
+  [ "$prev" = "-t" ] && tty="$arg"
+  prev="$arg"
+done
+
+case "$tty" in
+  */ttyad*|ttyad*) ;;
+  *) exec /bin/ps "$@" ;;
+esac
+
+win="${tty##*ttyad}"
+line=$(awk -F'|' -v w="$win" '$1==w' "$F")
+[ -n "$line" ] || exit 1        # a tty we do not know: same as real ps
+
+argv=$(cut -d'|' -f7 <<<"$line")
+[ -n "$argv" ] || argv=$(cut -d'|' -f3 <<<"$line")
+printf 'STAT ARGS\n'
+printf 'Ss   -zsh\n'
+printf 'S+   %s\n' "$argv"

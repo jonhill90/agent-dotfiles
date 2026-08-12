@@ -23,7 +23,7 @@ CLAUDE_ACTIVE_RE = re.compile(
 # option one of those two already set. It is never solely inferred here
 # (agent-dotfiles#216).
 #
-# This table is the PLAUSIBILITY CHECK `_command_matches` runs against a
+# This table is the PLAUSIBILITY CHECK `command_verdict` runs against a
 # harness already on record; it does not decide what a lane IS. Every
 # Node-based harness's process reads "node" in `#{pane_current_command}` --
 # confirmed live for both copilot and codex (#216's own measurement, window 8
@@ -37,6 +37,69 @@ HARNESS_COMMANDS = {
     "codex": ("codex", "codex.exe", "node"),
     "copilot": ("copilot", "copilot.exe", "node"),
 }
+
+
+# agent-dotfiles#234. A command TWO harnesses claim ("node") used to answer
+# the plausibility check the same way a command one harness claims does:
+# yes. That made a WRONG record indistinguishable from a right one --
+# recorded `codex`, really running copilot, accepted in silence. It is the
+# only failure in this estate shaped "told something false, cannot check it,
+# so accept"; every other one is "cannot tell, so refuse".
+#
+# So the check is three-valued now (`command_verdict`): confirmed,
+# contradicted, ambiguous -- and only `confirmed` admits a lane. These
+# patterns are what turns ambiguous into confirmed, matched against the
+# pane's foreground command line (`TmuxTransport.metadata`'s "argv"), which
+# names the tool even when the process name does not:
+#
+#   node /opt/homebrew/bin/copilot --allow-all
+#   node .../@openai/codex/bin/codex.js
+#
+# Measured on this machine 2026-08-12: `file $(which copilot)` reports "a
+# /usr/bin/env node script text executable" and its first line is
+# `#!/usr/bin/env node`, so its argv[0] is node and argv[1] is the copilot
+# script path -- the collision, and its own way out. (`codex` here is a
+# Mach-O binary today, hence `comm` = `codex`; it read `node` in #216's
+# window-8 measurement under a Node install, which is why the table still
+# lists it and why this half has to work for codex too.)
+#
+# Anchored on a path segment END -- `/copilot` or `/codex.js` followed by a
+# space or end of line -- not on the word appearing anywhere. A bare mention
+# ("--model gpt-5-codex", a cwd called `copilot-work`) is not evidence of
+# which program is running, and a check that accepted one would re-open this
+# issue from the other side.
+HARNESS_ARGV_RE = {
+    "claude": re.compile(r"(?:^|[/\s])claude(?:\.exe|\.js|\.mjs)?(?=\s|$)"),
+    "codex": re.compile(r"(?:^|[/\s])codex(?:\.exe|\.js|\.mjs)?(?=\s|$)"),
+    "copilot": re.compile(r"(?:^|[/\s])copilot(?:\.exe|\.js|\.mjs)?(?=\s|$)"),
+}
+
+
+def command_verdict(harness, command, argv=""):
+    """What the live pane says about a RECORDED harness (#216, #234).
+
+    Three answers, never two:
+
+    * `contradicted` -- no harness that runs this command is the recorded
+      one. #216's case, unchanged.
+    * `confirmed` -- exactly one harness runs this command and it is the
+      recorded one, OR the command is shared and the pane's own argv names
+      the recorded harness and only it.
+    * `ambiguous` -- the command is shared and argv settles nothing: it was
+      unreadable (`ps` unavailable, process already gone), or it names
+      neither harness, or it somehow names both.
+
+    Callers admit a lane on `confirmed` and on nothing else. `ambiguous` is
+    a REFUSAL, not a pass -- the #124/#126 ratchet: an identity that cannot
+    be checked may withhold a lane, never admit one.
+    """
+    candidates = [name for name, commands in HARNESS_COMMANDS.items() if command in commands]
+    if harness not in candidates:
+        return "contradicted"
+    if len(candidates) == 1:
+        return "confirmed"
+    named = [name for name in candidates if HARNESS_ARGV_RE[name].search(argv or "")]
+    return "confirmed" if named == [harness] else "ambiguous"
 
 
 # Matches on a quoted phrase anywhere in a 25-line capture window, the same
@@ -105,18 +168,27 @@ class TmuxAdapter:
         self.clock = clock or time.time
 
     @staticmethod
-    def _command_matches(harness, command):
+    def _command_matches(harness, command, argv=""):
         """Plausibility check, NOT identity (agent-dotfiles#216). `harness`
         must already be a recorded fact by the time this is called; this
-        only refuses a recording that the live pane visibly contradicts."""
-        return command in HARNESS_COMMANDS.get(harness, ())
+        only confirms a recording the live pane positively corroborates.
+
+        agent-dotfiles#234: true for `confirmed` alone -- an ambiguous
+        answer (two harnesses share this command and argv settles nothing)
+        is false here, the same as a contradicted one. See
+        `command_verdict` for which of the two a caller is looking at."""
+        return command_verdict(harness, command, argv) == "confirmed"
 
     def register_lane(self, *, lane, target, harness, repo, nonce):
         metadata = self.transport.metadata(target)
         if metadata["path"] != repo:
             raise RuntimeError(f"lane repo mismatch: {metadata['path']}")
-        if not self._command_matches(harness, metadata["command"]):
-            raise RuntimeError(f"lane harness mismatch: {metadata['command']}")
+        verdict = command_verdict(harness, metadata["command"], metadata.get("argv", ""))
+        if verdict != "confirmed":
+            raise RuntimeError(
+                f"lane harness mismatch ({verdict}): recorded {harness!r} against pane "
+                f"command {metadata['command']!r} argv {metadata.get('argv', '') or '<unreadable>'!r}"
+            )
         self.transport.set_option(target, self.NONCE_OPTION, nonce)
         self.transport.set_option(target, self.LANE_OPTION, lane)
         self.transport.set_option(target, self.HARNESS_OPTION, harness)
@@ -141,7 +213,7 @@ class TmuxAdapter:
             and metadata["path"] == record["repo"]
             and metadata["server_id"] == record["server_id"]
             and metadata["session_id"] == record["session_id"]
-            and self._command_matches(record["harness"], metadata["command"])
+            and self._command_matches(record["harness"], metadata["command"], metadata.get("argv", ""))
             and self.transport.get_option(record["pane_id"], self.NONCE_OPTION) == record["nonce"]
             and self.transport.get_option(record["pane_id"], self.LANE_OPTION) == lane
         )
