@@ -125,6 +125,16 @@ def parser():
     lane_free_parser.add_argument("--target", required=True)
     lane_free_parser.add_argument("--window-name", required=True)
 
+    # agent-dotfiles#212: the read `dispatch.sh` needs to refuse a review
+    # dispatched back to the lane that wrote the code under review. The
+    # ledger already records each task's `lane` permanently (`tasks.id` is
+    # its primary key, and `Ledger._assign_tx` raises rather than let a
+    # second lane claim the same task id) -- this just exposes that lookup,
+    # the same way `lane-free` exposes `lane_available` rather than making
+    # dispatch.sh touch the database directly.
+    task_lane_parser = sub.add_parser("task-lane")
+    task_lane_parser.add_argument("--task", required=True)
+
     sub.add_parser("status")
     return root
 
@@ -405,6 +415,9 @@ def main(argv=None):
         value = lane_free(
             ledger, adapter.transport, lane=args.lane, target=args.target, window_name=args.window_name
         )
+    elif args.command == "task-lane":
+        row = ledger.get_task(args.task)
+        value = {"task": args.task, "known": row is not None, "lane": row["lane"] if row is not None else None}
     elif args.command == "record-completion":
         value = record_completion(ledger, task=args.task, note=args.note)
     elif args.command == "accept":
