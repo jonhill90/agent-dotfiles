@@ -855,6 +855,17 @@ class SkillBenchTests(unittest.TestCase):
             f"orphaned skill not reported: {findings}",
         )
 
+    def test_missing_skills_dir_warns_instead_of_silent(self) -> None:
+        # PR #185 review, blocking finding: no local skills/ (the normal
+        # state of this repo since #9) must produce a warning Finding, not
+        # a silent []  indistinguishable from "checked, found no orphans".
+        skills = sorted(validator.DEFAULT_APM_SKILLS)
+        self.write_roster("\n".join(skills) + "\n")
+        findings = validator.validate_skill_roster_delta(self.root)
+        self.assertEqual(len(findings), 1, f"expected one warning: {findings}")
+        self.assertEqual(findings[0].level, "warning")
+        self.assertIn("orphan check cannot run", findings[0].message)
+
     def test_benched_skill_is_not_reported(self) -> None:
         # Test 2 (part 1): a benched skill with a reason is not flagged
         # as orphaned.

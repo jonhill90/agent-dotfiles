@@ -472,15 +472,31 @@ def validate_skill_roster_delta(root: Path) -> list[Finding]:
     agent-dotfiles#181: eleven skills were authored on 2026-08-11 and never
     added to `default-skills.txt` or any bench list, so they were installed
     on no harness and nothing said so. This repo does not vendor `skills/`
-    (#9), so there is nothing to diff against in the normal case — skip
-    silently, matching `validate_roster_resolves`'s convention, rather than
-    flag every roster line as unresolvable. Where a local `skills/` does
-    exist (a sighted tree, or a test fixture), diff it against the roster
-    union plus the bench list and name whatever falls through both.
+    (#9), so there is nothing to diff against in the normal case. That is
+    not the same situation as `validate_roster_resolves`'s silent skip:
+    that check has a real substitute instrument (`apm lock`/`apm install`
+    fails loudly on an unresolvable name), but nothing else in this repo
+    or in CI catches an upstream skill that was authored and never
+    rostered or benched here. A budget component with a cap that silently
+    reports nothing when it cannot measure is the exact failure
+    agent-dotfiles#5 found — say so instead, the same way the
+    description-token cap warns a few functions above when it has no
+    local `skills/` to measure.
     """
     roster = root / "settings" / "default-skills.txt"
-    if not roster.is_file() or not (root / "skills").is_dir():
+    if not roster.is_file():
         return []
+    if not (root / "skills").is_dir():
+        return [
+            Finding(
+                "warning",
+                root / "skills",
+                "orphan check cannot run: no local skills/ (#9 moved skill "
+                "content to jonhill90/skills and jonhill90/skills-private); "
+                "nothing else in this repo or CI detects an authored skill "
+                "that is neither rostered nor benched",
+            )
+        ]
     accounted = set(roster_union(root)) | set(benched_skills(root))
     orphaned = sorted(
         d.name
