@@ -71,7 +71,19 @@ bad() { { echo "  FAIL $1"; sed 's/^/       /' <<<"${2:-}"; } >&3; fail=$((fail+
 # 12 run() sites at 60s each plus up to 16 reap() sites at 30s each sums to
 # well past test_shell_suites.py's timeout=300, so per-site bounds can still,
 # in the pathological case, reproduce the very silent hang this is fixing.
-# 240s leaves 60s of headroom under that harness timeout.
+#
+# 270s is chosen from both ends, measured, not picked round. Below it: the
+# slowest environment this could be reproduced in (amd64 emulated on arm64,
+# --cpus=1, stress-ng --cpu 8 --cpu-load 95) runs this suite CORRECTLY --
+# 33 passed, 0 failed -- in 213/218/221/226s, so a budget near 240 would
+# start failing runs that are merely slow rather than stuck. Above it: the
+# abort itself is prompt, measured at 1-2s past the budget under that same
+# load (SUITE_MAX_SECONDS=60 aborted at 61/62/61s), so 270 lands ~30s clear
+# of the harness's 300s. The residual, stated plainly rather than hidden: an
+# environment that legitimately needs more than ~270s for this suite will now
+# go red with a named site instead of hanging silently. That is the trade
+# being made, and it is the right way round -- a reported failure can be
+# read, a 300s silent kill cannot.
 #
 # Every bound here is WALL-CLOCK ($SECONDS, a deadline computed up front),
 # not a count of `sleep 0.1` iterations. That distinction is not academic:
@@ -82,7 +94,7 @@ bad() { { echo "  FAIL $1"; sed 's/^/       /' <<<"${2:-}"; } >&3; fail=$((fail+
 # iterations" is 100 * however-slow-the-box-is, which is exactly the
 # unbounded quantity the bound exists to remove. A deadline in $SECONDS
 # cannot be stretched that way.
-SUITE_MAX_SECONDS=${SUITE_MAX_SECONDS:-240}
+SUITE_MAX_SECONDS=${SUITE_MAX_SECONDS:-270}
 REAP_MAX_SECONDS=${REAP_MAX_SECONDS:-30}
 RUN_MAX_SECONDS=${RUN_MAX_SECONDS:-60}
 STATUS_MAX_SECONDS=${STATUS_MAX_SECONDS:-15}
