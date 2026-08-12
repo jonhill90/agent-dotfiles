@@ -936,6 +936,93 @@ def validate_static_context(root: Path) -> list[Finding]:
     return findings
 
 
+PY_GLYPH_BLOCK_RE = re.compile(r"^glyph\s*=\s*\{(.*?)^\}", re.DOTALL | re.MULTILINE)
+PY_GLYPH_KEY_RE = re.compile(r'"([a-z][a-z-]*)"\s*:')
+SH_CASE_BLOCK_RE = re.compile(r"^map_status\(\)\s*\{(.*?)^\}", re.DOTALL | re.MULTILINE)
+SH_CASE_ARM_RE = re.compile(r"^\s*([a-z][a-z|-]*)\)", re.MULTILINE)
+
+
+def extract_renderer_states(renderer: Path) -> set[str] | None:
+    """The lane states one `laneview/` renderer's map actually names, read
+    out of the map itself rather than a comment beside it -- the same
+    "parse what ships, not what a doc remembers" shape as
+    `extract_lane_states` (#196).
+
+    Two map forms are understood, one per renderer shipped today: a python
+    `glyph = {...}` dict (`text.sh`) and a `map_status()` case statement
+    (`opensessions.sh`). Returns None -- "this renderer has no map I can
+    read" -- for anything else, which the caller reports as a warning
+    rather than an error: a future renderer that legitimately has no state
+    map (one that prints `lanes.sh`'s states verbatim, say) must not be
+    unmergeable, but it must not be silently unchecked either.
+    """
+    text = renderer.read_text(encoding="utf-8")
+    glyph_block = PY_GLYPH_BLOCK_RE.search(text)
+    if glyph_block:
+        return set(PY_GLYPH_KEY_RE.findall(glyph_block.group(1)))
+    case_block = SH_CASE_BLOCK_RE.search(text)
+    if case_block:
+        states: set[str] = set()
+        for arm in SH_CASE_ARM_RE.findall(case_block.group(1)):
+            states.update(part for part in arm.split("|") if part)
+        return states
+    return None
+
+
+def validate_laneview_state_maps(root: Path) -> list[Finding]:
+    """Every `laneview/` renderer must name every state `lanes.sh` ships.
+
+    Filed from the review of #231, which measured the failure: `scrolled`
+    (lanes.sh's copy-mode branch) was in neither renderer's map, so
+    `opensessions.sh` fell through `*) echo idle` and drew a lane
+    `dispatch.sh` will refuse to use as a healthy green tick. A viewer that
+    is confidently wrong about a lane is worse than one that is absent,
+    which is `laneview/README.md` rule 2.
+
+    Unlike `validate_lane_state_docs` these are **errors**, not warnings.
+    That check's fix half the time lives in `jonhill90/skills` and would
+    force two-repo ceremony; both sides of this one are files in this
+    repository, so "add a state to lanes.sh" can and should mean "say what
+    each viewer draws for it" in the same change.
+    """
+    lanes_sh = root / "scripts" / "supervisor" / "lanes.sh"
+    laneview_dir = root / "scripts" / "supervisor" / "laneview"
+    if not lanes_sh.is_file() or not laneview_dir.is_dir():
+        return []
+    shipped = extract_lane_states(lanes_sh)
+    if not shipped:
+        return []
+
+    findings: list[Finding] = []
+    for renderer in sorted(laneview_dir.glob("*.sh")):
+        mapped = extract_renderer_states(renderer)
+        if mapped is None:
+            findings.append(
+                Finding(
+                    "warning",
+                    renderer,
+                    "no lane-state map this check can read (expected a "
+                    "python `glyph = {...}` dict or a `map_status()` case) "
+                    "-- this renderer is unchecked against lanes.sh's "
+                    "states (#231)",
+                )
+            )
+            continue
+        missing = sorted(shipped - mapped)
+        if missing:
+            findings.append(
+                Finding(
+                    "error",
+                    renderer,
+                    "lanes.sh ships state(s) "
+                    + ", ".join(f"`{s}`" for s in missing)
+                    + " this renderer's map does not name -- give each one "
+                    "an arm rather than letting it take the default (#231)",
+                )
+            )
+    return findings
+
+
 def validate(root: Path, target: Path | None = None) -> list[Finding]:
     skill_dirs = discover_skill_dirs(root, target)
     findings = validate_skill_collection(skill_dirs)
@@ -949,6 +1036,7 @@ def validate(root: Path, target: Path | None = None) -> list[Finding]:
         findings.extend(validate_roster_resolves(root))
         findings.extend(validate_skill_source_pins(root))
         findings.extend(validate_lane_state_docs(root))
+        findings.extend(validate_laneview_state_maps(root))
         findings.extend(validate_privacy(root))
         findings.extend(validate_static_context(root))
 

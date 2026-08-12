@@ -1106,3 +1106,118 @@ class LaneStateDocsTests(unittest.TestCase):
         findings = validator.validate_lane_state_docs(self.root)
         self.assertTrue(findings)
         self.assertTrue(all(f.level == "warning" for f in findings))
+
+
+class LaneviewStateMapTests(unittest.TestCase):
+    """agent-dotfiles#231: every laneview renderer must name every state
+    lanes.sh ships. The measured failure this guards is `scrolled` --
+    absent from both maps, so the sidebar drew a lane dispatch.sh refuses
+    to use as a healthy idle one."""
+
+    LANES_SH_BODY = (
+        "#!/bin/bash\n"
+        "state=free\n"
+        "state=busy\n"
+        "state=scrolled\n"
+    )
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.laneview = self.root / "scripts" / "supervisor" / "laneview"
+        self.laneview.mkdir(parents=True)
+        (self.root / "scripts" / "supervisor" / "lanes.sh").write_text(
+            self.LANES_SH_BODY, encoding="utf-8"
+        )
+
+    def write_renderer(self, name: str, body: str) -> Path:
+        path = self.laneview / name
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    @staticmethod
+    def glyph_renderer(keys: str) -> str:
+        return "#!/bin/bash\npython3 - <<'PY'\nglyph = {\n" + keys + "}\nPY\n"
+
+    @staticmethod
+    def case_renderer(arms: str) -> str:
+        return "#!/bin/bash\nmap_status() {\n  case \"$1\" in\n" + arms + "  esac\n}\n"
+
+    def test_extract_reads_a_python_glyph_dict(self) -> None:
+        path = self.write_renderer(
+            "text.sh", self.glyph_renderer('    "free": "-", "busy": "*",\n')
+        )
+        self.assertEqual(validator.extract_renderer_states(path), {"free", "busy"})
+
+    def test_extract_reads_a_case_statement_including_multi_arms(self) -> None:
+        path = self.write_renderer(
+            "opensessions.sh",
+            self.case_renderer(
+                "    free) echo idle ;;\n"
+                "    busy|scrolled) echo waiting ;;\n"
+                "    *) echo stale ;;\n"
+            ),
+        )
+        self.assertEqual(
+            validator.extract_renderer_states(path), {"free", "busy", "scrolled"}
+        )
+
+    def test_missing_state_is_an_error_naming_the_state(self) -> None:
+        """Positive control, and the exact #231 defect: `scrolled` ships
+        but neither map names it."""
+        self.write_renderer("text.sh", self.glyph_renderer('    "free": "-", "busy": "*",\n'))
+        self.write_renderer(
+            "opensessions.sh",
+            self.case_renderer("    free) echo idle ;;\n    *) echo idle ;;\n"),
+        )
+        findings = validator.validate_laneview_state_maps(self.root)
+        self.assertEqual(len(findings), 2)
+        self.assertTrue(all(f.level == "error" for f in findings))
+        self.assertTrue(all("scrolled" in f.message for f in findings))
+
+    def test_fully_mapped_renderers_produce_no_finding(self) -> None:
+        """Negative control -- a wildcard arm must not be what satisfies
+        the check; every state is named explicitly here."""
+        self.write_renderer(
+            "text.sh",
+            self.glyph_renderer('    "free": "-", "busy": "*", "scrolled": "^",\n'),
+        )
+        self.write_renderer(
+            "opensessions.sh",
+            self.case_renderer(
+                "    free) echo idle ;;\n"
+                "    busy) echo running ;;\n"
+                "    scrolled) echo waiting ;;\n"
+                "    *) echo stale ;;\n"
+            ),
+        )
+        self.assertEqual(validator.validate_laneview_state_maps(self.root), [])
+
+    def test_wildcard_arm_alone_does_not_satisfy_the_check(self) -> None:
+        """`*)` is a fallback, not a mapping: a renderer that only has one
+        must still be told which states it never named."""
+        self.write_renderer(
+            "opensessions.sh", self.case_renderer("    *) echo stale ;;\n")
+        )
+        findings = validator.validate_laneview_state_maps(self.root)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].level, "error")
+        for state in ("free", "busy", "scrolled"):
+            self.assertIn(state, findings[0].message)
+
+    def test_unreadable_map_warns_rather_than_blocking(self) -> None:
+        """A renderer with no map this check understands is unchecked, and
+        must say so -- but must not be unmergeable (a renderer that prints
+        lanes.sh's states verbatim is legitimate)."""
+        self.write_renderer("raw.sh", "#!/bin/bash\ncat\n")
+        findings = validator.validate_laneview_state_maps(self.root)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].level, "warning")
+        self.assertIn("unchecked", findings[0].message)
+
+    def test_no_laneview_dir_is_not_this_repos_shape(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.laneview)
+        self.assertEqual(validator.validate_laneview_state_maps(self.root), [])
