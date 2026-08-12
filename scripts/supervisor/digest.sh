@@ -33,16 +33,45 @@ OWNER="${DIGEST_OWNER:-jonhill90}"
 SINCE="${DIGEST_SINCE:-}"
 MODE="${1:-}"
 
+# jq is the only dependency this script does not already share with the rest
+# of the estate: watchdog.sh and loop-tick.md both use `gh ... --jq`, which is
+# gh's own bundled implementation and works with standalone jq absent. This is
+# the first script here to shell out to jq directly, so it is guarded like
+# every other precondition -- unguarded, `--json` printed a zero-byte payload
+# (8 lines of "jq: command not found" on stderr, nothing on stdout), which
+# directly violates the "a partial digest is still emitted, with the failures
+# named" contract above.
+if ! command -v jq >/dev/null 2>&1; then
+  if [ "$MODE" = "--json" ]; then
+    printf '{"errors":["jq is required but not installed"],"ok":false}\n'
+  else
+    echo "ERRORS (this digest is INCOMPLETE):"
+    echo "  ! jq is required but not installed"
+  fi
+  exit 1
+fi
+
 ERRORS=()
 note_error() { ERRORS+=("$1"); }
+
+# Splits only the LABEL prefix off a "label: value" status-file line, not
+# every colon in it -- a plain `awk -F': *'` field split truncates any value
+# containing its own colon. Reproduced live against watchdog.status:
+# `checked:  2026-08-12T03:10:31Z` read back as `2026-08-12T03`.
+status_field() {
+  local file="$1" label="$2"
+  awk -v label="$label" '
+    $0 ~ "^" label ":" { sub("^" label ": *", ""); print; exit }
+  ' "$file"
+}
 
 # --- watchdog -------------------------------------------------------------
 WD_FILE="$STATE/watchdog.status"
 if [ -r "$WD_FILE" ]; then
-  wd_state=$(awk -F': *' '/^state:/{print $2}' "$WD_FILE" | head -1)
-  wd_checked=$(awk -F': *' '/^checked:/{print $2}' "$WD_FILE" | head -1)
-  wd_restarts=$(awk -F': *' '/^restarts:/{print $2}' "$WD_FILE" | head -1)
-  wd_heartbeat=$(awk -F': *' '/^heartbeat:/{print $2}' "$WD_FILE" | head -1)
+  wd_state=$(status_field "$WD_FILE" state)
+  wd_checked=$(status_field "$WD_FILE" checked)
+  wd_restarts=$(status_field "$WD_FILE" restarts)
+  wd_heartbeat=$(status_field "$WD_FILE" heartbeat)
 else
   wd_state="UNREADABLE"; wd_checked=""; wd_restarts=""; wd_heartbeat=""
   note_error "watchdog.status unreadable at $WD_FILE"
@@ -55,23 +84,47 @@ fi
 if pgrep -f "inbox-poll.sh" >/dev/null 2>&1; then poller_alive=true; else poller_alive=false; fi
 PL_FILE="$STATE/inbox-poll.status"
 if [ -r "$PL_FILE" ]; then
-  poller_state=$(awk -F': *' '/^state:/{print $2}' "$PL_FILE" | head -1)
-  poller_checked=$(awk -F': *' '/^checked:/{print $2}' "$PL_FILE" | head -1)
+  poller_state=$(status_field "$PL_FILE" state)
+  poller_checked=$(status_field "$PL_FILE" checked)
 else
   poller_state="UNREADABLE"; poller_checked=""
   [ "$poller_alive" = true ] && note_error "inbox-poll.status unreadable while the process is running"
 fi
 
 # --- lanes ----------------------------------------------------------------
-LANES_OUT=$("$HERE/lanes.sh" "$SESSION" 2>/dev/null)
-if [ -z "$LANES_OUT" ]; then
+# Overridable so a test can exercise a lanes.sh shape (e.g. header row, no
+# data rows) without needing a real tmux session.
+LANES_BIN="${DIGEST_LANES_BIN:-$HERE/lanes.sh}"
+LANES_OUT=$("$LANES_BIN" "$SESSION" 2>/dev/null)
+lanes_rc=$?
+# Two distinct failure shapes, both invisible to a bare `[ -z ]` check:
+# lanes.sh exiting non-zero (session genuinely gone, caught below already by
+# emptiness in practice, but not guaranteed by contract), and lanes.sh exiting
+# 0 with ONLY its header row -- a real, if narrow, tmux hiccup shape. Either
+# one used to render as "the estate is idle in every category", indistinguishable
+# from a genuinely idle estate.
+lane_rows=$(printf '%s\n' "$LANES_OUT" | awk 'NR>1 && NF' | wc -l | tr -d ' ')
+if [ "$lanes_rc" -ne 0 ] || [ -z "$LANES_OUT" ]; then
   note_error "lanes.sh returned nothing for session '$SESSION'"
+elif [ "$lane_rows" -eq 0 ]; then
+  note_error "lanes.sh returned no lane rows for session '$SESSION' (header only)"
 fi
 lane_line() { awk -v s="$1" 'NR>1 && $NF==s {print $2}' <<<"$LANES_OUT" | paste -sd, - ; }
 
 # --- pull requests --------------------------------------------------------
-# One `gh` call per repo for the PR list, then one per PR for the run. The
-# per-PR fields that used to cost four calls each come from the list query.
+# One `gh` call per repo for the PR list, then one `gh run list` per PR,
+# scoped to that PR's own branch.
+#
+# It used to be one `gh run list --limit 40` per REPO, matched against every
+# PR by branch name. That call is not scoped to a branch -- it's the 40 most
+# recent runs across every branch in the repo. Measured against this repo
+# 2026-08-12: ~1 run every 11 minutes sustained, which exhausts a 40-slot
+# window in about 7 hours -- less than a PR commonly sits open under review.
+# Once a PR's run ages out of the window, `$r` was null and `run_conclusion`
+# read "NO RUN" -- indistinguishable from #149's real conflicted-branch case,
+# which this field exists to name. `--branch` costs one more call per PR but
+# reads the actual latest run for that branch, not a stale slice of a shared
+# window.
 PR_JSON="[]"
 for repo in $REPOS; do
   list=$(gh pr list -R "$OWNER/$repo" --state open \
@@ -80,15 +133,19 @@ for repo in $REPOS; do
     continue
   }
   [ -z "$list" ] && list="[]"
-  runs=$(gh run list -R "$OWNER/$repo" --limit 40 \
-        --json headSha,conclusion,headBranch 2>/dev/null) || {
-    note_error "gh run list failed for $OWNER/$repo -- CI status omitted"
-    runs="[]"
-  }
-  PR_JSON=$(jq -n --argjson acc "$PR_JSON" --argjson prs "$list" \
-    --argjson runs "$runs" --arg repo "$repo" '
-    $acc + [ $prs[] | . as $p |
-      ($runs | map(select(.headBranch == $p.headRefName)) | first) as $r |
+  pr_count=$(jq 'length' <<<"$list")
+  for ((i = 0; i < pr_count; i++)); do
+    p=$(jq -c ".[$i]" <<<"$list")
+    branch=$(jq -r '.headRefName' <<<"$p")
+    num=$(jq -r '.number' <<<"$p")
+    run=$(gh run list -R "$OWNER/$repo" --branch "$branch" --limit 1 \
+          --json headSha,conclusion 2>/dev/null) || {
+      note_error "gh run list failed for $OWNER/$repo#$num -- CI status omitted"
+      run="[]"
+    }
+    [ -z "$run" ] && run="[]"
+    r=$(jq -c '.[0] // {}' <<<"$run")
+    entry=$(jq -n --argjson p "$p" --argjson r "$r" --arg repo "$repo" '
       {
         repo: $repo, number: $p.number, title: $p.title,
         head: $p.headRefOid[0:8],
@@ -103,7 +160,9 @@ for repo in $REPOS; do
           | if test("REQUEST CHANGES";"i") then "REQUEST CHANGES"
             elif test("APPROVE";"i") then "APPROVE" else "none" end
         )
-      } ]') || note_error "jq failed assembling PRs for $repo"
+      }') || { note_error "jq failed assembling $OWNER/$repo#$num"; continue; }
+    PR_JSON=$(jq -nc --argjson acc "$PR_JSON" --argjson e "$entry" '$acc + [$e]')
+  done
 done
 
 # --- merges since ---------------------------------------------------------
@@ -148,7 +207,11 @@ else
     "lanes:    free=[\(.lanes.free)] busy=[\(.lanes.busy)]",
     "          blocked=[\(.lanes.blocked)] menu=[\(.lanes.menu_blocked)] dead=[\(.lanes.dead)]",
     (if (.prs|length) == 0 then "prs:      none open" else "prs:" end),
-    (.prs[] | "  \(.repo)#\(.number) ci=\(.run_conclusion)\(if .ci_is_current then "" else " [STALE - run is for \(.run_sha), head is \(.head)]" end) \(.merge_state) verdict=\(.verdict)"),
+    # Three distinct CI states, not two: no run at all, a run that failed, and
+    # a run that passed but is not for this head. Collapsing "no run" and
+    # "stale" cost a real investigation (#149) -- the STALE annotation names a
+    # run to distrust, so it is only printed when a run actually exists.
+    (.prs[] | "  \(.repo)#\(.number) ci=\(.run_conclusion)\(if (.ci_is_current or .run_conclusion == "NO RUN") then "" else " [STALE - run is for \(.run_sha), head is \(.head)]" end) \(.merge_state) verdict=\(.verdict)"),
     (if (.merged_since|length) > 0 then "merged:" else empty end),
     (.merged_since[] | "  \(.repo)#\(.number) \(.title[0:52])"),
     (if (.errors|length) > 0 then "ERRORS (this digest is INCOMPLETE):" else empty end),
