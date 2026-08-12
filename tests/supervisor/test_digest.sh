@@ -294,6 +294,16 @@ run_ok() {
     DIGEST_VERDICT_SOURCE=github \
     bash "$DIGEST" --json 2>/dev/null
 }
+# The SAME fixtures through the TEXT renderer. Everything above asserts on
+# --json only, which is how agent-dotfiles#229's blocking finding survived
+# review: the promotion was computed, stored in verdict_detail, asserted in
+# JSON -- and then dropped by the one branch a human actually reads.
+run_ok_text() {
+  PATH="$OK/bin:$PATH" SUPERVISOR_STATE="$D/state" LANES_SESSION=nosuch \
+    DIGEST_REPOS=test-repo DIGEST_OWNER=ownerx GH_STUB_FIXTURES="$OK/fixtures" \
+    DIGEST_VERDICT_SOURCE=github \
+    bash "$DIGEST" 2>/dev/null
+}
 J=$(run_ok)
 pr() { jq -c --argjson n "$1" '.prs[] | select(.number==$n)' <<<"$J"; }
 
@@ -354,6 +364,39 @@ chk "PR6 verdict reads unknown, not approved, for a review filed against a super
   "unknown" "$(jq -r '.verdict' <<<"$p6")"
 [ -n "$(jq -r '.verdict_detail' <<<"$p6")" ] && ok "PR6 verdict_detail names the stale SHA, not just 'unknown'" \
   || bad "PR6 verdict_detail non-empty" "$p6"
+
+# 12e. agent-dotfiles#229, BLOCKING: the promotion must reach the TEXT the
+# supervisor reads, not only the JSON. Before this, digest.sh printed the
+# detail only `if .verdict == "unknown"`, so PR7 rendered as
+#   test-repo#7 ci=NO RUN CLEAN verdict=approved
+# -- indistinguishable from a review filed at the literal current head, on a
+# branch that had in fact been rebased. #226's acceptance criterion is that
+# the promotion is "cheap to confirm, cheap to accept"; a reader cannot
+# confirm what they are never told.
+T=$(run_ok_text)
+# Guard the guard (agent-dotfiles#192, eighth instance): a text assertion that
+# never reaches the per-PR branch would pass for the wrong reason. Prove the
+# block ran before believing anything it printed.
+grep -q "prs:$" <<<"$T" && ! grep -q "prs:      none open" <<<"$T" \
+  && ok "text mode really reached the per-PR block (not 'none open')" \
+  || bad "text mode reached the per-PR block" "$T"
+t7=$(grep -E "test-repo#7 " <<<"$T")
+[ -n "$t7" ] && ok "text mode prints a line for PR7 at all" || bad "PR7 text line exists" "$T"
+grep -q "patch-id" <<<"$t7" \
+  && ok "PR7 text names the rebase promotion's basis, not just verdict=approved" \
+  || bad "PR7 text names the promotion basis" "$t7"
+grep -q "head moved" <<<"$t7" \
+  && ok "PR7 text says the head moved, so a rebase is legible at a glance" \
+  || bad "PR7 text says head moved" "$t7"
+# Do not regress the case that already worked: an `unknown` verdict still
+# carries its detail, and still reads `unknown`, never `none` -- `none` is a
+# claim ("nobody reviewed"), `unknown` is an absence of information.
+t6=$(grep -E "test-repo#6 " <<<"$T")
+grep -q "verdict=unknown (review(s) filed against" <<<"$t6" \
+  && ok "PR6 unknown still shows its detail in text, exactly as before" \
+  || bad "PR6 unknown detail unchanged in text" "$t6"
+grep -q "verdict=none" <<<"$t6" && bad "PR6 unknown must never render as none" "$t6" \
+  || ok "PR6 unknown does not render as none"
 
 # 13. never reviewed / approved / rejected are three distinct digest outputs
 # from the ledger source -- the bar this whole issue is measured against.
