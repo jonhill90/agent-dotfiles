@@ -100,6 +100,60 @@ payloads in an explicit untrusted-data block for this reason; any
 home-grown loop that ingests such text needs the same discipline, with the
 prompt explicitly opting in to acting on the payload.
 
+## Do agents prompt each other? No — and the question is worth answering
+
+The four types get read as four ways agents talk to each other. They are not.
+**None of the four involves one agent prompting another.** All four answer a
+single question — *what starts an iteration, and what ends it* — about **one**
+agent:
+
+| Type | Starts an iteration | Stops |
+|---|---|---|
+| Turn-based | A human message | The reply |
+| Goal-based | The previous iteration, while a goal is unmet | An evaluator judges it met |
+| Time-based | A clock | Never, until removed |
+| Proactive | The agent's own judgement that something needs doing | Its own judgement |
+
+The agent's work happens *inside* an iteration. Whether that work involves
+other agents is a **separate, orthogonal choice** — a question of transport,
+not of loop.
+
+So "loops are really just scripts" is close to right, and the useful correction
+is narrow: a loop is **control flow**, and the four types classify the *trigger
+and the stop condition*. A script is one honest implementation of it.
+
+### Why the distinction has teeth here
+
+Conflating the two makes message-passing look like a loop mechanism, and then
+the transport never gets designed — it gets improvised. This estate improvised
+one: **typing into another agent's terminal with `tmux send-keys`.**
+
+That is a transport with no delivery receipt, no schema, and no way to tell a
+prompt from a menu. Its cost is on the record:
+
+- **#159/#161** — the router printed `delivered` and exited 0 while the
+  characters operated a selection menu; the live reproduction changed a
+  lane's `/theme` setting. "I sent" and "it arrived" are different claims;
+  only the second was worth printing, and it was the one not checked.
+  Folder trust is one of four menu shapes the same mechanism can reach
+  (#159's own list: folder trust, `/model`, bash tool-permission approval,
+  `/theme`); #201 names **granted read/edit/execute filesystem trust** as
+  the hazard *class*, not as something #159/#161 drove live.
+- **#141** — work that existed only in a pane, lost.
+- **#184** — a lane offered as free while still holding work.
+- **#201** — of three harnesses tested, `codex` opened on a selection menu
+  and hit this hazard; `opencode` and `copilot` failed differently (not
+  staying resident, and an unrecognised ready state) and did not.
+
+None of those are loop bugs. Every one is a transport bug wearing a loop's
+clothes, which is exactly what the conflation predicts.
+
+**The rule:** pick the loop type from the trigger and the stop condition. Pick
+the transport separately, and hold it to the same bar as any other interface —
+a schema, a delivery receipt, and a failure that is distinguishable from
+success. A terminal is a display, not a message bus, for the same reason
+`AGENTS.md` insists tmux is not a database.
+
 ## Choosing a mechanism — the ring model, mapped onto §14
 
 `02-loop-types.md` sorts loop mechanisms by **who holds the restart
