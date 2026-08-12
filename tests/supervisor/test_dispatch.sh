@@ -884,7 +884,14 @@ rc=$?
 out=$(cat "$D/dispatch199.out")
 err=$(cat "$STDERR_FILE")
 want_exit "a dispatch run under its own shebang still succeeds" "$rc" 0 "$out"
-want_missing "stderr is clean on a successful dispatch (agent-dotfiles#199)" "declare:" "$err"
+# Empty, not just missing "declare:" -- a substring check only catches a
+# re-introduced declare -A and waves through any other stray write (proved
+# by injecting `echo ... >&2` before dispatch.sh's final exit 0 and watching
+# this suite stay green). stderr on a successful dispatch is not a place for
+# progress lines: the supervisor treats dispatch.sh's stderr as the signal
+# that something is wrong, so a legitimate message belongs on stdout instead.
+if [ -z "$err" ]; then ok "stderr is clean on a successful dispatch (agent-dotfiles#199)"
+else bad "stderr is clean on a successful dispatch (agent-dotfiles#199)" "expected empty stderr, got: $err"; fi
 
 rm -rf "$D"
 
