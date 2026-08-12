@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sync import (  # noqa: E402
     NEUTRAL_HARNESSES,
     apm_dependency_block,
+    benched_skills,
     load_default_skills,
     load_skill_roster,
     roster_union,
@@ -429,6 +430,75 @@ def validate_roster_resolves(root: Path) -> list[Finding]:
     ]
 
 
+def validate_skill_bench(root: Path) -> list[Finding]:
+    """A benched skill must carry a non-empty reason, and never also be rostered.
+
+    agent-dotfiles#181: an authored-but-unrostered skill was previously
+    indistinguishable from one deliberately withheld — an absence, not a
+    decision. The `[benched]` section makes withholding a stated decision;
+    this check makes an unstated one (an empty reason) fail rather than
+    silently pass, and catches the contradiction of a name benched and
+    rostered at once.
+    """
+    roster = root / "settings" / "default-skills.txt"
+    if not roster.is_file():
+        return []
+    findings: list[Finding] = []
+    benched = benched_skills(root)
+    for name, reason in sorted(benched.items()):
+        if not reason:
+            findings.append(
+                Finding(
+                    "error",
+                    roster,
+                    f"benched skill '{name}' has no reason",
+                )
+            )
+    overlap = sorted(set(benched) & set(roster_union(root)))
+    if overlap:
+        findings.append(
+            Finding(
+                "error",
+                roster,
+                f"skills both rostered and benched: {', '.join(overlap)}",
+            )
+        )
+    return findings
+
+
+def validate_skill_roster_delta(root: Path) -> list[Finding]:
+    """A skill authored here must be rostered or benched — never neither.
+
+    agent-dotfiles#181: eleven skills were authored on 2026-08-11 and never
+    added to `default-skills.txt` or any bench list, so they were installed
+    on no harness and nothing said so. This repo does not vendor `skills/`
+    (#9), so there is nothing to diff against in the normal case — skip
+    silently, matching `validate_roster_resolves`'s convention, rather than
+    flag every roster line as unresolvable. Where a local `skills/` does
+    exist (a sighted tree, or a test fixture), diff it against the roster
+    union plus the bench list and name whatever falls through both.
+    """
+    roster = root / "settings" / "default-skills.txt"
+    if not roster.is_file() or not (root / "skills").is_dir():
+        return []
+    accounted = set(roster_union(root)) | set(benched_skills(root))
+    orphaned = sorted(
+        d.name
+        for d in discover_skill_dirs(root, None)
+        if d.name not in accounted
+    )
+    if not orphaned:
+        return []
+    return [
+        Finding(
+            "error",
+            root / "skills",
+            f"skills present but neither rostered nor benched: "
+            f"{', '.join(orphaned)}",
+        )
+    ]
+
+
 def validate_roster_credit(root: Path) -> list[Finding]:
     """No default-roster skill may carry an unfinished verification promise."""
     manifest = root / "docs" / "provenance-manifest.md"
@@ -725,6 +795,8 @@ def validate(root: Path, target: Path | None = None) -> list[Finding]:
     if target is None:
         findings.extend(validate_projections(root))
         findings.extend(validate_apm_skill_roster(root))
+        findings.extend(validate_skill_bench(root))
+        findings.extend(validate_skill_roster_delta(root))
         findings.extend(validate_roster_credit(root))
         findings.extend(validate_roster_resolves(root))
         findings.extend(validate_skill_source_pins(root))
