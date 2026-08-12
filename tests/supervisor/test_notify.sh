@@ -61,7 +61,24 @@ if [ "$rc" -eq 0 ]; then echo "  ok   supervisor caller exits zero"; pass=$((pas
 else echo "  FAIL supervisor caller exited $rc: $(cat "$AUTH/err")"; fail=$((fail+1)); fi
 if [ -s "$CURL_LOG" ]; then echo "  ok   supervisor caller reaches curl"; pass=$((pass+1));
 else echo "  FAIL curl was never invoked for the supervisor caller"; fail=$((fail+1)); fi
-check "supervisor caller is logged as sent" "SENT telegram" "$AUTH/.local/state/agent-dotfiles-supervisor/notify.log"
+check "supervisor caller is logged as sent" "SENT telegram (supervisor)" "$AUTH/.local/state/agent-dotfiles-supervisor/notify.log"
+
+# --- a caller identifying as the director is allowed through, and logged ---
+# distinctly from supervisor (agent-dotfiles#193/#57): the caller gate is
+# extended, not duplicated, and who actually sent a message must stay
+# legible in notify.log even though both tiers share the one bot identity.
+DIR="$D/director"; mkdir -p "$DIR/.local/state/agent-dotfiles-supervisor"
+CURL_LOG="$DIR/curl.log"
+HOME="$DIR" PATH="$D/bin:$PATH" NOTIFY_ENV="$D/notify.env" CURL_LOG="$CURL_LOG" \
+  AGENT_NOTIFY_CALLER=director \
+  bash "$NOTIFY" "subject" "body" >"$DIR/out" 2>"$DIR/err"
+rc=$?
+if [ "$rc" -eq 0 ]; then echo "  ok   director caller exits zero"; pass=$((pass+1));
+else echo "  FAIL director caller exited $rc: $(cat "$DIR/err")"; fail=$((fail+1)); fi
+if [ -s "$CURL_LOG" ]; then echo "  ok   director caller reaches curl"; pass=$((pass+1));
+else echo "  FAIL curl was never invoked for the director caller"; fail=$((fail+1)); fi
+check "director caller is logged as sent, distinctly from supervisor" "SENT telegram (director)" \
+  "$DIR/.local/state/agent-dotfiles-supervisor/notify.log"
 
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
