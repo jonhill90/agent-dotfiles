@@ -236,5 +236,53 @@ grep -qi 'poller stopped' "$D/notify.log" 2>/dev/null && bad "paged for a death 
 grep -q 'state:.*stopped' "$D/status" 2>/dev/null && ok "...but the heartbeat file still records it" \
   || bad "no heartbeat status recorded" "$(cat "$D/status" 2>/dev/null)"
 
+# --- agent-dotfiles#187: the status file records the running commit --------
+# advance-live.sh's poller-restart check compares THIS line against LIVE's
+# own head sha to decide whether the poller is stale. It has to be the real
+# commit, not a guess -- a lane copy checked out to a real sha proves it.
+git -C "$D/lane" init -q
+git -C "$D/lane" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "lane commit"
+lane_sha=$(git -C "$D/lane" rev-parse HEAD)
+printf 'ok:\n' > "$D/fixture-sha"
+run "$D/fixture-sha" 1 >"$D/out8" 2>&1
+recorded=$(grep -m1 '^sha:' "$D/status" 2>/dev/null | awk '{print $2}')
+[ "$recorded" = "$lane_sha" ] && ok "the status file's sha: line matches the commit the poller is running from" \
+  || bad "status sha mismatch" "recorded='$recorded' wanted='$lane_sha'"
+
+# --- agent-dotfiles#187: a version-triggered restart is deliberate ---------
+# advance-live.sh's maybe_restart_poller writes INBOX_POLL_RESTART_FLAG and
+# queues a relaunch; this end only has to notice the flag, exit cleanly
+# between iterations, and not page Jon about it -- the same DELIBERATE gate
+# #155/#160 already built for the INBOX_POLL_ITERATIONS path above.
+rm -f "$D/notify.log" "$D/status" "$D/poll.log"
+: > "$D/notify.log"
+RESTART_FLAG="$D/restart-flag"
+rm -f "$RESTART_FLAG"
+HOME="$D/state" INBOX_SCRIPT="$D/fixture-forever" ROUTE_LOG="$D/route.log" NOTIFY_LOG="$D/notify.log" \
+  INBOX_POLL_ITERATIONS=0 INBOX_POLL_STATUS="$D/status" INBOX_POLL_LOG="$D/poll.log" \
+  INBOX_POLL_BACKOFF_BASE=0 INBOX_POLL_MIN_UPTIME=0 INBOX_POLL_RESTART_FLAG="$RESTART_FLAG" \
+  bash "$D/lane/inbox-poll.sh" t >"$D/out9" 2>&1 &
+pid=$!
+waited=0
+while [ ! -s "$D/status" ] && [ "$waited" -lt 50 ]; do sleep 0.1; waited=$((waited + 1)); done
+: > "$RESTART_FLAG"
+waited=0
+while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 100 ]; do sleep 0.1; waited=$((waited + 1)); done
+if kill -0 "$pid" 2>/dev/null; then
+  bad "a restart-flag request makes the poller exit on its own" "still running after ${waited}00ms"
+  kill -TERM "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+else
+  wait "$pid" 2>/dev/null
+  ok "a restart-flag request makes the poller exit on its own"
+fi
+grep -qi 'poller stopped' "$D/notify.log" 2>/dev/null && bad "a version-triggered restart paged Jon" "$(cat "$D/notify.log")" \
+  || ok "a version-triggered restart does not page Jon"
+[ -f "$RESTART_FLAG" ] && bad "the poller left the restart flag behind" "" \
+  || ok "the poller consumes (removes) the restart flag"
+grep -q 'state:.*stopped' "$D/status" 2>/dev/null && ok "the heartbeat file records the restart stop anyway" \
+  || bad "no heartbeat status recorded for the restart" "$(cat "$D/status" 2>/dev/null)"
+grep -qi 'version-triggered restart' "$D/poll.log" 2>/dev/null && ok "the log names it a version-triggered restart" \
+  || bad "no version-triggered restart line in the log" "$(cat "$D/poll.log" 2>/dev/null)"
+
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
