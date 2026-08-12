@@ -233,6 +233,32 @@ Rules:
 - Do not hand-maintain a growing matrix of harness skill copies.
 - Generated package or harness output must identify its canonical source.
 
+## tmux is not a database
+
+Jon, twice and emphatically: **"TMUX IS NOT A DATABASE."**
+
+tmux is for persistent terminals, multiplexing, and plugins. Those are the
+reasons it was chosen and they are not in question.
+
+**What must never be stored in it:** anything the system *decided* and needs to
+*remember* — whether a lane is available, who owns a task, that work completed.
+Those belong in the ledger.
+
+**What may be read from it:** observations about what a pane is doing right
+now — busy, blocked, scrolled, hung. Those are measurements, not records.
+
+The distinction is **decided-and-remembered versus observed-in-the-moment.**
+
+This is written down because it was not a design decision, it accreted: window
+names started as labels for a human, a script needed the cheapest available
+signal for "is this lane idle", claims reused the same string, and completion
+became a rename. Five reasonable steps summing to something nobody would choose.
+It failed twice in one day (#102, and five idle lanes reading as zero because
+their names were stale) and it is why "no tmux on Windows" costs a state store as
+well as a terminal.
+
+A window name may be a *projection* of state. It may not be the state. See #174.
+
 ## Guardrails
 
 Do:
