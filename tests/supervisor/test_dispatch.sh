@@ -986,12 +986,17 @@ import os
 import sys
 src, dst = sys.argv[1], sys.argv[2]
 text = open(src).read()
-marker = '''  CLAIM=$("$LEDGER_PYTHON" "$LEDGER_CLI" claim-lane --lane "$candidate" --token "$CLAIM_TOKEN" 2>/dev/null) || continue
+marker = '''  CLAIM_LANE="$candidate"
+  CLAIM=$("$LEDGER_PYTHON" "$LEDGER_CLI" claim-lane --lane "$candidate" --token "$CLAIM_TOKEN" --owner-pid $$ 2>/dev/null) || { release_lane_claim; continue; }
   if grep -qF '"claimed":true' <<<"$CLAIM"; then
     LANE="$candidate"
-    CLAIM_LANE="$candidate"
     break
-  fi'''
+  fi
+  # Lost this candidate to another dispatcher: move on, exactly as before.
+  # The release is a no-op in that case (the row is the winner's, not ours)
+  # and only bites when the claim committed but its result did not come back
+  # readable -- which would otherwise leak a claim only the reap could clear.
+  release_lane_claim'''
 assert marker in text, "claim-lane block not found -- script shape changed"
 assert text.count(marker) == 1, "claim-lane block not unique -- script shape changed"
 replacement = '''  LANE="$candidate"  # MUTATED: no atomic claim at all -- agent-dotfiles#184 pre-fix shape
@@ -1051,6 +1056,174 @@ else
     bad "mutation confirmed: an ignored claim verify-read reopens the race" \
       "expected A to also succeed (exit 0) and t:3 renamed >=2 times; rcA=$RACE_RC_A count=$cnt outA=$RACE_OUT_A"
   fi
+fi
+
+# --- agent-dotfiles#209: a dispatcher killed between claim and release -----
+#
+# Everything above proves that every abort path dispatch.sh ENUMERATES
+# releases its lane claim. #209 is about the paths it cannot enumerate: a
+# `kill`, an OOM, a closed terminal, a host crash. The placeholder
+# `claim_lane` writes is a task with status `created`, and `lane_available`
+# counts any non-terminal status as occupied -- so a dispatcher that dies
+# holding one leaves the lane reading occupied with nothing working it. That
+# is agent-dotfiles#102's failure shape (dispatch capacity silently falling to
+# zero while lanes sit idle) reached through the mechanism built to prevent
+# it, and it was hand-reconciled nine times in two days before this test
+# existed.
+#
+# The kill is delivered by standing in for `python3` (DISPATCH_PYTHON, which
+# dispatch.sh already reads) and signalling the DISPATCHER the instant its
+# claim has committed -- the exact instant the gap opens. No new seam in
+# dispatch.sh, and the victim is named by the `--owner-pid` argument the claim
+# itself carries, so the test cannot kill the wrong process.
+cat > "$D/kill-after-claim.sh" <<'KILL'
+#!/bin/bash
+set -uo pipefail
+out=$(python3 "$@" 2>&1); rc=$?
+printf '%s\n' "$out"
+case " $* " in
+  *" claim-lane "*) ;;
+  *) exit $rc ;;
+esac
+grep -qF '"claimed":true' <<<"$out" || exit $rc
+victim=""; prev=""
+for a in "$@"; do
+  [ "$prev" = "--owner-pid" ] && victim="$a"
+  prev="$a"
+done
+[ -n "$victim" ] || { echo "kill-after-claim: no --owner-pid in: $*" >&2; exit $rc; }
+kill "-${DISPATCH_TEST_KILL_SIGNAL:-KILL}" "$victim" 2>/dev/null
+# On a TERM the dispatcher runs its trap only once this foreground child is
+# gone; on a KILL it is already dead. The pause keeps either from racing the
+# assertions that follow.
+sleep 1
+exit $rc
+KILL
+chmod +x "$D/kill-after-claim.sh"
+
+# The ledger's own answer, asked directly: True (registered, free), False
+# (registered, an outstanding task owns it), None (never registered). No tmux
+# in the path, so this reports on ledger state and nothing else.
+lane_available() {  # lane_available <state-dir> <lane>
+  AGENT_SUPERVISOR_STATE_DIR="$1" python3 -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+from core import Ledger
+print(Ledger(sys.argv[2]).lane_available(sys.argv[3]))
+' "$HERE/../../scripts/supervisor" "$1" "$2" 2>&1
+}
+
+# Runs one dispatch that gets signalled right after its claim commits.
+# Leaves $CRASH_RC and $CRASH_OUT.
+run_killed_dispatch() {  # run_killed_dispatch <state> <issue> <slug> <signal> <script>
+  local state="$1" issue="$2" slug="$3" signal="$4" script="$5"
+  printf '%s|| a dispatcher signalled between claim and release\n' "$issue" >> "$D/issues"
+  CRASH_OUT=$(LEDGER_STATE="$state" DISPATCH_PYTHON="$D/kill-after-claim.sh" \
+              DISPATCH_TEST_KILL_SIGNAL="$signal" DISPATCH_SCRIPT="$script" \
+              run "$issue" "$slug" "$D/brief.md" acme/agent-dotfiles "$REPO")
+  CRASH_RC=$?
+}
+
+# --- SIGKILL: untrappable by any shell, so the reap is the only cover ------
+CRASH_STATE="$D/state-crash"
+run_killed_dispatch "$CRASH_STATE" 601 crash-after-claim KILL "$DISPATCH"
+want_exit "a dispatcher SIGKILLed right after its claim dies un-cleanly" "$CRASH_RC" 137 "$CRASH_OUT"
+crash_status=$(LEDGER_STATE="$CRASH_STATE" ledger status)
+want_contains "...leaving its claim placeholder behind: nothing released it" \
+  '"id":"ledger-claim:t:3:ad601-crash-after-claim"' "$crash_status"
+want_contains "...and the placeholder records the owner that died" '[owner=' "$crash_status"
+want_contains "...so the ledger reads lane t:3 OCCUPIED with nothing working it (#102's shape)" \
+  "False" "$(lane_available "$CRASH_STATE" t:3)"
+
+echo '602|| the lane must come back after a killed dispatcher' >> "$D/issues"
+out=$(LEDGER_STATE="$CRASH_STATE" run 602 after-crash "$D/brief.md" acme/agent-dotfiles "$REPO"); rc=$?
+want_exit "the NEXT dispatch reclaims that lane: the stranded claim is reaped" "$rc" 0 "$out"
+want_contains "...and says what it cleared instead of doing it silently" "cleared stranded lane claim" "$out"
+want_contains "...and the brief actually goes out" "dispatch: #602 -> " "$out"
+
+# --- SIGTERM: trappable, and the trap must not wait for a later reap -------
+TERM_STATE="$D/state-term"
+run_killed_dispatch "$TERM_STATE" 603 term-after-claim TERM "$DISPATCH"
+want_exit "a dispatcher SIGTERMed right after its claim exits through its trap" "$CRASH_RC" 143 "$CRASH_OUT"
+want_contains "...and the TRAP released the claim immediately -- lane free with no reap yet" \
+  "True" "$(lane_available "$TERM_STATE" t:3)"
+term_status=$(LEDGER_STATE="$TERM_STATE" ledger status)
+want_missing "...and left no placeholder behind at all" "ledger-claim:t:3" "$term_status"
+
+# --- MUTATION: remove the trap, and the SIGTERM case must go red ----------
+# The reap cannot stand in for this: a TERMed dispatcher's pid is gone, so a
+# LATER dispatch would reap its claim either way. What the trap buys is the
+# lane coming back AT ONCE rather than at the mercy of the next dispatch, so
+# the assertion this mutation has to break is the one taken immediately after
+# the signal, with no dispatch in between.
+NO_TRAP_MUTANT="$D/dispatch-no-trap.sh"
+patch_rc=0
+python3 - "$DISPATCH" "$NO_TRAP_MUTANT" <<'PY' || patch_rc=$?
+import os
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+text = open(src).read()
+marker = '''trap release_lane_claim EXIT
+trap 'release_lane_claim; exit 143' TERM   # 128 + 15
+trap 'release_lane_claim; exit 130' INT    # 128 + 2'''
+assert marker in text, "claim-release traps not found -- script shape changed"
+assert text.count(marker) == 1, "claim-release traps not unique -- script shape changed"
+text = text.replace(marker, ': # MUTATED: no trap -- only the four enumerated abort paths release', 1)
+here = 'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
+assert text.count(here) == 1, "HERE assignment not found or not unique -- script shape changed"
+text = text.replace(here, 'HERE=%r' % os.path.dirname(os.path.abspath(src)), 1)
+open(dst, "w").write(text)
+PY
+if [ "$patch_rc" -ne 0 ]; then
+  bad "setup: patched a copy of dispatch.sh with no claim-release trap" \
+    "could not patch $DISPATCH (exit $patch_rc) -- treating as a failure, not a skip"
+else
+  ok "setup: patched a copy of dispatch.sh with no claim-release trap"
+  NO_TRAP_STATE="$D/state-no-trap"
+  run_killed_dispatch "$NO_TRAP_STATE" 604 term-no-trap TERM "$NO_TRAP_MUTANT"
+  if [ "$(lane_available "$NO_TRAP_STATE" t:3)" = "False" ]; then
+    ok "mutation confirmed: with no trap, a SIGTERMed dispatcher strands its claim (the assertion above would now be red)"
+  else
+    bad "mutation confirmed: with no trap, a SIGTERMed dispatcher strands its claim" \
+      "expected lane_available False, got '$(lane_available "$NO_TRAP_STATE" t:3)'; rc=$CRASH_RC out=$CRASH_OUT"
+  fi
+fi
+
+# --- MUTATION: remove the reap, and the SIGKILL case must go red ----------
+NO_REAP_MUTANT="$D/dispatch-no-reap.sh"
+patch_rc=0
+python3 - "$DISPATCH" "$NO_REAP_MUTANT" <<'PY' || patch_rc=$?
+import os
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+text = open(src).read()
+marker = '''if REAP_OUT=$("$LEDGER_PYTHON" "$LEDGER_CLI" reap-lane-claims 2>&1); then'''
+assert marker in text, "reap block not found -- script shape changed"
+assert text.count(marker) == 1, "reap block not unique -- script shape changed"
+text = text.replace(marker, 'if REAP_OUT="" && false; then  # MUTATED: no reap of stranded claims', 1)
+here = 'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
+assert text.count(here) == 1, "HERE assignment not found or not unique -- script shape changed"
+text = text.replace(here, 'HERE=%r' % os.path.dirname(os.path.abspath(src)), 1)
+open(dst, "w").write(text)
+PY
+if [ "$patch_rc" -ne 0 ]; then
+  bad "setup: patched a copy of dispatch.sh that never reaps a stranded claim" \
+    "could not patch $DISPATCH (exit $patch_rc) -- treating as a failure, not a skip"
+else
+  ok "setup: patched a copy of dispatch.sh that never reaps a stranded claim"
+  NO_REAP_STATE="$D/state-no-reap"
+  run_killed_dispatch "$NO_REAP_STATE" 605 crash-no-reap KILL "$NO_REAP_MUTANT"
+  echo '606|| the lane the un-reaped mutant can never get back' >> "$D/issues"
+  out=$(LEDGER_STATE="$NO_REAP_STATE" DISPATCH_SCRIPT="$NO_REAP_MUTANT" \
+        run 606 after-crash-no-reap "$D/brief.md" acme/agent-dotfiles "$REPO"); rc=$?
+  if [ "$rc" -ne 0 ] && grep -qF "no free lane" <<<"$out"; then
+    ok "mutation confirmed: with no reap, the killed dispatcher's lane never comes back (the assertions above would now be red)"
+  else
+    bad "mutation confirmed: with no reap, the killed dispatcher's lane never comes back" \
+      "expected a refusal naming 'no free lane'; rc=$rc out=$out"
+  fi
+  want_contains "and the refusal names how to clear a stranded claim by hand" "release-lane-claim --lane <lane> --token <token>" "$out"
+  want_contains "and how to read the token out of the ledger" 'ledger-claim:<lane>:<token>' "$out"
 fi
 
 rm -rf "$D"

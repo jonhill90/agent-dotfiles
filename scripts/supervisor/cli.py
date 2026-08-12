@@ -12,7 +12,7 @@ from pathlib import Path
 
 from acp_transport import ACPTransport
 from adapter import ACPAdapter, TmuxAdapter
-from core import Ledger
+from core import Ledger, claim_owner_token
 from github_source import GithubTaskSource
 from sensor import StateSensor
 from transport import TmuxTransport
@@ -131,10 +131,31 @@ def parser():
     claim_lane_parser = sub.add_parser("claim-lane")
     claim_lane_parser.add_argument("--lane", required=True)
     claim_lane_parser.add_argument("--token", required=True)
+    # agent-dotfiles#209: the claiming process's pid, so a claim stranded by a
+    # kill the shell could not trap can be told from one still in flight. The
+    # HOST half is composed here (`claim_owner_token`), not passed in, so it
+    # matches what `reap-lane-claims` compares against on the way back out.
+    claim_lane_parser.add_argument("--owner-pid", type=int, default=None)
 
     release_lane_claim_parser = sub.add_parser("release-lane-claim")
     release_lane_claim_parser.add_argument("--lane", required=True)
     release_lane_claim_parser.add_argument("--token", required=True)
+
+    # agent-dotfiles#209: the untrappable half of claim cleanup. Called by
+    # `dispatch.sh` at startup, before it picks a lane -- see that script's
+    # step 0.5 for why the dispatcher itself is the right caller.
+    sub.add_parser("reap-lane-claims")
+
+    # agent-dotfiles#209, from the #144 finding that never got a caller:
+    # `Ledger.cancel_open_task` had no CLI wiring at all, so the recovery it
+    # exists for -- an operator freeing a lane held by something the automatic
+    # reap will not touch (a `ledger-hold:` row from #188, or a claim whose
+    # owner pid has been recycled) -- could not be performed with the tools
+    # this estate ships. Broader than `release-lane-claim` on purpose: it
+    # cancels whatever outstanding task owns the lane, without needing to know
+    # its id. Reach for `release-lane-claim` first; it is the scoped one.
+    cancel_open_task_parser = sub.add_parser("cancel-open-task")
+    cancel_open_task_parser.add_argument("--lane", required=True)
 
     sub.add_parser("status")
     return root
@@ -417,10 +438,16 @@ def main(argv=None):
             ledger, adapter.transport, lane=args.lane, target=args.target, window_name=args.window_name
         )
     elif args.command == "claim-lane":
-        value = ledger.claim_lane(args.lane, token=args.token)
+        owner = None if args.owner_pid is None else claim_owner_token(args.owner_pid)
+        value = ledger.claim_lane(args.lane, token=args.token, owner=owner)
     elif args.command == "release-lane-claim":
         ledger.release_lane_claim(args.lane, token=args.token)
         value = {"lane": args.lane, "token": args.token, "released": True}
+    elif args.command == "reap-lane-claims":
+        reaped = ledger.reap_stale_lane_claims()
+        value = {"reaped": reaped, "count": len(reaped)}
+    elif args.command == "cancel-open-task":
+        value = {"lane": args.lane, "cancelled": ledger.cancel_open_task(args.lane)}
     elif args.command == "record-completion":
         value = record_completion(ledger, task=args.task, note=args.note)
     elif args.command == "accept":

@@ -183,12 +183,30 @@ marker = '''  CHECK=$("$LEDGER_PYTHON" "$LEDGER_CLI" lane-free --lane "$candidat
     "$DISPATCH_TEST_RACE_HOOK" "$candidate" || true
   fi
 
-  CLAIM=$("$LEDGER_PYTHON" "$LEDGER_CLI" claim-lane --lane "$candidate" --token "$CLAIM_TOKEN" 2>/dev/null) || continue
+  # CLAIM_LANE is set BEFORE the claim call, not after it (agent-dotfiles#209).
+  # The placeholder row is written INSIDE that call, so assigning afterwards
+  # left a real window: a TERM landing while the dispatcher waited on this
+  # command substitution ran the trap with CLAIM_LANE still empty and the row
+  # already committed -- a stranded claim on the one signal path the trap
+  # exists to cover. Naming a lane this dispatch did not win costs nothing:
+  # `release_lane_claim` is scoped to (lane, THIS dispatch's token,
+  # status='created'), so it matches no row unless the claim really succeeded.
+  #
+  # `--owner-pid $$` is THIS script's pid, not the `cli.py` child's: the child
+  # exits the moment the claim is written, so its pid would read dead
+  # instantly and step 0.5's reap would clear a live dispatch's claim. `$$` is
+  # the parent shell's pid even inside this command substitution.
+  CLAIM_LANE="$candidate"
+  CLAIM=$("$LEDGER_PYTHON" "$LEDGER_CLI" claim-lane --lane "$candidate" --token "$CLAIM_TOKEN" --owner-pid $$ 2>/dev/null) || { release_lane_claim; continue; }
   if grep -qF '"claimed":true' <<<"$CLAIM"; then
     LANE="$candidate"
-    CLAIM_LANE="$candidate"
     break
-  fi'''
+  fi
+  # Lost this candidate to another dispatcher: move on, exactly as before.
+  # The release is a no-op in that case (the row is the winner's, not ours)
+  # and only bites when the claim committed but its result did not come back
+  # readable -- which would otherwise leak a claim only the reap could clear.
+  release_lane_claim'''
 assert marker in text, "lane-free selection block not found -- script shape changed"
 assert text.count(marker) == 1, "lane-free selection block not unique -- script shape changed"
 mutated = '''  # MUTATED: reproduces the pre-#174 bug -- trust the window name on a

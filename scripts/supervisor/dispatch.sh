@@ -115,6 +115,39 @@ if ! LEDGER_STATUS_OUT=$("$LEDGER_PYTHON" "$LEDGER_CLI" status 2>&1); then
   exit 1
 fi
 
+# --- 0.5 clear claims whose dispatcher died where nothing could clean up ---
+# agent-dotfiles#209. Step 1's claim is released on every abort path below and
+# by the EXIT/TERM/INT trap installed with it -- but SIGKILL, an OOM kill and
+# a host crash cannot be trapped by any shell, and a dispatcher lost that way
+# leaves its placeholder behind holding a lane that nothing is working. The
+# ledger reads that lane occupied forever, which is #102's exact shape
+# (dispatch capacity silently falling to zero while lanes sit idle) reached
+# through the mechanism that exists to prevent it.
+#
+# `reap-lane-claims` removes only claim placeholders whose recorded owner pid
+# is provably gone on this host -- not a TTL, which could not tell a slow
+# dispatch from a dead one and would reopen #184's race by expiring a live
+# claim (see `Ledger.reap_stale_lane_claims`). So this cannot make a lane
+# available that was not already unowned, which is #124/#126's ratchet.
+#
+# HERE rather than in a new daemon, and here rather than the watchdog: the
+# dispatcher is the only thing that reads lane availability to act on it, so
+# it is where a stranded claim actually costs something, and running the reap
+# immediately before selection means capacity comes back on the very next
+# dispatch attempt instead of on some sweep's schedule.
+#
+# NEVER FATAL. A reap that fails leaves exactly the state that existed before
+# this block -- some lanes stranded -- and refusing to dispatch over it would
+# turn a partial capacity loss into a total one.
+if REAP_OUT=$("$LEDGER_PYTHON" "$LEDGER_CLI" reap-lane-claims 2>&1); then
+  if ! grep -qF '"count":0' <<<"$REAP_OUT"; then
+    echo "dispatch: cleared stranded lane claim(s) whose dispatcher is gone: $REAP_OUT" >&2
+  fi
+else
+  echo "dispatch: WARNING -- could not reap stranded lane claims; continuing" >&2
+  sed 's/^/  /' <<<"$REAP_OUT" >&2
+fi
+
 # --- 1. a lane that is actually safe to dispatch to ------------------------
 # `send-keys -t session:` with an empty index does not error; it targets the
 # active window, which is usually the supervisor. Refuse an empty target
@@ -167,10 +200,49 @@ fi
 # claim, not a stranger's, because the claim already closed the window a
 # stranger could have used.
 CLAIM_TOKEN="$WINDOW_NAME"
+# agent-dotfiles#209. Two guards, and they are not the same guard.
+#
+# CLAIM_LANE: nothing has been claimed yet, so there is nothing to release.
+#
+# CLAIM_COMMITTED: the brief is LIVE in a real pane and this dispatch is no
+# longer unwindable. Past that point releasing the claim would free a lane
+# that is actively working -- #102/#126's failure, caused by the cleanup
+# rather than prevented by it. It matters because of the trap below, which
+# fires on the SUCCESS path too: on a clean dispatch `record_dispatch`'s own
+# `_register_lane_tx` has already cancelled this placeholder, so the release
+# would be a harmless no-op -- but when `record_dispatch` FAILS (non-fatal by
+# design, step 6) the placeholder is still `created` and still the only thing
+# holding the lane, and deleting it would hand a working lane to the next
+# dispatcher. The flag is what makes the trap safe to install unconditionally.
 release_lane_claim() {
   [ -n "${CLAIM_LANE:-}" ] || return 0
+  [ -z "${CLAIM_COMMITTED:-}" ] || return 0
   "$LEDGER_PYTHON" "$LEDGER_CLI" release-lane-claim --lane "$CLAIM_LANE" --token "$CLAIM_TOKEN" >/dev/null 2>&1
 }
+
+# The claim is a held resource, and every sibling script in this directory
+# that holds one guards it with a trap: `advance-live.sh:296`,
+# `would-revert.sh:138-140`, `watchdog.sh:428`, `inbox-poll.sh:200,215-217`.
+# dispatch.sh had none. Its four inline `release_lane_claim` calls cover the
+# four failures it ENUMERATES; a `kill`, a timeout wrapper, a closed terminal
+# or a crashed shell are not among them and left the claim behind.
+#
+# EXIT alone is not enough, for the reason #187 measured on inbox-poll.sh: an
+# untrapped SIGTERM reaches the EXIT trap only when bash happens to be waiting
+# on a foreground child, and lands as an outright kill otherwise -- and this
+# script spends most of its life in `sleep` and `tmux`, so both cases are
+# routine. TERM and INT are therefore trapped explicitly.
+#
+# SIGKILL CANNOT BE TRAPPED BY ANY SHELL, and neither can a host crash. This
+# trap does not cover them and does not claim to; step 0.5's reap is what
+# covers what the trap cannot, and the two together are the whole of #209's
+# cleanup. Neither alone is sufficient.
+#
+# release_lane_claim is idempotent (a scoped DELETE that matches no row the
+# second time), so the TERM/INT handlers re-entering it via EXIT is a no-op.
+trap release_lane_claim EXIT
+trap 'release_lane_claim; exit 143' TERM   # 128 + 15
+trap 'release_lane_claim; exit 130' INT    # 128 + 2
 
 # agent-dotfiles#199: NOT `declare -A`. macOS ships /bin/bash 3.2, which has
 # no associative arrays -- `declare -A` is rejected there and prints
@@ -205,12 +277,30 @@ while read -r candidate; do
     "$DISPATCH_TEST_RACE_HOOK" "$candidate" || true
   fi
 
-  CLAIM=$("$LEDGER_PYTHON" "$LEDGER_CLI" claim-lane --lane "$candidate" --token "$CLAIM_TOKEN" 2>/dev/null) || continue
+  # CLAIM_LANE is set BEFORE the claim call, not after it (agent-dotfiles#209).
+  # The placeholder row is written INSIDE that call, so assigning afterwards
+  # left a real window: a TERM landing while the dispatcher waited on this
+  # command substitution ran the trap with CLAIM_LANE still empty and the row
+  # already committed -- a stranded claim on the one signal path the trap
+  # exists to cover. Naming a lane this dispatch did not win costs nothing:
+  # `release_lane_claim` is scoped to (lane, THIS dispatch's token,
+  # status='created'), so it matches no row unless the claim really succeeded.
+  #
+  # `--owner-pid $$` is THIS script's pid, not the `cli.py` child's: the child
+  # exits the moment the claim is written, so its pid would read dead
+  # instantly and step 0.5's reap would clear a live dispatch's claim. `$$` is
+  # the parent shell's pid even inside this command substitution.
+  CLAIM_LANE="$candidate"
+  CLAIM=$("$LEDGER_PYTHON" "$LEDGER_CLI" claim-lane --lane "$candidate" --token "$CLAIM_TOKEN" --owner-pid $$ 2>/dev/null) || { release_lane_claim; continue; }
   if grep -qF '"claimed":true' <<<"$CLAIM"; then
     LANE="$candidate"
-    CLAIM_LANE="$candidate"
     break
   fi
+  # Lost this candidate to another dispatcher: move on, exactly as before.
+  # The release is a no-op in that case (the row is the winner's, not ours)
+  # and only bites when the claim committed but its result did not come back
+  # readable -- which would otherwise leak a claim only the reap could clear.
+  release_lane_claim
 done < <("$HERE/lanes.sh" --free "$SESSION" 2>/dev/null)
 
 if [ -z "$LANE" ]; then
@@ -218,6 +308,19 @@ if [ -z "$LANE" ]; then
   echo "dispatch: the ledger must say a lane is free to be dispatchable --" >&2
   echo "dispatch: one it has never seen is backfilled only if named 'free-N'; one it knows is occupied stays occupied regardless of name" >&2
   echo "dispatch: a lane that read free just now may have already been claimed by another dispatcher" >&2
+  # agent-dotfiles#209, following `lane-done.sh`'s precedent of naming its own
+  # recovery command in the refusal itself rather than leaving an operator to
+  # reconstruct it. Step 0.5's reap has ALREADY run by the time this prints,
+  # so anything still held here is held by something the reap will not touch:
+  # a claim whose owner pid is still alive (or has been recycled), a claim
+  # written on a different host, or a `ledger-hold:` row from a failed
+  # `record_dispatch` (#188) that is waiting on a human by design.
+  echo "dispatch: if this is wrong and a lane is held by a claim nobody owns:" >&2
+  echo "dispatch:   1. $LEDGER_PYTHON $LEDGER_CLI status   # look for '\"id\":\"ledger-claim:<lane>:<token>\"' -- the id IS the lane and token" >&2
+  echo "dispatch:   2. $LEDGER_PYTHON $LEDGER_CLI release-lane-claim --lane <lane> --token <token>" >&2
+  echo "dispatch: a lane held by a 'ledger-hold:' row instead is a failed ledger record awaiting reconciliation, not a stranded claim --" >&2
+  echo "dispatch: clear that one with: $LEDGER_PYTHON $LEDGER_CLI cancel-open-task --lane <lane>   (frees whatever outstanding task owns the lane)" >&2
+  echo "dispatch: CHECK THE PANE FIRST. Both commands make the lane dispatchable again; on a lane that is actually working, that is #102." >&2
   "$HERE/lanes.sh" "$SESSION" >&2
   exit 1
 fi
@@ -486,6 +589,20 @@ if [ -z "$submitted" ]; then
   echo "dispatch: the input box was not readable (input_box_state: ${box:-none})." >&2
   echo "dispatch: #$ISSUE_ARG is claimed and the worktree exists; CHECK THE PANE BY HAND." >&2
 fi
+
+# THE DISPATCH IS NOW COMMITTED, and this line is what makes the trap safe.
+# Every path that reaches here has a brief live in a real pane -- either
+# confirmed submitted, or unconfirmable and therefore not unwindable (the
+# WARNING branch above says exactly that: unwinding would strand a worker that
+# may well be working). From here on the lane claim must SURVIVE this
+# process's exit: on a clean run step 6 supersedes it, and when step 6 fails
+# the placeholder is the only thing keeping a working lane out of the next
+# dispatcher's hands. Releasing it here would be #102 caused by the cleanup.
+#
+# It must sit ABOVE step 6 for that second case: a `record_dispatch` failure
+# is non-fatal by design and falls straight through to the exit below, where
+# the EXIT trap runs.
+CLAIM_COMMITTED=1
 
 # --- 6. record what was dispatched. BEST EFFORT, NEVER FATAL --------------
 #

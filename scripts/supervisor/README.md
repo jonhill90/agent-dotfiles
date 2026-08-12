@@ -304,6 +304,51 @@ still not offered, which is the inversion #174 exists to prove. An unreadable
 ledger refuses every candidate rather than assume any of them are free. The
 lane cannot be chosen from the environment; there is no override.
 
+Reading a lane free is not the same as taking it (agent-dotfiles#184).
+`lane-free` is a QUERY, and the gap between it and the first `send-keys` spans
+the issue claim, the worktree build and the send — long enough for a second
+dispatcher to walk straight into it. So a candidate that reads free is
+immediately followed by `cli.py claim-lane`, an atomic write-then-verify: it
+inserts a placeholder task under the `one_open_task_per_lane` unique index and
+re-reads to confirm the row occupying the lane is its own. Two dispatchers
+racing the same candidate are serialized by the ledger's `flock` plus
+`BEGIN IMMEDIATE`; the loser is refused and moves to the next candidate.
+
+**And a claim outlives the process that took it, so both halves of its
+cleanup have to exist** (agent-dotfiles#209). `lane_available` counts that
+placeholder as occupying the lane, which is the point — but it means a
+dispatcher that dies holding one leaves the lane reading occupied with nothing
+working it, which is agent-dotfiles#102's failure shape (capacity silently
+falling to zero while lanes sit idle) arriving through the mechanism built to
+prevent it. Two mechanisms cover it, and neither is sufficient alone:
+
+- **A trap**, on `EXIT`/`TERM`/`INT`, releasing the claim on every exit the
+  shell can observe — the same guard `advance-live.sh`, `would-revert.sh`,
+  `watchdog.sh` and `inbox-poll.sh` already put on their own held resources.
+  It stops being armed the moment the brief is live in a pane: past that
+  point the dispatch is not unwindable and releasing would hand a working
+  lane to the next dispatcher.
+- **A reap**, run by `dispatch.sh` itself before it picks a lane
+  (`cli.py reap-lane-claims`), covering what no shell can trap: SIGKILL, an
+  OOM kill, a host crash. It is **not a TTL**. A TTL short enough to be
+  useful can expire on a slow-but-live dispatch and reopen the race above;
+  elapsed time cannot tell a slow dispatcher from a dead one. Each claim
+  records the owning process instead, and a claim is cleared only when that
+  pid is provably gone **on this host**. Every ambiguity — a live pid, a
+  recycled pid, another host, no recorded owner — leaves the claim alone, so
+  this can only ever clear a claim nobody owns, never grant a lane
+  (agent-dotfiles#124/#126's one-way ratchet).
+
+If a lane is still held after that, `dispatch.sh`'s `no free lane` refusal
+names the two manual recoveries rather than leaving them to be reconstructed:
+`cli.py release-lane-claim --lane <lane> --token <token>` for a specific claim
+(both parts are readable straight out of `cli.py status`, whose task id is
+`ledger-claim:<lane>:<token>`), and `cli.py cancel-open-task --lane <lane>`
+for whatever else holds it — including a `ledger-hold:` row from a failed
+`record-dispatch` (agent-dotfiles#188), which the automatic reap deliberately
+will not touch because it is a deliberate hold against a live pane. Check the
+pane before running either: both make the lane dispatchable again.
+
 It exists because `worktree.sh` shipped (#79) with no automated caller
 (agent-dotfiles#81): `grep -rn worktree.sh` found three code fences in
 `loop-tick.md` and the section above, and nothing else. The tool fails closed

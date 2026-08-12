@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import socket
 import sqlite3
 import tempfile
 import time
@@ -24,6 +25,63 @@ TERMINAL_STATUSES = ("complete", "failed", "cancelled")
 TASK_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
 COMPONENT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
 MAX_RESULT_BYTES = 64 * 1024
+
+# agent-dotfiles#209. `claim_lane` writes a placeholder task under this id
+# prefix; `reap_stale_lane_claims` is the only thing that removes one whose
+# owner never came back, and it must be able to tell a claim placeholder from
+# every other kind of outstanding task by inspection alone -- in particular
+# from `mark_lane_held`'s `ledger-hold:` rows (#188), which are DELIBERATE
+# holds awaiting a human and must never be reaped.
+CLAIM_TASK_PREFIX = "ledger-claim:"
+
+# The claiming process's identity, recorded in the placeholder's `summary`.
+# A suffix on an existing column rather than a new one: a `tasks` column would
+# mean a schema migration (see `_migrate_tasks_table`) for a field exactly one
+# row-shape in the whole table ever carries. Anchored at the end and matched
+# with a strict shape, so an unowned claim -- or a summary that merely happens
+# to mention the word -- parses as `None` and is never reaped.
+CLAIM_OWNER_RE = re.compile(r" \[owner=(?P<host>[^\]\s:]+):(?P<pid>[1-9][0-9]*)\]$")
+
+
+def claim_owner_token(pid, *, host=None):
+    """The `host:pid` string `claim_lane` records for `owner`.
+
+    Composed HERE rather than by the shell caller so both sides of the
+    liveness check spell the host the same way: `reap_stale_lane_claims`
+    compares against `socket.gethostname()`, and `$(hostname)` in bash is not
+    guaranteed to agree with it. A mismatch would be safe (the claim simply
+    would not be reaped) but permanently so, which is the failure this exists
+    to end.
+    """
+    return f"{host or socket.gethostname()}:{int(pid)}"
+
+
+def pid_is_alive(pid):
+    """True unless `pid` is provably gone on THIS host.
+
+    Deliberately asymmetric, because the two errors are not equally bad. A
+    false "alive" leaves a stranded claim for the next dispatch to reap or an
+    operator to clear by hand -- the cost #209 is reducing. A false "dead"
+    reaps a LIVE dispatcher's claim and reopens the race #184 closed, which is
+    the one-way ratchet of #124/#126. So `PermissionError` (the pid exists and
+    belongs to another user) reads as alive, and anything unparseable reads as
+    alive too.
+    """
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return True
+    if pid <= 0:
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+    return True
 
 
 class Ledger:
@@ -1023,7 +1081,7 @@ class Ledger:
             row = connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             return self._dict(row)
 
-    def claim_lane(self, lane, *, token, note="dispatch claim"):
+    def claim_lane(self, lane, *, token, note="dispatch claim", owner=None):
         """Atomically reserve `lane` for `token`, or refuse if it is not free.
 
         agent-dotfiles#184. `lane_free` (the read `dispatch.sh` uses to pick a
@@ -1052,20 +1110,28 @@ class Ledger:
         claim-then-verify, not a redundant check: it is what lets a caller
         trust "the value read back is mine" instead of assuming its own
         write could not have lost a race it was never actually exposed to.
+
+        agent-dotfiles#209: `owner` is the claiming PROCESS's identity
+        (`claim_owner_token`), recorded so that a claim whose owner died
+        before it could release can be told apart from one still in flight.
+        Optional, and its absence is not an error -- a claim with no owner is
+        simply never reaped automatically, which is exactly the behaviour
+        every claim had before #209. `dispatch.sh` always passes one.
         """
         now = int(self.clock())
+        summary = note if owner is None else f"{note} [owner={owner}]"
         with self._locked(), self._transaction() as connection:
             lane_row = connection.execute("SELECT nonce FROM lanes WHERE lane = ?", (lane,)).fetchone()
             if lane_row is None:
                 return {"lane": lane, "claimed": False, "reason": "unknown"}
-            task_id = f"ledger-claim:{lane}:{token}"
+            task_id = f"{CLAIM_TASK_PREFIX}{lane}:{token}"
             try:
                 connection.execute(
                     """
                     INSERT INTO tasks(id, lane, pane_nonce, summary, status, created_at, updated_at)
                     VALUES (?, ?, ?, ?, 'created', ?, ?)
                     """,
-                    (task_id, lane, lane_row["nonce"], note, now, now),
+                    (task_id, lane, lane_row["nonce"], summary, now, now),
                 )
             except sqlite3.IntegrityError:
                 pass
@@ -1099,12 +1165,72 @@ class Ledger:
         no row and is a safe no-op -- the caller does not need to know
         which case it is in before calling this.
         """
-        task_id = f"ledger-claim:{lane}:{token}"
+        task_id = f"{CLAIM_TASK_PREFIX}{lane}:{token}"
         with self._locked(), self._transaction() as connection:
             connection.execute(
                 "DELETE FROM tasks WHERE id = ? AND lane = ? AND status = 'created'",
                 (task_id, lane),
             )
+
+    def reap_stale_lane_claims(self, *, host=None, is_alive=None):
+        """Delete `claim_lane` placeholders whose owning process is provably gone.
+
+        agent-dotfiles#209. `claim_lane` + `release_lane_claim` + `dispatch.sh`'s
+        EXIT/TERM/INT trap cover every exit a dispatcher can OBSERVE. SIGKILL,
+        an OOM kill and a host crash are not observable -- bash cannot trap
+        them (`inbox-poll.sh:200` says the same thing about its own EXIT trap)
+        -- and a dispatcher lost that way leaves its placeholder behind with
+        status `created`. `lane_available` counts any non-terminal status as
+        occupied, so that lane reads occupied forever: agent-dotfiles#102's
+        failure shape (dispatch capacity silently falling to zero while lanes
+        sit idle) arriving through the mechanism built to prevent it.
+
+        This is the untrappable half of the cleanup, and it is deliberately
+        NOT a TTL. A TTL short enough to be useful can expire while a real
+        dispatch is still running -- worktree creation, the settle sleeps,
+        `DISPATCH_CONFIRM_TRIES` x `DISPATCH_SETTLE` (10s by default, and a
+        slow harness makes it longer) -- and reaping a LIVE dispatcher's claim
+        would reopen the very race #184 closed. Elapsed time cannot tell a
+        slow dispatch from a dead one; a pid can. So expiry here is a liveness
+        question with no clock in it at all, and it cannot fire early:
+
+        * Only rows under `CLAIM_TASK_PREFIX` are considered. `ledger-hold:`
+          rows (`mark_lane_held`, #188) are deliberate holds waiting on a
+          human and are never touched, nor is any real dispatch task.
+        * Only rows whose recorded owner host matches THIS host. A ledger
+          reached from more than one machine cannot have its claims judged
+          from here, and an unrecognisable owner is left alone.
+        * Only rows whose owner pid is provably gone -- see `pid_is_alive`,
+          which resolves every ambiguity as "alive". A recycled pid means a
+          claim is not reaped; it never means a live one is.
+
+        That is the one-way ratchet of #124/#126 held: this can make a lane
+        available only by clearing a claim whose owner no longer exists.
+
+        DELETEs rather than cancels, for `release_lane_claim`'s reason: the
+        row was a reservation, never a dispatch, and the abort cases in
+        test_dispatch.sh assert an empty task list. Returns the reaped rows,
+        so a caller can say out loud what it cleared.
+        """
+        host = host or socket.gethostname()
+        alive = pid_is_alive if is_alive is None else is_alive
+        reaped = []
+        with self._locked(), self._transaction() as connection:
+            rows = connection.execute(
+                "SELECT * FROM tasks WHERE status = 'created' AND id LIKE ? ORDER BY id",
+                (f"{CLAIM_TASK_PREFIX}%",),
+            ).fetchall()
+            for row in rows:
+                match = CLAIM_OWNER_RE.search(row["summary"] or "")
+                if match is None or match.group("host") != host:
+                    continue
+                if alive(int(match.group("pid"))):
+                    continue
+                connection.execute("DELETE FROM tasks WHERE id = ?", (row["id"],))
+                record = self._dict(row)
+                record["owner"] = f"{match.group('host')}:{match.group('pid')}"
+                reaped.append(record)
+        return reaped
 
     def _write_result(self, task_id, result):
         if not isinstance(result, bytes):
