@@ -67,10 +67,20 @@ PLAN=$("$PYTHON" "$RESTORE_HERE/cli.py" restore-plan 2>&1) || {
   sed 's/^/  /' <<<"$PLAN" >&2
   exit 1
 }
-ROWS=$("$PYTHON" - "$PLAN" <<'PY'
+# FS is the ASCII unit separator (\x1f), not a tab. Bash's `read` treats any
+# run of pure-whitespace IFS characters (space, tab, newline) as ONE
+# delimiter and drops empty fields next to it -- so a tab-joined row with an
+# unresolved (empty) harness_session_id, exactly the case this script exists
+# to refuse, silently shifts every field after it one column left. Measured:
+# `IFS=$'\t' read -r a b c <<<"$(printf 'x\t\ty\n')"` yields a=x b=y c=
+# (empty), not the empty middle field. \x1f is not in that whitespace class,
+# so empty fields are preserved exactly.
+FS=$'\x1f'
+ROWS=$("$PYTHON" - "$PLAN" <<PY
 import json, sys
+FS = "\x1f"
 for row in json.loads(sys.argv[1]):
-    print("\t".join(str(row.get(field) or "") for field in
+    print(FS.join(str(row.get(field) or "") for field in
                     ("lane", "harness", "harness_session_id", "repo", "task")))
 PY
 ) || { echo "restore: the ledger plan is not readable JSON" >&2; exit 1; }
@@ -91,7 +101,7 @@ refuse() {
   unrecoverable=$((unrecoverable + 1))
 }
 
-while IFS=$'\t' read -r lane harness session_id repo task; do
+while IFS="$FS" read -r lane harness session_id repo task; do
   [ -n "$lane" ] || continue
   # `lane` is `session:index`, the shape `lanes.sh --free` prints and
   # `dispatch.sh` records -- never a window name, which is not unique (the
@@ -159,7 +169,15 @@ while IFS=$'\t' read -r lane harness session_id repo task; do
     fi
   fi
 
-  pane_cmd=$("$TMUX_BIN" display-message -p -t "=$target_session:$index" '#{pane_current_command}' 2>/dev/null)
+  # `display-message -t "=sess:$index"` does NOT fail when window $index does
+  # not exist -- it silently answers for the session's *current* window
+  # instead, so a phantom window read as a live shell. List the real windows
+  # and match the index exactly before ever asking a target to describe
+  # itself; that is the only way to tell "absent" from "present and a shell".
+  pane_cmd=""
+  if "$TMUX_BIN" list-windows -t "=$target_session" -F '#{window_index}' 2>/dev/null | grep -qx "$index"; then
+    pane_cmd=$("$TMUX_BIN" display-message -p -t "=$target_session:$index" '#{pane_current_command}' 2>/dev/null)
+  fi
   if [ -n "$pane_cmd" ] && ! [[ "$pane_cmd" =~ ^($SHELLS)$ ]]; then
     # Something is already running there. NEVER touched -- this is both the
     # idempotence property and the #237 harm (nine live agents killed by a

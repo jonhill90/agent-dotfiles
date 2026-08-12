@@ -1008,8 +1008,17 @@ else
         --marker "$WORKTREE" \
         --since "$DISPATCH_SEND_EPOCH" \
         --timeout "${DISPATCH_SESSION_TIMEOUT:-20}" 2>&1); then
-      echo "dispatch: no harness session id recorded for $WINDOW_NAME -- ${HARNESS_SESSION_ID:-no reason given}" >&2
-      echo "dispatch: the dispatch STANDS; this lane will read unrecoverable to restore.sh until its next dispatch" >&2
+      # stdout, not stderr (agent-dotfiles#199/#237): this is loud, not a
+      # failure -- the brief already went out and the dispatch still
+      # succeeds. #199 holds dispatch.sh's stderr clean on any successful
+      # dispatch, on purpose, so the supervisor can treat stderr output as
+      # "something is wrong" without also having to parse it for this
+      # expected, non-fatal case. A resolver that can never find a real
+      # harness process (this repo's own test stubs, or a lane whose
+      # harness has no transcript path at all) hits this on every dispatch,
+      # which is exactly the noise #199 exists to keep off stderr.
+      echo "dispatch: no harness session id recorded for $WINDOW_NAME -- ${HARNESS_SESSION_ID:-no reason given}"
+      echo "dispatch: the dispatch STANDS; this lane will read unrecoverable to restore.sh until its next dispatch"
       HARNESS_SESSION_ID=""
     fi
   fi
