@@ -13,8 +13,13 @@
 #   impl:    the basename of a script under laneview/, e.g. text, opensessions
 #   session: tmux session to report on (default: agent-dotfiles)
 #
-# Adding a renderer is a new file under laneview/. Removing one is
-# `rm laneview/<impl>.sh` -- nothing here or in lanes.sh names it.
+# Adding a renderer is a new file under laneview/ that names every state
+# lanes.sh ships (laneview/README.md rule 4, enforced by
+# validate_repository.py). Removing one is `rm laneview/<impl>.sh` plus the
+# cases in tests/supervisor/test_laneview.sh that assert that renderer's own
+# behaviour -- nothing in scripts/ names any implementation, this file
+# re-enumerates the directory. See laneview/README.md for why the test
+# naming one is deliberate and is not coupling.
 
 set -uo pipefail
 
@@ -32,6 +37,14 @@ fi
 # lanes.sh is the one reader of tmux measurements and the ledger (#178
 # brief, "tmux is not a database"); every implementation gets state only
 # through this json, never by polling tmux or the ledger itself.
-json=$(bash "$HERE/lanes.sh" --json "$SESSION")
+if ! json=$(bash "$HERE/lanes.sh" --json "$SESSION") || [ -z "$json" ]; then
+  # Without this, a failing lanes.sh handed the renderer an empty string and
+  # the human saw a json.loads traceback instead of a diagnosis (review of
+  # #231). Empty is unambiguous: `--json` prints `[]` for a session with no
+  # lanes, so no output at all means lanes.sh could not read the session,
+  # and a view of state that could not be read is not a view.
+  echo "laneview.sh: lanes.sh --json $SESSION produced no output -- cannot render a view of state it could not read." >&2
+  exit 1
+fi
 
 exec "$IMPL_SCRIPT" "$SESSION" "$json"

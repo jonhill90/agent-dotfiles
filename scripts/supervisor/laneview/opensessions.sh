@@ -26,31 +26,55 @@ SESSION="$1"
 JSON="$2"
 URL="http://127.0.0.1:${OS_PORT:-39104}"
 
+# Returns nonzero; never exits. Review of #231 measured why this matters:
+# the caller below used to be the right-hand side of a pipeline, so an
+# `exit 1` here killed only the subshell -- a failed post silently skipped
+# the remaining lanes, left the sidebar showing whatever it had, and the
+# script still printed a success line and exited 0. That is precisely the
+# staleness README.md rule 2 forbids. The loop now runs in this shell and
+# decides what a failure means; this function only reports.
 post() {
   local path="$1" body="$2" code
   code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 2 \
-    -X POST "$URL$path" -H 'content-type: application/json' -d "$body") || {
+    -X POST "$URL$path" -H 'content-type: application/json' -d "$body" </dev/null) || {
     echo "laneview/opensessions.sh: cannot reach $URL -- is the OpenSessions daemon running? not rendering stale state." >&2
-    exit 1
+    return 1
   }
   if [ "$code" != "204" ] && [ "$code" != "200" ]; then
     echo "laneview/opensessions.sh: $path -> HTTP $code" >&2
-    exit 1
+    return 1
   fi
 }
 
-# lanes.sh's states -> OpenSessions' fixed AgentStatus vocabulary. This
-# mapping is lossy (#173): menu-blocked and text-blocked both collapse to
-# waiting, and unknown/service both read as idle. That loss is
-# OpenSessions', not this script's -- see laneview/README.md.
+# lanes.sh's states -> OpenSessions' fixed AgentStatus vocabulary
+# (idle/running/stale/waiting/error). Every state lanes.sh ships gets an
+# arm: `validate_laneview_state_maps` in scripts/validate_repository.py
+# reads these arms and errors if lanes.sh grows a state this case does not
+# name, so the next state cannot land here as a silent default.
+#
+# The mapping is lossy (#173): menu-blocked and text-blocked both collapse
+# to waiting, and unknown/service both read as idle. That loss is
+# OpenSessions' fixed vocabulary, not this script's -- see
+# laneview/README.md. `scrolled` was missing entirely until review of #231:
+# it fell to the old `*) idle` default and rendered a lane lanes.sh will
+# not dispatch to as a healthy green tick. It is now `waiting`, the same as
+# the other blocked-pending-a-human states.
+#
+# The fallback is no longer `idle`. A state this script has never heard of
+# is not evidence that a lane is available, and saying so would be the same
+# defect again; it renders `stale` and says so on stderr.
 map_status() {
   case "$1" in
     free) echo idle ;;
     busy) echo running ;;
     hung) echo stale ;;
-    menu-blocked|text-blocked|unsent) echo waiting ;;
+    menu-blocked|text-blocked|unsent|scrolled) echo waiting ;;
     dead) echo error ;;
-    *) echo idle ;;
+    service|supervisor|unknown) echo idle ;;
+    *)
+      echo "laneview/opensessions.sh: no mapping for lanes.sh state '$1' -- rendering it stale rather than idle" >&2
+      echo stale
+      ;;
   esac
 }
 
@@ -82,11 +106,20 @@ print(" · ".join(f"{n} {s}" for s, n in sorted(c.items())))
 PY
 )
 
-python3 -c '
+status_body() {
+  python3 -c '
 import json, sys
-for e in json.loads(sys.argv[1]):
-    print(json.dumps(e))
-' "$events" | while IFS= read -r ev; do
+print(json.dumps({"session": sys.argv[1], "text": sys.argv[2]}))
+' "$SESSION" "$1"
+}
+
+# Fed by process substitution on fd 3, not by a pipeline: this loop must run
+# in *this* shell so `pushed`/`failed` survive it and a failure is the
+# script's failure, not a subshell's (review of #231). fd 3 rather than
+# stdin so nothing the loop body runs can eat the remaining events.
+pushed=0
+failed=0
+while IFS= read -r ev <&3; do
   state=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["_state"])' "$ev")
   status=$(map_status "$state")
   ev_out=$(python3 -c '
@@ -94,12 +127,31 @@ import json, sys
 e = json.loads(sys.argv[1]); e.pop("_state"); e["status"] = sys.argv[2]
 print(json.dumps(e))
 ' "$ev" "$status")
-  post /api/agent-event "$ev_out"
-done
-
-post /set-status "$(python3 -c '
+  if post /api/agent-event "$ev_out"; then
+    pushed=$((pushed + 1))
+  else
+    failed=$((failed + 1))
+  fi
+done 3< <(python3 -c '
 import json, sys
-print(json.dumps({"session": sys.argv[1], "text": sys.argv[2]}))
-' "$SESSION" "$summary")"
+for e in json.loads(sys.argv[1]):
+    print(json.dumps(e))
+' "$events")
 
-echo "laneview opensessions -- pushed $(python3 -c 'import json,sys; print(len(json.loads(sys.argv[1])))' "$events") lane(s) for $SESSION to $URL"
+# `pushed` counts posts the daemon accepted, not events this script
+# generated. The old success line counted the latter and printed it as the
+# former -- an inferred figure reported as a measured one (AGENTS.md,
+# "Recording Figures").
+if [ "$failed" -gt 0 ]; then
+  # Some lanes are current and some are not, and from the sidebar the two
+  # are indistinguishable. Rule 2 is "degrade to absence, not to
+  # staleness", so overwrite the status line with the fact rather than
+  # leaving the previous summary standing as if it described this run.
+  post /set-status "$(status_body "lanes: view incomplete -- $failed of $((pushed + failed)) lane(s) failed to push; NOT current")" || true
+  echo "laneview/opensessions.sh: $failed of $((pushed + failed)) lane push(es) failed -- the sidebar is not a current view of $SESSION." >&2
+  exit 1
+fi
+
+post /set-status "$(status_body "$summary")" || exit 1
+
+echo "laneview opensessions -- pushed $pushed lane(s) for $SESSION to $URL"

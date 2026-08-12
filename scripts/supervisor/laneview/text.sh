@@ -20,14 +20,25 @@ import json, sys
 session, raw = sys.argv[1], sys.argv[2]
 rows = json.loads(raw)
 
+# One key per state lanes.sh ships. `validate_laneview_state_maps` in
+# scripts/validate_repository.py reads these keys and errors if lanes.sh
+# grows a state this dict does not name -- `scrolled` was missing until
+# review of #231 found it (lanes.sh's copy-mode branch), which is what the
+# check now prevents recurring.
 glyph = {
     "free": "-", "busy": "*", "hung": "!", "dead": "x",
     "menu-blocked": "?", "text-blocked": "?", "unsent": "~",
     "service": ".", "supervisor": ".", "unknown": "?",
+    "scrolled": "^",
 }
 
 print(f"laneview text -- {session}")
 for r in rows:
-    g = glyph.get(r["state"], "?")
+    # A state with no glyph gets one of its own, not `?`: `?` means "this
+    # renderer knows the lane is blocked or indeterminate", and a state
+    # this renderer has never heard of is a different claim. The state name
+    # itself is printed verbatim either way, which is why this renderer can
+    # never mislead the way the sidebar's fixed vocabulary can.
+    g = glyph.get(r["state"], "#")
     print(f"  {g} {r['name']:<24} {r['state']}")
 PY

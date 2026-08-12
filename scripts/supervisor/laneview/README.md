@@ -28,11 +28,26 @@ It must:
 2. **Degrade to absence, not to staleness.** If a renderer's own backend
    (a daemon, an HTTP endpoint) is unreachable, it must say so and exit
    nonzero — never show the last state it had as if it were current.
+   *Partly* unreachable counts: review of #231 measured `opensessions.sh`
+   pushing two of three lanes, leaving the third's tile untouched, and
+   still exiting 0 with a success line. A renderer that cannot complete a
+   render must overwrite whatever it can reach with a marker saying so,
+   and exit nonzero.
 3. **Cost nothing when unused.** No renderer may be sourced by, or run
    as a dependency of, `dispatch.sh`, `watchdog.sh`, `notify.sh`, or any
    other headless supervisor script. `laneview.sh` is only ever invoked by
    a human or a human-facing process (a tmux plugin, an interactive
    shell).
+4. **Name every state, and never let an unnamed one read as healthy.**
+   `lanes.sh` ships eleven states today. A renderer that maps the ones it
+   recognizes and defaults the rest is not neutral about the others —
+   review of #231 measured `scrolled`, a lane `dispatch.sh` will refuse to
+   use, drawn in the sidebar as a green idle tick because it fell through
+   `*) echo idle`. `validate_laneview_state_maps` in
+   `scripts/validate_repository.py` reads each renderer's map and **errors**
+   if `lanes.sh` grows a state the map does not name. A renderer with no
+   map that check can read gets a warning saying it is unchecked, so one
+   that legitimately has none stays mergeable and stays visible.
 
 That is the whole contract. It buys the two guarantees #178 asked to be
 demonstrated:
@@ -54,9 +69,22 @@ demonstrated:
 | `text.sh` | one line per lane to stdout | none — no daemon, no plugin | proves "apart": works in a bare shell, in cron, over SSH, with the supervisor never running |
 | `opensessions.sh` | a tmux sidebar pane, via OpenSessions' `/api/agent-event` + `/set-status` HTTP API | a Rust daemon + sidebar client per tmux client (TPM-installed plugin) | proves "together": the tmux-plugin path #173 measured live, unchanged in mechanism from `lanebridge.sh` |
 
-Removing either is a deletion of its one file. Neither implementation
-imports from the other, and `laneview.sh` does not special-case either
-name.
+Removing either is a deletion of its one file *under `scripts/`*. Neither
+implementation imports from the other, and `laneview.sh` does not
+special-case either name — it re-enumerates this directory, so deleting
+`text.sh` leaves `opensessions` resolving and needs no edit in `scripts/`.
+
+One caveat, measured in review of #231 rather than assumed: the earlier
+form of this claim was verified with a grep scoped to `scripts/supervisor`
+and then stated as if it covered the tree. It does not.
+`tests/supervisor/test_laneview.sh` names `text.sh` directly — deleting
+`text.sh` fails four of its cases. That is deliberate and is not coupling
+between implementations: the "apart" guarantee is a property of `text.sh`
+specifically (it renders with no tmux binary and no daemon reachable), so
+the test proving it has to name it. Deleting a renderer means deleting its
+file and the cases asserting its own behaviour. No other renderer, no
+supervisor script, and no check changes: `validate_laneview_state_maps`
+returns nothing when this directory is absent.
 
 ## What #173 already measured about the tmux-sidebar path specifically
 
