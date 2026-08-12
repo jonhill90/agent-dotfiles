@@ -153,6 +153,186 @@ class PrivacyDenylistTests(unittest.TestCase):
             self.assertEqual(vr.validate_privacy(root), [])
 
 
+class DestructiveTmuxVerbTests(unittest.TestCase):
+    def test_bare_tmux_kill_server_in_tests_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_bad.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text("#!/bin/bash\ntmux kill-server\n", encoding="utf-8")
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertTrue(findings)
+        self.assertEqual(findings[0].level, "error")
+        self.assertIn("bare destructive tmux verb", findings[0].message)
+
+    def test_respawn_window_is_rejected_too(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = root / "scripts" / "supervisor" / "bad.sh"
+            script.parent.mkdir(parents=True)
+            script.write_text("tmux respawn-window -k\n", encoding="utf-8")
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertTrue(findings)
+        self.assertIn("respawn-window", findings[0].message)
+
+    def test_shared_isolation_assertion_allows_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_good.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "cleanup_rt() { unset TMUX; export TMUX_TMPDIR=\"$RT\"; "
+                "assert_isolated_tmux; tmux kill-server 2>/dev/null; }\n",
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertEqual(findings, [])
+
+    def test_explicit_socket_flags_allow_destructive_verb(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_socket.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "tmux -L \"$SOCKET\" kill-server 2>/dev/null\n"
+                "tmux -S \"$SOCKET_PATH\" kill-session -t scratch\n",
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertEqual(findings, [])
+
+    def test_tmux_option_with_argument_does_not_hide_bare_destructive_verb(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_f_option.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "tmux -f /dev/null kill-server 2>/dev/null\n",
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertTrue(findings)
+        self.assertIn("kill-server", findings[0].message)
+
+    def test_multiline_shared_isolation_assertion_allows_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_multiline_good.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "unset TMUX\n"
+                "export TMUX_TMPDIR=\"$RT\"\n"
+                "assert_isolated_tmux\n"
+                "tmux kill-server 2>/dev/null\n",
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertEqual(findings, [])
+
+    def test_unset_tmux_alone_does_not_allow_destructive_verb(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_unset_only.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "unset TMUX\n"
+                "tmux kill-window -t scratch\n",
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertTrue(findings)
+        self.assertIn("kill-window", findings[0].message)
+
+    def test_explicit_socket_tmux_wrapper_allows_destructive_verb(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_wrapper.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                'tmux() { "$REAL_TMUX" -L "$SOCKET" "$@"; }\n'
+                "tmux kill-server 2>/dev/null\n",
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertEqual(findings, [])
+
+    def test_resolved_tmux_binary_variable_does_not_escape_the_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_bin_escape.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "TMUX_BIN=$(command -v tmux)\n"
+                '"$TMUX_BIN" kill-server\n',
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertTrue(findings)
+        self.assertIn("kill-server", findings[0].message)
+
+    def test_resolved_tmux_binary_variable_with_explicit_socket_is_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_bin_socket.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "REAL_TMUX=$(command -v tmux)\n"
+                '"$REAL_TMUX" -L "$SOCKET" kill-server 2>/dev/null\n',
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertEqual(findings, [])
+
+    def test_which_tmux_backtick_variable_does_not_escape_the_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_backtick_escape.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "TMUX_BIN=`which tmux`\n"
+                '"$TMUX_BIN" kill-session -t scratch\n',
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertTrue(findings)
+        self.assertIn("kill-session", findings[0].message)
+
+    def test_unreadable_utf8_file_is_reported_not_skipped(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_bad_bytes.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_bytes(b"#!/bin/bash\ntmux kill-server\n\xff\xfe garbage\n")
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].level, "error")
+        self.assertIn("cannot decode as UTF-8", findings[0].message)
+
+
 class FallbackFrontmatterTests(unittest.TestCase):
     def test_mini_yaml_matches_real_yaml_for_skill_frontmatter(self) -> None:
         import validate_repository as vr

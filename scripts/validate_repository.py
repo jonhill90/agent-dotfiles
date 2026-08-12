@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,6 +77,36 @@ RETIRED_PROJECTIONS = (
     ".codex/agents",
     ".github/agents",
 )
+TMUX_DESTRUCTIVE_VERBS = {
+    "kill-server",
+    "kill-session",
+    "kill-window",
+}
+TMUX_DESTRUCTIVE_PREFIXES = ("respawn-",)
+TMUX_SCAN_DIRS = ("scripts", "tests")
+TMUX_SCAN_SUFFIXES = {".py", ".sh", ".bash", ".md"}
+TMUX_ISOLATION_ASSERT = "assert_isolated_tmux"
+TMUX_EXPLICIT_SOCKET_WRAPPER_RE = re.compile(
+    r"^\s*([A-Za-z_][A-Za-z0-9_]*)\(\)\s*\{.*\s-[LS](?:\s|=|\"|')"
+)
+# `REAL_TMUX=$(command -v tmux)` / `X=\`which tmux\`` -- a variable that
+# resolves to the tmux binary itself, not the literal token `tmux`. The
+# guard must follow this or a call routed through such a variable is
+# invisible to it (agent-dotfiles#258 review).
+TMUX_BINARY_VAR_RE = re.compile(
+    r"^\s*([A-Za-z_][A-Za-z0-9_]*)="
+    r"[\"']?"
+    r"(?:\$\(\s*(?:command\s+-v|which)\s+tmux\s*\)|`\s*(?:command\s+-v|which)\s+tmux\s*`)"
+)
+TMUX_OPTIONS_WITH_ARGUMENTS = {
+    "-c",
+    "-C",
+    "-e",
+    "-f",
+    "-L",
+    "-S",
+    "-t",
+}
 
 
 @dataclass(frozen=True)
@@ -797,6 +828,151 @@ def validate_privacy(root: Path) -> list[Finding]:
     return findings
 
 
+def is_tmux_token(token: str, tmux_binary_vars: frozenset[str]) -> bool:
+    if token == "tmux":
+        return True
+    return any(token in (f"${name}", f"${{{name}}}") for name in tmux_binary_vars)
+
+
+def destructive_tmux_verb(
+    tokens: list[str], tmux_binary_vars: frozenset[str] = frozenset()
+) -> str | None:
+    for index, token in enumerate(tokens):
+        if not is_tmux_token(token, tmux_binary_vars):
+            continue
+        cursor = index + 1
+        while cursor < len(tokens):
+            candidate = tokens[cursor]
+            if candidate in TMUX_OPTIONS_WITH_ARGUMENTS:
+                cursor += 2
+                continue
+            if candidate.startswith("-"):
+                cursor += 1
+                continue
+            if "=" in candidate and not candidate.startswith(("-", "=")):
+                cursor += 1
+                continue
+            if candidate in TMUX_DESTRUCTIVE_VERBS or candidate.startswith(
+                TMUX_DESTRUCTIVE_PREFIXES
+            ):
+                return candidate
+            break
+    return None
+
+
+def tmux_call_has_explicit_socket(
+    tokens: list[str], tmux_binary_vars: frozenset[str] = frozenset()
+) -> bool:
+    for index, token in enumerate(tokens):
+        if not is_tmux_token(token, tmux_binary_vars):
+            continue
+        cursor = index + 1
+        while cursor < len(tokens):
+            candidate = tokens[cursor]
+            if candidate in {"-L", "-S"}:
+                return cursor + 1 < len(tokens)
+            if candidate.startswith(("-L", "-S")) and len(candidate) > 2:
+                return True
+            if candidate in TMUX_OPTIONS_WITH_ARGUMENTS:
+                cursor += 2
+                continue
+            if not candidate.startswith("-") and not (
+                "=" in candidate and not candidate.startswith(("-", "="))
+            ):
+                break
+            cursor += 1
+    return False
+
+
+def line_tokens(line: str) -> list[str]:
+    try:
+        return shlex.split(line, comments=True, posix=True)
+    except ValueError:
+        return line.split()
+
+
+def line_has_tmux_isolation(line: str) -> bool:
+    isolated_socket = "TMUX_TMPDIR=" in line or "export TMUX_TMPDIR" in line
+    detached_from_live_tmux = "env -u TMUX" in line or "unset TMUX" in line
+    return TMUX_ISOLATION_ASSERT in line and isolated_socket and detached_from_live_tmux
+
+
+def validate_tmux_destructive_verbs(root: Path) -> list[Finding]:
+    """Reject destructive tmux verbs unless the call is visibly isolated.
+
+    The allowed form mirrors scripts/supervisor/tmux-isolation.sh:
+    unset TMUX, set TMUX_TMPDIR, and run assert_isolated_tmux before the
+    destructive command. The scanner intentionally lives in the existing
+    repository validator so CI executes it.
+    """
+    findings: list[Finding] = []
+    for directory in TMUX_SCAN_DIRS:
+        base = root / directory
+        if not base.is_dir():
+            continue
+        for path in sorted(p for p in base.rglob("*") if p.is_file()):
+            if path.suffix not in TMUX_SCAN_SUFFIXES:
+                continue
+            try:
+                raw = path.read_text(encoding="utf-8")
+            except UnicodeError as exc:
+                findings.append(
+                    Finding(
+                        "error",
+                        path,
+                        f"cannot decode as UTF-8, so the tmux destructive-verb "
+                        f"scan cannot run on it: {exc}",
+                    )
+                )
+                continue
+            lines = raw.splitlines()
+            tmux_binary_vars: set[str] = set()
+            for line in lines:
+                var_match = TMUX_BINARY_VAR_RE.match(line)
+                if var_match:
+                    tmux_binary_vars.add(var_match.group(1))
+            tmux_binary_vars_frozen = frozenset(tmux_binary_vars)
+            saw_tmux_unset = False
+            saw_tmux_tmpdir = False
+            saw_isolation_assert = False
+            isolated_wrappers: set[str] = set()
+            for line_number, line in enumerate(lines, start=1):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                wrapper_match = TMUX_EXPLICIT_SOCKET_WRAPPER_RE.search(stripped)
+                if wrapper_match:
+                    isolated_wrappers.add(wrapper_match.group(1))
+                has_isolation = line_has_tmux_isolation(stripped)
+                if "unset TMUX" in stripped or "env -u TMUX" in stripped:
+                    saw_tmux_unset = True
+                if "TMUX_TMPDIR=" in stripped or "export TMUX_TMPDIR" in stripped:
+                    saw_tmux_tmpdir = True
+                if TMUX_ISOLATION_ASSERT in stripped:
+                    saw_isolation_assert = True
+                isolation_ready = (
+                    saw_tmux_unset and saw_tmux_tmpdir and saw_isolation_assert
+                )
+                tokens = line_tokens(stripped)
+                verb = destructive_tmux_verb(tokens, tmux_binary_vars_frozen)
+                if verb and not (
+                    has_isolation
+                    or isolation_ready
+                    or tmux_call_has_explicit_socket(tokens, tmux_binary_vars_frozen)
+                    or (tokens and tokens[0] in isolated_wrappers)
+                ):
+                    findings.append(
+                        Finding(
+                            "error",
+                            path,
+                            f"bare destructive tmux verb `{verb}` on line "
+                            f"{line_number}; use env -u TMUX, TMUX_TMPDIR, "
+                            f"and {TMUX_ISOLATION_ASSERT} before targeting tmux",
+                        )
+                    )
+    return findings
+
+
 def validate_skill_collection(skill_dirs: list[Path]) -> list[Finding]:
     findings: list[Finding] = []
     names: dict[str, Path] = {}
@@ -1038,6 +1214,7 @@ def validate(root: Path, target: Path | None = None) -> list[Finding]:
         findings.extend(validate_lane_state_docs(root))
         findings.extend(validate_laneview_state_maps(root))
         findings.extend(validate_privacy(root))
+        findings.extend(validate_tmux_destructive_verbs(root))
         findings.extend(validate_static_context(root))
 
     return findings
