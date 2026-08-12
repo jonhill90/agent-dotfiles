@@ -147,21 +147,31 @@ fi
 # under "an empty tmux target hits the ACTIVE window", reached through a stray
 # environment variable instead of an empty string. Nothing called it. An
 # escape hatch around the only guard is not worth a caller it does not have.
-# agent-dotfiles#188 finding 2: `lane-free` below is a QUERY, not a claim --
-# see `cli.py lane_free`'s own docstring for the measured proof and the
-# terms `claim.sh`'s header uses for its own sub-second race. Nothing here
-# re-checks between a candidate reading free (this loop) and the first
-# `send-keys` several steps below, and unlike `claim.sh`'s race this window
-# is not sub-second: it spans claim, worktree creation and the send itself.
-# Two dispatchers on unrelated cadences CAN both read this lane free and
-# both type into the same pane -- that collision is not prevented here.
-# Step 6's `record_dispatch` (`one_open_task_per_lane`) does NOT catch this
-# either, measured (#183 round 3): it mints a fresh nonce every call, so a
-# second writer for the same lane is never refused -- it cancels the first
-# writer's task and installs its own, leaving one clean recorded occupancy
-# with no trace that two briefs went into the pane. "Authoritative" names
-# which source wins an availability READ, not an exclusive claim on it, and
-# the ledger keeps no evidence when that read was wrong.
+#
+# agent-dotfiles#184 (closing #188 finding 2's own gap): `lane-free` is a
+# QUERY, not a claim -- see `cli.py lane_free`'s own docstring for the
+# measured proof. Left alone, nothing re-checks between a candidate reading
+# free and the first `send-keys` several steps below, and that window is not
+# sub-second the way `claim.sh`'s is: it spans claim, worktree creation and
+# the send itself. So a candidate reading free is now followed IMMEDIATELY
+# by `claim-lane`, an atomic write-then-verify (see `Ledger.claim_lane`'s
+# docstring): it inserts a placeholder occupying the lane, protected by the
+# same `one_open_task_per_lane` unique index the rest of the ledger already
+# relies on, and re-reads to confirm the placeholder it just wrote is still
+# the one occupying the lane. Two dispatchers racing the SAME candidate are
+# serialized by that call, not by this loop -- the loser's claim is refused,
+# not merged, and it moves on to the next candidate instead of stopping.
+# `record_dispatch` (step 6) still mints a fresh nonce and cancels whatever
+# was outstanding for the lane on every call (measured, #183 round 3) -- but
+# by the time it runs, "whatever was outstanding" is this dispatch's OWN
+# claim, not a stranger's, because the claim already closed the window a
+# stranger could have used.
+CLAIM_TOKEN="$WINDOW_NAME"
+release_lane_claim() {
+  [ -n "${CLAIM_LANE:-}" ] || return 0
+  "$LEDGER_PYTHON" "$LEDGER_CLI" release-lane-claim --lane "$CLAIM_LANE" --token "$CLAIM_TOKEN" >/dev/null 2>&1
+}
+
 declare -A WINDOW_NAME_BY_INDEX
 while IFS=$'\t' read -r idx wname; do
   [ -n "$idx" ] || continue
@@ -169,13 +179,27 @@ while IFS=$'\t' read -r idx wname; do
 done < <("$HERE/lanes.sh" "$SESSION" 2>/dev/null | awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $1"\t"$2}')
 
 LANE=""
+CLAIM_LANE=""
 while read -r candidate; do
   [ -n "$candidate" ] || continue
   idx="${candidate##*:}"
   wname="${WINDOW_NAME_BY_INDEX[$idx]:-}"
   CHECK=$("$LEDGER_PYTHON" "$LEDGER_CLI" lane-free --lane "$candidate" --target "$candidate" --window-name "$wname" 2>/dev/null) || continue
-  if grep -qF '"free":true' <<<"$CHECK"; then
+  grep -qF '"free":true' <<<"$CHECK" || continue
+
+  # Test-only instrumentation (agent-dotfiles#184): when set, run this
+  # command with the candidate lane as $1 right after it reads free and
+  # before this dispatch claims it -- exactly the gap a second dispatcher
+  # would need to land a whole competing dispatch in to prove the race.
+  # No caller sets this outside tests/supervisor/test_dispatch.sh.
+  if [ -n "${DISPATCH_TEST_RACE_HOOK:-}" ]; then
+    "$DISPATCH_TEST_RACE_HOOK" "$candidate" || true
+  fi
+
+  CLAIM=$("$LEDGER_PYTHON" "$LEDGER_CLI" claim-lane --lane "$candidate" --token "$CLAIM_TOKEN" 2>/dev/null) || continue
+  if grep -qF '"claimed":true' <<<"$CLAIM"; then
     LANE="$candidate"
+    CLAIM_LANE="$candidate"
     break
   fi
 done < <("$HERE/lanes.sh" --free "$SESSION" 2>/dev/null)
@@ -184,6 +208,7 @@ if [ -z "$LANE" ]; then
   echo "dispatch: no free lane in session '$SESSION' -- not dispatching #$ISSUE_ARG" >&2
   echo "dispatch: the ledger must say a lane is free to be dispatchable --" >&2
   echo "dispatch: one it has never seen is backfilled only if named 'free-N'; one it knows is occupied stays occupied regardless of name" >&2
+  echo "dispatch: a lane that read free just now may have already been claimed by another dispatcher" >&2
   "$HERE/lanes.sh" "$SESSION" >&2
   exit 1
 fi
@@ -235,6 +260,7 @@ release_claim() {
 
 if [ -n "$CLAIM_FAILED" ]; then
   release_claim
+  release_lane_claim
   exit 1
 fi
 
@@ -251,6 +277,7 @@ if [ "$rc" -ne 0 ] || [ -z "$WORKTREE" ] || [ ! -d "$WORKTREE" ]; then
   sed 's/^/  /' "$WORKTREE_ERR" >&2
   rm -f "$WORKTREE_ERR"
   release_claim
+  release_lane_claim
   exit 1
 fi
 rm -f "$WORKTREE_ERR"
@@ -260,6 +287,7 @@ if ! tmux rename-window -t "$LANE" "$WINDOW_NAME" 2>/dev/null; then
   echo "dispatch: could not rename $LANE -- not dispatching #$ISSUE_ARG" >&2
   "$HERE/worktree.sh" done "$WORKTREE" >/dev/null 2>&1
   release_claim
+  release_lane_claim
   exit 1
 fi
 
@@ -267,6 +295,7 @@ abort_send() {
   echo "dispatch: $1" >&2
   "$HERE/worktree.sh" done "$WORKTREE" >/dev/null 2>&1
   release_claim
+  release_lane_claim
   exit 1
 }
 

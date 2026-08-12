@@ -1012,6 +1012,89 @@ class Ledger:
             row = connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             return self._dict(row)
 
+    def claim_lane(self, lane, *, token, note="dispatch claim"):
+        """Atomically reserve `lane` for `token`, or refuse if it is not free.
+
+        agent-dotfiles#184. `lane_free` (the read `dispatch.sh` uses to pick a
+        candidate -- see that function's own docstring) is a QUERY, not a
+        claim: two dispatchers can both read the same lane free and both
+        proceed into the rest of the dispatch pipeline (claim the issue,
+        build the worktree, send-keys) before either calls `record_dispatch`.
+        `record_dispatch` does not arbitrate between them either -- its
+        `_register_lane_tx` treats every call as a new pane incarnation
+        (`cli.py`'s `record_dispatch` mints a fresh nonce every call) and
+        CANCELS whatever task was outstanding rather than refusing, so the
+        second writer always wins silently (measured, #183 round 3).
+
+        This closes the gap the same way `mark_lane_held` (#188) already
+        forces `lane_available` to read occupied: insert a placeholder task,
+        status `created`, for `lane`, protected by the same
+        `one_open_task_per_lane` unique index the rest of this table already
+        relies on. Two processes calling this for the same lane are
+        serialized by `_locked` (an flock held across the whole
+        check-and-insert) plus SQLite's own `BEGIN IMMEDIATE` -- the second
+        to acquire the lock finds the first row already committed and its
+        INSERT raises `IntegrityError`, so it is refused, not merged.
+
+        Returns a dict with `claimed`: True only when `token` itself now
+        owns the lane -- the re-read after the write is the verify half of
+        claim-then-verify, not a redundant check: it is what lets a caller
+        trust "the value read back is mine" instead of assuming its own
+        write could not have lost a race it was never actually exposed to.
+        """
+        now = int(self.clock())
+        with self._locked(), self._transaction() as connection:
+            lane_row = connection.execute("SELECT nonce FROM lanes WHERE lane = ?", (lane,)).fetchone()
+            if lane_row is None:
+                return {"lane": lane, "claimed": False, "reason": "unknown"}
+            task_id = f"ledger-claim:{lane}:{token}"
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO tasks(id, lane, pane_nonce, summary, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, 'created', ?, ?)
+                    """,
+                    (task_id, lane, lane_row["nonce"], note, now, now),
+                )
+            except sqlite3.IntegrityError:
+                pass
+            row = connection.execute(
+                "SELECT id FROM tasks WHERE lane = ? AND status NOT IN ('complete', 'failed', 'cancelled')",
+                (lane,),
+            ).fetchone()
+            if row is None or row["id"] != task_id:
+                return {"lane": lane, "claimed": False, "reason": "occupied", "holder": row["id"] if row else None}
+            return {"lane": lane, "claimed": True, "reason": None, "token": token}
+
+    def release_lane_claim(self, lane, *, token):
+        """Undo a `claim_lane` this same caller made, and ONLY that claim.
+
+        DELETES the placeholder row rather than marking it `cancelled`: this
+        row was never a real dispatch, only a reservation, and dispatch.sh
+        calls this on every abort path a dispatch can take -- a worktree
+        that fails to build, a message over budget, a brief that never
+        submits. None of those should leave anything behind for `cli.py
+        status` to show; the abort tests in test_dispatch.sh assert exactly
+        `"tasks":[]` in cases like these, same as before this claim step
+        existed. A soft-cancel would reintroduce a row those cases never
+        used to have.
+
+        Scoped to `(lane, id=ledger-claim:{lane}:{token}, status='created')`
+        so this can never touch a real dispatch that has since taken the
+        lane over fairly: `record_dispatch`'s own `_register_lane_tx`
+        already cancels this placeholder the moment a dispatch it belongs to
+        actually lands (any identity change cancels whatever was
+        outstanding), so by the time that has happened this DELETE matches
+        no row and is a safe no-op -- the caller does not need to know
+        which case it is in before calling this.
+        """
+        task_id = f"ledger-claim:{lane}:{token}"
+        with self._locked(), self._transaction() as connection:
+            connection.execute(
+                "DELETE FROM tasks WHERE id = ? AND lane = ? AND status = 'created'",
+                (task_id, lane),
+            )
+
     def _write_result(self, task_id, result):
         if not isinstance(result, bytes):
             raise TypeError("result must be bytes")
