@@ -1,0 +1,8 @@
+# tests/fixtures/known_references.txt is a generated, append-mostly
+# manifest (see #190): two branches that each regenerate it with a
+# different new issue/PR number should merge without a conflict. The
+# built-in "union" merge driver takes the added lines from both sides
+# instead of leaving conflict markers -- no merge.union.driver config
+# needed, git provides this driver internally for the "union" attribute
+# value.
+tests/fixtures/known_references.txt merge=union

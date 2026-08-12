@@ -28,10 +28,13 @@ What this guard checks, and what it deliberately does not:
    (the four sweeps just spent real effort creating exactly those
    qualified forms; this guard must not undo that work), while a
    lone '#9', '(#9', or '-#9' is checked. This is fully offline: it
-   checks against tests/fixtures/known_references.json, a manifest
+   checks against tests/fixtures/known_references.txt, a manifest
    refreshed via `python3 scripts/refresh_known_references.py`
    (requires `gh`, not run in CI) rather than calling the GitHub API
-   from the test itself.
+   from the test itself. The manifest is one number per line (see
+   #190) rather than JSON, and carries `merge=union` in
+   .gitattributes so two branches that each regenerate it with a
+   different new number merge without a conflict.
 
    This check is necessarily incomplete: a bare '#9' that happens to
    name a real, existing issue in this repository but was actually
@@ -68,7 +71,7 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = "jonhill90/agent-dotfiles"
-MANIFEST_PATH = ROOT / "tests" / "fixtures" / "known_references.json"
+MANIFEST_PATH = ROOT / "tests" / "fixtures" / "known_references.txt"
 ALLOWLIST_PATH = ROOT / "tests" / "fixtures" / "reference_guard_allowlist.json"
 
 # Fenced and inline code spans hold illustrative template syntax (e.g. a
@@ -104,8 +107,13 @@ def tracked_markdown_files() -> list[Path]:
 
 
 def load_known_numbers() -> set[int]:
-    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-    return set(manifest["numbers"])
+    numbers: set[int] = set()
+    for line in MANIFEST_PATH.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        numbers.add(int(line))
+    return numbers
 
 
 def load_allowlist() -> set[int]:
