@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import unittest
@@ -61,6 +62,64 @@ CONTENT_CHANGED_DIFF = (
     "+a genuinely different line\n"
     " line after\n"
 )
+
+
+# A patch that is on the branch in BOTH the reviewed and the current head,
+# at two different hunk offsets -- what a rebase does to a commit it does not
+# touch. `git patch-id --stable` must hash these equal.
+def _patch(marker, offset=10, replacement="new line"):
+    return (
+        f"diff --git a/{marker}.txt b/{marker}.txt\n"
+        "index 1111111..2222222 100644\n"
+        f"--- a/{marker}.txt\n"
+        f"+++ b/{marker}.txt\n"
+        f"@@ -{offset},3 +{offset},3 @@\n"
+        " line before\n"
+        "-old line\n"
+        f"+{replacement}\n"
+        " line after\n"
+    )
+
+
+BASE_REF = "main"
+
+
+def _api_runner(*, reviews="{}", branches=None, patches=None, base_ref=BASE_REF, seen=None):
+    """A `runner` over the four calls the #226 comparison makes.
+
+    `branches` maps a head SHA to the commit SHAs that head introduces over
+    the base branch; `patches` maps a commit SHA to its diff. The stub REFUSES
+    any compare whose base is not `base_ref` -- that is the regression guard
+    for agent-dotfiles#229's blocking finding: the first implementation asked
+    `compare/old...new` and `compare/new...old`, which resolve to the same
+    (pre-rebase) merge base and so measured whether `main` had moved. Anchor
+    on the PR's base branch or the comparison cannot be computed at all."""
+    branches = branches or {}
+    patches = patches or {}
+
+    def runner(cmd):
+        if seen is not None:
+            seen.append(cmd)
+        if cmd[:3] == ["gh", "pr", "view"]:
+            if cmd[-1] == "baseRefName":
+                return json.dumps({"baseRefName": base_ref})
+            return reviews
+        joined = " ".join(cmd)
+        if "/compare/" in joined:
+            spec = joined.split("/compare/", 1)[1].split(" ", 1)[0]
+            base, _, head = spec.partition("...")
+            if base != base_ref:
+                raise AssertionError(
+                    "compare must be anchored on the PR's base branch, not on the other "
+                    f"head (agent-dotfiles#226/#229) -- asked for compare/{spec}"
+                )
+            return "".join(f"{sha}\n" for sha in branches[head])
+        if "/commits/" in joined:
+            sha = joined.split("/commits/", 1)[1].split(" ", 1)[0]
+            return patches[sha]
+        raise RuntimeError(f"no stub for command: {cmd!r}")
+
+    return runner
 
 
 def _reviews_runner(payload):
@@ -209,17 +268,20 @@ class GithubReviewVerdictSourceTests(unittest.TestCase):
         know)."""
         old_sha, head_sha = "a" * 40, "c" * 40
         reviews = '{"reviews":[{"state":"APPROVED","commit":{"oid":"' + old_sha + '"}}]}'
-
-        def runner(cmd):
-            if cmd[:3] == ["gh", "pr", "view"]:
-                return reviews
-            joined = " ".join(cmd)
-            if f"compare/{head_sha}...{old_sha}" in joined:
-                return REBASE_DIFF_OLD_OFFSET
-            if f"compare/{old_sha}...{head_sha}" in joined:
-                return REBASE_DIFF_NEW_OFFSET
-            raise RuntimeError(f"unexpected compare: {cmd!r}")
-
+        # Both heads carry the same two commits; the rebase moved every SHA
+        # and shifted both patches to new hunk offsets. `main` also gained
+        # commits in between -- they belong to neither branch list, which is
+        # exactly what anchoring on the base branch buys.
+        runner = _api_runner(
+            reviews=reviews,
+            branches={old_sha: ["old1", old_sha], head_sha: ["new1", head_sha]},
+            patches={
+                "old1": _patch("first", offset=10),
+                old_sha: _patch("second", offset=10),
+                "new1": _patch("first", offset=42),
+                head_sha: _patch("second", offset=77),
+            },
+        )
         source = GithubReviewVerdictSource(runner=runner)
         result = source.verdict(repo=REPO, number=1, head_sha=head_sha)
         self.assertEqual(result["verdict"], "approved")
@@ -230,23 +292,57 @@ class GithubReviewVerdictSourceTests(unittest.TestCase):
     def test_226_a_real_content_change_since_review_stays_unknown(self):
         """The direction that must not regress (#219/#218): a head move that
         actually changed the reviewed content still reads unknown, exactly
-        as before #226."""
+        as before #226. Here the rebase also AMENDED the second commit."""
         old_sha, head_sha = "a" * 40, "c" * 40
         reviews = '{"reviews":[{"state":"APPROVED","commit":{"oid":"' + old_sha + '"}}]}'
-
-        def runner(cmd):
-            if cmd[:3] == ["gh", "pr", "view"]:
-                return reviews
-            joined = " ".join(cmd)
-            if f"compare/{head_sha}...{old_sha}" in joined:
-                return REBASE_DIFF_OLD_OFFSET
-            if f"compare/{old_sha}...{head_sha}" in joined:
-                return CONTENT_CHANGED_DIFF
-            raise RuntimeError(f"unexpected compare: {cmd!r}")
-
+        runner = _api_runner(
+            reviews=reviews,
+            branches={old_sha: ["old1", old_sha], head_sha: ["new1", head_sha]},
+            patches={
+                "old1": _patch("first", offset=10),
+                old_sha: _patch("second", offset=10),
+                "new1": _patch("first", offset=42),
+                head_sha: _patch("second", offset=77, replacement="a genuinely different line"),
+            },
+        )
         source = GithubReviewVerdictSource(runner=runner)
         result = source.verdict(repo=REPO, number=1, head_sha=head_sha)
         self.assertEqual(result["verdict"], "unknown")
+
+    def test_229_a_commit_added_after_the_review_stays_unknown(self):
+        """The other way unreviewed content arrives: not an amend, an extra
+        commit pushed on top. The reviewed patches are all still there --
+        a subset test in the WRONG direction would pass this."""
+        old_sha, head_sha = "a" * 40, "c" * 40
+        reviews = '{"reviews":[{"state":"APPROVED","commit":{"oid":"' + old_sha + '"}}]}'
+        runner = _api_runner(
+            reviews=reviews,
+            branches={old_sha: [old_sha], head_sha: [old_sha, head_sha]},
+            patches={old_sha: _patch("first"), head_sha: _patch("added")},
+        )
+        source = GithubReviewVerdictSource(runner=runner)
+        self.assertEqual(source.verdict(repo=REPO, number=1, head_sha=head_sha)["verdict"], "unknown")
+
+    def test_229_the_compare_is_anchored_on_the_pr_base_branch(self):
+        """agent-dotfiles#229's blocking finding, asserted directly on the
+        commands issued: `merge-base(old, new)` is symmetric, so comparing
+        the two heads against EACH OTHER resolves both sides to the
+        pre-rebase base and makes the "new" side carry everything `main`
+        gained. Every compare must name the base branch."""
+        old_sha, head_sha = "a" * 40, "c" * 40
+        reviews = '{"reviews":[{"state":"APPROVED","commit":{"oid":"' + old_sha + '"}}]}'
+        seen = []
+        runner = _api_runner(
+            reviews=reviews,
+            branches={old_sha: [old_sha], head_sha: [head_sha]},
+            patches={old_sha: _patch("only", offset=10), head_sha: _patch("only", offset=99)},
+            seen=seen,
+        )
+        GithubReviewVerdictSource(runner=runner).verdict(repo=REPO, number=1, head_sha=head_sha)
+        compares = [" ".join(c).split("/compare/", 1)[1].split(" ", 1)[0] for c in seen if "/compare/" in " ".join(c)]
+        self.assertTrue(compares, "no compare was issued at all")
+        for spec in compares:
+            self.assertTrue(spec.startswith(f"{BASE_REF}..."), f"compare not anchored on the base branch: {spec}")
 
     def test_226_an_unreachable_compare_stays_unknown_not_approved(self):
         """Fail closed (#226's stated bar): when the comparison itself
@@ -367,14 +463,10 @@ class LedgerVerdictSourceTests(unittest.TestCase):
         old_sha, head_sha = "a" * 40, "c" * 40
         self.ledger.record_pr_verdict(repo=REPO, number=1, verdict="approved", head_sha=old_sha, reviewer="lane-1")
 
-        def runner(cmd):
-            joined = " ".join(cmd)
-            if f"compare/{head_sha}...{old_sha}" in joined:
-                return REBASE_DIFF_OLD_OFFSET
-            if f"compare/{old_sha}...{head_sha}" in joined:
-                return REBASE_DIFF_NEW_OFFSET
-            raise RuntimeError(f"unexpected compare: {cmd!r}")
-
+        runner = _api_runner(
+            branches={old_sha: [old_sha], head_sha: [head_sha]},
+            patches={old_sha: _patch("only", offset=10), head_sha: _patch("only", offset=99)},
+        )
         source = LedgerVerdictSource(self.ledger, runner=runner)
         result = source.verdict(repo=REPO, number=1, head_sha=head_sha)
         self.assertEqual(result["verdict"], "approved")
@@ -386,14 +478,13 @@ class LedgerVerdictSourceTests(unittest.TestCase):
         old_sha, head_sha = "a" * 40, "c" * 40
         self.ledger.record_pr_verdict(repo=REPO, number=1, verdict="approved", head_sha=old_sha, reviewer="lane-1")
 
-        def runner(cmd):
-            joined = " ".join(cmd)
-            if f"compare/{head_sha}...{old_sha}" in joined:
-                return REBASE_DIFF_OLD_OFFSET
-            if f"compare/{old_sha}...{head_sha}" in joined:
-                return CONTENT_CHANGED_DIFF
-            raise RuntimeError(f"unexpected compare: {cmd!r}")
-
+        runner = _api_runner(
+            branches={old_sha: [old_sha], head_sha: [head_sha]},
+            patches={
+                old_sha: _patch("only", offset=10),
+                head_sha: _patch("only", offset=99, replacement="a genuinely different line"),
+            },
+        )
         source = LedgerVerdictSource(self.ledger, runner=runner)
         result = source.verdict(repo=REPO, number=1, head_sha=head_sha)
         self.assertEqual(result["verdict"], "unknown")
@@ -403,40 +494,133 @@ class ContentUnchangedSinceTests(unittest.TestCase):
     """Direct tests of the #226 comparison primitive, independent of which
     verdict source calls it."""
 
-    def test_identical_shas_are_trivially_unchanged(self):
-        self.assertTrue(
-            _content_unchanged_since(
-                runner=_raising_runner, patch_id_fn=lambda d: "x", repo=REPO, old_sha="a" * 40, new_sha="a" * 40
-            )
+    OLD, NEW = "a" * 40, "c" * 40
+
+    def _compare(self, **kwargs):
+        return _content_unchanged_since(
+            patch_id_fn=_default_patch_id, repo=REPO, number=1, old_sha=self.OLD, new_sha=self.NEW, **kwargs
         )
+
+    def test_identical_shas_are_trivially_unchanged(self):
+        unchanged, _ = _content_unchanged_since(
+            runner=_raising_runner,
+            patch_id_fn=lambda d: "x",
+            repo=REPO,
+            number=1,
+            old_sha="a" * 40,
+            new_sha="a" * 40,
+        )
+        self.assertTrue(unchanged)
 
     def test_matching_patch_ids_read_unchanged(self):
-        calls = iter([REBASE_DIFF_OLD_OFFSET, REBASE_DIFF_NEW_OFFSET])
-        result = _content_unchanged_since(
-            runner=lambda cmd: next(calls),
-            patch_id_fn=_default_patch_id,
-            repo=REPO,
-            old_sha="a" * 40,
-            new_sha="c" * 40,
+        unchanged, basis = self._compare(
+            runner=_api_runner(
+                branches={self.OLD: [self.OLD], self.NEW: [self.NEW]},
+                patches={self.OLD: _patch("only", offset=10), self.NEW: _patch("only", offset=99)},
+            )
         )
-        self.assertTrue(result)
+        self.assertTrue(unchanged)
+        self.assertIn("patch-id", basis)
+        self.assertIn(BASE_REF, basis)
 
     def test_differing_patch_ids_read_changed_not_unknown(self):
-        calls = iter([REBASE_DIFF_OLD_OFFSET, CONTENT_CHANGED_DIFF])
-        result = _content_unchanged_since(
-            runner=lambda cmd: next(calls),
-            patch_id_fn=_default_patch_id,
-            repo=REPO,
-            old_sha="a" * 40,
-            new_sha="c" * 40,
+        unchanged, _ = self._compare(
+            runner=_api_runner(
+                branches={self.OLD: [self.OLD], self.NEW: [self.NEW]},
+                patches={
+                    self.OLD: _patch("only", offset=10),
+                    self.NEW: _patch("only", offset=99, replacement="a genuinely different line"),
+                },
+            )
         )
-        self.assertFalse(result)
+        self.assertIs(unchanged, False)
+
+    def test_229_a_rebase_onto_a_moved_main_is_still_unchanged(self):
+        """The case the first implementation got wrong, in its own shape:
+        `main` gained commits under the branch. Those commits belong to
+        neither side's list, because each side is measured from its own
+        merge-base with the base branch -- so the branch's two patches
+        still match and the verdict is promoted."""
+        unchanged, basis = self._compare(
+            runner=_api_runner(
+                branches={self.OLD: ["o1", self.OLD], self.NEW: ["n1", self.NEW]},
+                patches={
+                    "o1": _patch("first", offset=10),
+                    self.OLD: _patch("second", offset=20),
+                    "n1": _patch("first", offset=310),
+                    self.NEW: _patch("second", offset=420),
+                },
+            )
+        )
+        self.assertTrue(unchanged)
+        self.assertIn("identical set of 2", basis)
+
+    def test_229_a_rebase_that_drops_a_superseded_commit_is_unchanged_and_says_so(self):
+        """agent-dotfiles#226's OWN example has this shape, measured
+        2026-08-12: `0538cc6` -> `69784bd` dropped a `known_references.json`
+        refresh because upstream #210 replaced that file with `.txt`. Nothing
+        unreviewed entered, so the verdict is promoted -- and the count of
+        dropped patches is stated, because a reader must be able to see that
+        the branch is not byte-for-byte what was approved."""
+        unchanged, basis = self._compare(
+            runner=_api_runner(
+                branches={self.OLD: ["o1", "o2", self.OLD], self.NEW: ["n1", self.NEW]},
+                patches={
+                    "o1": _patch("first", offset=10),
+                    "o2": _patch("superseded", offset=10),
+                    self.OLD: _patch("second", offset=20),
+                    "n1": _patch("first", offset=310),
+                    self.NEW: _patch("second", offset=420),
+                },
+            )
+        )
+        self.assertTrue(unchanged)
+        self.assertIn("1 of 3", basis)
+
+    def test_229_an_extra_commit_is_changed_not_unchanged(self):
+        unchanged, _ = self._compare(
+            runner=_api_runner(
+                branches={self.OLD: [self.OLD], self.NEW: [self.OLD, self.NEW]},
+                patches={self.OLD: _patch("first"), self.NEW: _patch("added")},
+            )
+        )
+        self.assertIs(unchanged, False)
 
     def test_a_diff_fetch_failure_reads_none_not_unchanged(self):
-        result = _content_unchanged_since(
-            runner=_raising_runner, patch_id_fn=_default_patch_id, repo=REPO, old_sha="a" * 40, new_sha="c" * 40
+        unchanged, _ = self._compare(runner=_raising_runner)
+        self.assertIsNone(unchanged)
+
+    def test_an_unreadable_base_branch_reads_none_not_unchanged(self):
+        """No base branch means no anchor, and an unanchored compare is the
+        defect this fixes -- refuse to answer rather than fall back to it."""
+
+        def runner(cmd):
+            if cmd[:3] == ["gh", "pr", "view"]:
+                return "{}"
+            raise AssertionError("must not reach a compare with no base branch")
+
+        unchanged, _ = self._compare(runner=runner)
+        self.assertIsNone(unchanged)
+
+    def test_a_commit_list_that_does_not_end_at_the_head_reads_none(self):
+        """A truncated page understates the branch, which is the one error
+        direction that could promote an unreviewed patch. Fail closed."""
+        unchanged, _ = self._compare(
+            runner=_api_runner(
+                branches={self.OLD: [self.OLD], self.NEW: ["n1"]},
+                patches={self.OLD: _patch("only"), "n1": _patch("only")},
+            )
         )
-        self.assertIsNone(result)
+        self.assertIsNone(unchanged)
+
+    def test_a_commit_whose_patch_cannot_be_read_reads_none(self):
+        unchanged, _ = self._compare(
+            runner=_api_runner(
+                branches={self.OLD: [self.OLD], self.NEW: [self.NEW]},
+                patches={self.OLD: _patch("only"), self.NEW: "   \n"},
+            )
+        )
+        self.assertIsNone(unchanged)
 
     def test_real_git_patch_id_normalises_hunk_offsets(self):
         """No mocking of patch-id itself -- proves the actual instrument
