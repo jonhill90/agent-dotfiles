@@ -24,6 +24,40 @@ pass=0; fail=0
 ok()  { echo "  ok   $1"; pass=$((pass+1)); }
 bad() { echo "  FAIL $1"; sed 's/^/       /' <<<"${2:-}"; fail=$((fail+1)); }
 
+# agent-dotfiles#227: this suite backgrounds inbox-poll.sh a dozen times to
+# exercise its SIGTERM handling, and every one of those tests used to close
+# with a bare `wait "$pid"` -- no bound of its own. Under real contention
+# (measured: a resource-constrained CI runner, reproduced locally by
+# throttling the container to 2 CPUs) that wait can sit for minutes instead
+# of the near-instant exit SIGTERM normally produces: the killed process is
+# still alive and still scheduled eventually, so `wait` is not deadlocked,
+# it is just waiting arbitrarily long behind everything else fighting for
+# the CPU -- and CI's own 300s harness timeout has no visibility into any
+# of that, so the whole suite (and every suite queued after it in the same
+# `unittest discover` run) reads as a silent hang instead of a reported
+# failure. reap() gives that wait a wall-clock bound: escalate to SIGKILL
+# and fail LOUDLY, naming the pid and what it was waiting for, rather than
+# ever blocking past REAP_MAX_TENTHS. Measured normal case (an inbox-poll.sh
+# that traps SIGTERM correctly, no contention): 0/300 misses, exit in low
+# tens of milliseconds -- 10s is two to three orders of magnitude of margin
+# above that, not a tight bound being tuned to the failure.
+REAP_MAX_TENTHS=100
+reap() {  # reap <pid> <label> -- bounded replacement for `wait "$pid"`
+  local pid="$1" label="$2" waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$waited" -ge "$REAP_MAX_TENTHS" ]; then
+      bad "$label: pid $pid still alive $((REAP_MAX_TENTHS / 10))s after SIGTERM -- escalating to SIGKILL instead of hanging" ""
+      kill -KILL "$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null
+      return 1
+    fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  wait "$pid" 2>/dev/null
+  return 0
+}
+
 echo "inbox-poll.sh"
 
 D=$(mktemp -d); mkdir -p "$D/bin" "$D/state"
@@ -248,7 +282,7 @@ pid=$!
 waited=0
 while [ ! -s "$D/status" ] && [ "$waited" -lt 50 ]; do sleep 0.1; waited=$((waited + 1)); done
 kill -TERM "$pid" 2>/dev/null
-wait "$pid" 2>/dev/null
+reap "$pid" "SIGTERM death test"
 grep -qi 'poller stopped' "$D/notify.log" 2>/dev/null && ok "an unexpected (signal-terminated) death still pages Jon" \
   || bad "no stop notification after an unexpected SIGTERM" "$(cat "$D/notify.log" 2>/dev/null)"
 grep -q 'state:.*stopped' "$D/status" 2>/dev/null && ok "...and the heartbeat file records it too" \
@@ -270,7 +304,7 @@ pid=$!
 waited=0
 while [ ! -s "$D/status" ] && [ "$waited" -lt 50 ]; do sleep 0.1; waited=$((waited + 1)); done
 kill -TERM "$pid" 2>/dev/null
-wait "$pid" 2>/dev/null
+reap "$pid" "MIN_UPTIME death test"
 grep -qi 'poller stopped' "$D/notify.log" 2>/dev/null && bad "paged for a death under INBOX_POLL_MIN_UPTIME" "$(cat "$D/notify.log")" \
   || ok "a death under INBOX_POLL_MIN_UPTIME does not page"
 grep -q 'state:.*stopped' "$D/status" 2>/dev/null && ok "...but the heartbeat file still records it" \
@@ -353,7 +387,7 @@ done
 # Not sensitive enough to catch the race on its own (see above) -- it is here
 # to catch gross breakage of the stop path, which it does deterministically.
 term_misses=0
-for _ in $(seq 1 12); do
+for n in $(seq 1 12); do
   rm -f "$D/notify.log" "$D/status" "$D/poll.log"; : > "$D/notify.log"
   HOME="$D/state" INBOX_SCRIPT="$D/fixture-forever" ROUTE_LOG="$D/route.log" NOTIFY_LOG="$D/notify.log" \
     INBOX_POLL_ITERATIONS=0 INBOX_POLL_STATUS="$D/status" INBOX_POLL_LOG="$D/poll.log" \
@@ -363,7 +397,7 @@ for _ in $(seq 1 12); do
   waited=0
   while [ ! -s "$D/status" ] && [ "$waited" -lt 50 ]; do sleep 0.1; waited=$((waited + 1)); done
   kill -TERM "$pid" 2>/dev/null
-  wait "$pid" 2>/dev/null
+  reap "$pid" "SIGTERM loop iteration $n/12"
   grep -qi 'poller stopped' "$D/notify.log" 2>/dev/null || term_misses=$((term_misses + 1))
 done
 [ "$term_misses" -eq 0 ] && ok "twelve consecutive SIGTERMs each paged Jon" \
@@ -403,9 +437,9 @@ waited=0
 while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 100 ]; do sleep 0.1; waited=$((waited + 1)); done
 if kill -0 "$pid" 2>/dev/null; then
   bad "a restart-flag request makes the poller exit on its own" "still running after ${waited}00ms"
-  kill -TERM "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  kill -TERM "$pid" 2>/dev/null; reap "$pid" "restart-flag cleanup"
 else
-  wait "$pid" 2>/dev/null
+  reap "$pid" "restart-flag exit"
   ok "a restart-flag request makes the poller exit on its own"
 fi
 grep -qi 'poller stopped' "$D/notify.log" 2>/dev/null && bad "a version-triggered restart paged Jon" "$(cat "$D/notify.log")" \
