@@ -1,15 +1,15 @@
 lockfile_version: '1'
-generated_at: '2026-08-12T01:32:40.042859+00:00'
+generated_at: '2026-08-12T10:09:23.275648+00:00'
 apm_version: 0.24.1
 dependencies:
 - repo_url: jonhill90/skills
-  name: skills-public
+  name: jonhill90-skills
   host: github.com
-  resolved_commit: b220b9e990b8de16e7dff8f898f2cad5dbe0ff61
-  resolved_ref: b220b9e990b8de16e7dff8f898f2cad5dbe0ff61
-  version: 0.0.0
-  package_type: skill_bundle
-  content_hash: sha256:6245366faaca1780ecb3b58f6f2ac0d31983c00dcd621cb9fa42afefe9611d73
+  resolved_commit: 882a707e51d5e1355e96e53badd557367956d63c
+  resolved_ref: 882a707e51d5e1355e96e53badd557367956d63c
+  version: 882a707
+  package_type: marketplace_plugin
+  content_hash: sha256:024010625af31aed8454268b9a10573c77f5629f6209590bd84f3c6be61b35b3
   skill_subset:
   - '*'
 - repo_url: jonhill90/skills-private

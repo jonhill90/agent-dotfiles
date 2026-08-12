@@ -973,3 +973,136 @@ class SkillBenchTests(unittest.TestCase):
                 benched_skills(repo_root)[name],
                 f"{name} is benched with an empty reason",
             )
+
+
+class LaneStateDocsTests(unittest.TestCase):
+    """agent-dotfiles#196: lanes.sh's state machine and the
+    supervised-lane-loop skill's documentation of it must not drift."""
+
+    LANES_SH_BODY = (
+        "#!/bin/bash\n"
+        "if [ \"$w\" = \"$SUPERVISOR_WINDOW\" ]; then\n"
+        "  state=supervisor\n"
+        "elif [ -n \"$busy\" ]; then\n"
+        "  state=busy\n"
+        "else\n"
+        "  state=free\n"
+        "fi\n"
+    )
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "scripts" / "supervisor").mkdir(parents=True)
+        (self.root / "apm.yml").write_text(
+            "name: agent-dotfiles\n"
+            "version: 0.1.0\n"
+            "dependencies:\n"
+            "  apm:\n"
+            "    - git: https://github.com/jonhill90/skills.git\n"
+            "      ref: b220b9e990b8de16e7dff8f898f2cad5dbe0ff61\n"
+            "      skills: [\"*\"]\n"
+            "      alias: skills-public\n",
+            encoding="utf-8",
+        )
+
+    def write_lanes_sh(self, body: str) -> Path:
+        lanes_sh = self.root / "scripts" / "supervisor" / "lanes.sh"
+        lanes_sh.write_text(body, encoding="utf-8")
+        return lanes_sh
+
+    def write_skill_doc(self, alias: str, table_rows: str) -> Path:
+        skill_dir = self.root / "apm_modules" / alias / "skills" / "supervised-lane-loop"
+        skill_dir.mkdir(parents=True)
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text(
+            "# Supervised lane loop\n\n"
+            "| state | what it means | what an operator must NOT do |\n"
+            "|---|---|---|\n" + table_rows,
+            encoding="utf-8",
+        )
+        return skill_md
+
+    def test_extract_lane_states_reads_shipped_literals(self) -> None:
+        lanes_sh = self.write_lanes_sh(self.LANES_SH_BODY)
+        self.assertEqual(
+            validator.extract_lane_states(lanes_sh), {"supervisor", "busy", "free"}
+        )
+
+    def test_extract_lane_states_ignores_estate_style_false_match(self) -> None:
+        # \b before `state=` must not fire on a word that merely ends in
+        # "state", e.g. a hypothetical `estate=production`.
+        lanes_sh = self.write_lanes_sh("estate=production\nstate=busy\n")
+        self.assertEqual(validator.extract_lane_states(lanes_sh), {"busy"})
+
+    def test_extract_documented_states_reads_backtick_table_rows(self) -> None:
+        skill_md = self.write_skill_doc(
+            "skills-public",
+            "| `free` | idle | do not double-claim |\n"
+            "| `busy` | mid-turn | do not dispatch |\n",
+        )
+        self.assertEqual(validator.extract_documented_states(skill_md), {"free", "busy"})
+
+    def test_missing_state_is_a_warning_naming_the_state(self) -> None:
+        """Positive control: `supervisor` ships but is not documented --
+        the check must fail and name it."""
+        self.write_lanes_sh(self.LANES_SH_BODY)
+        self.write_skill_doc(
+            "skills-public",
+            "| `free` | idle | do not double-claim |\n"
+            "| `busy` | mid-turn | do not dispatch |\n",
+        )
+        findings = validator.validate_lane_state_docs(self.root)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].level, "warning")
+        self.assertIn("supervisor", findings[0].message)
+
+    def test_fully_documented_states_produce_no_finding(self) -> None:
+        """Negative control: every shipped state is documented -- clean."""
+        self.write_lanes_sh(self.LANES_SH_BODY)
+        self.write_skill_doc(
+            "skills-public",
+            "| `free` | idle | do not double-claim |\n"
+            "| `busy` | mid-turn | do not dispatch |\n"
+            "| `supervisor` | the supervisor's own window | never dispatch here |\n",
+        )
+        self.assertEqual(validator.validate_lane_state_docs(self.root), [])
+
+    def test_stale_documented_state_is_not_flagged(self) -> None:
+        """A state the doc still names but lanes.sh no longer emits is
+        stale-but-safe, not a hazard -- must not fail (#196 scope)."""
+        self.write_lanes_sh(self.LANES_SH_BODY)
+        self.write_skill_doc(
+            "skills-public",
+            "| `free` | idle | do not double-claim |\n"
+            "| `busy` | mid-turn | do not dispatch |\n"
+            "| `supervisor` | the supervisor's own window | never dispatch here |\n"
+            "| `retired-state` | no longer emitted | n/a |\n",
+        )
+        self.assertEqual(validator.validate_lane_state_docs(self.root), [])
+
+    def test_unresolved_pin_skips_loudly_not_silently(self) -> None:
+        """No apm_modules tree resolvable anywhere -- must still report a
+        warning naming the gap, never an empty (silent) pass."""
+        self.write_lanes_sh(self.LANES_SH_BODY)
+        with mock.patch.object(Path, "home", return_value=self.root / "no-such-home"):
+            findings = validator.validate_lane_state_docs(self.root)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].level, "warning")
+        self.assertIn("not resolved locally", findings[0].message)
+
+    def test_no_lanes_sh_is_not_this_repos_shape(self) -> None:
+        # setUp creates scripts/supervisor/ but never writes lanes.sh.
+        self.assertEqual(validator.validate_lane_state_docs(self.root), [])
+
+    def test_findings_never_error_level(self) -> None:
+        """A drift finding must never be `error`: that would fail
+        validate_repository.py's exit code and turn "add a state to
+        lanes.sh" into a merge block on a docs PR in another repository
+        this change cannot touch (#196)."""
+        self.write_lanes_sh(self.LANES_SH_BODY)
+        self.write_skill_doc("skills-public", "| `free` | idle | do not double-claim |\n")
+        findings = validator.validate_lane_state_docs(self.root)
+        self.assertTrue(findings)
+        self.assertTrue(all(f.level == "warning" for f in findings))
