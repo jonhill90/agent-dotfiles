@@ -233,6 +233,58 @@ Rules:
 - Do not hand-maintain a growing matrix of harness skill copies.
 - Generated package or harness output must identify its canonical source.
 
+## tmux is not a database
+
+Jon, twice and emphatically: **"TMUX IS NOT A DATABASE."**
+
+tmux is for persistent terminals, multiplexing, and plugins. Those are the
+reasons it was chosen and they are not in question.
+
+**The test is authorship.** Did *this system* write the value, or did tmux or the
+OS produce it as a byproduct?
+
+- **We wrote it** → it is a **record**, and records belong in the ledger.
+  Whether a lane is available, who owns a task, that work completed.
+- **tmux or the kernel produced it** → it is a **measurement**, and measurements
+  may be read freely. `#{window_activity}`, `#{pane_in_mode}`, `#{pane_pid}`,
+  and the pane's own process via `ps`.
+
+Authorship is the test rather than "decided versus observed" because that
+phrasing does not resolve `#{window_activity}`: tmux persists it, it describes
+the past, and reading it is nonetheless correct — it is tmux's value, not ours.
+
+A window name may be a *projection* of a record. It may not be the record.
+
+**This describes the target state, not today's code.** As of 2026-08-11, the
+window name IS the record in all three places below, and #174 is Jon's decided
+direction for changing that — not a completed change. PR #183 implements it and
+is **open and held**, blocked by two independent REQUEST CHANGES reviews filed
+as #188: a failed ledger write can leave a working lane readable as `free`, and
+`lane-free` is a query, not a claim. Nothing here has merged. Do not assume one
+issue closes all three, and do not read PR #183 existing as PR #183 landing:
+
+| call site | what the name decides | status as of 2026-08-11 |
+|---|---|---|
+| `dispatch.sh:122` | availability (`^free-[0-9]+$`) | **unmigrated** — still the window-name gate; #174/PR #183 (open, held on #188) is the plan |
+| `lane-done.sh:92` | completion (the rename *is* the record) | **unmigrated** — the rename is still `\|\| exit 1`; PR #183, once it clears #188, adds a ledger write but by its own diff leaves the rename load-bearing rather than cosmetic, short of #174's own test 5 |
+| `claim.sh:141` | ownership (parses the issue number out of the name) | **unmigrated, unplanned** — outside #174's stated scope, no issue filed |
+
+`loop-tick.md` instructs the renaming behaviour (L483, L540) and **remains
+operative for all three today.** This paragraph updates as each call site
+actually migrates in merged code, and goes when the table is empty.
+
+Do not read this rule as licence to stop renaming windows.
+
+**Why it is written down at all:** nobody chose this. Window names began as
+labels for a human, a script reached for the cheapest available "is this lane
+idle" signal, claims reused the string, and completion became a rename. Five
+locally-reasonable steps summing to something nobody would pick — which is why
+nobody defended it when it failed. #102 is that failure: dispatch capacity
+silently fell to zero while five lanes sat idle, and it was repaired by editing
+the "database" with `tmux rename-window`.
+
+It is also why "no tmux on Windows" costs a state store as well as a terminal.
+
 ## Guardrails
 
 Do:
