@@ -17,7 +17,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BOOT="$HERE/../../scripts/supervisor/bootstrap-session.sh"
 source "$HERE/../../scripts/supervisor/tmux-isolation.sh"
 S="bootstrap-test-$$"
-RT="$(mktemp -d /private/tmp/bootstrap-tmux.XXXXXX)"
+RT="$(mktemp -d "${TMPDIR:-/tmp}/bootstrap-tmux.XXXXXX")"
 unset TMUX
 export TMUX_TMPDIR="$RT"
 assert_isolated_tmux || exit 1

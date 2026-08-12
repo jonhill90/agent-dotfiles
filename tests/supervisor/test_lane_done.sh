@@ -319,7 +319,7 @@ else
   # Total isolation from any live estate: a private server socket via
   # TMUX_TMPDIR, no user config (-f /dev/null), a name nothing else uses, and
   # kill-server on the way out. This suite must never touch a working lane.
-  RT="$(mktemp -d /private/tmp/lane-done-tmux.XXXXXX)"
+  RT="$(mktemp -d "${TMPDIR:-/tmp}/lane-done-tmux.XXXXXX")"
   RSESS="lanedonetest-$$"
   rtmux() { env -u TMUX TMUX_TMPDIR="$RT" tmux -f /dev/null "$@"; }
   # `timeout` execs a binary and cannot run a shell function, so the bounded
