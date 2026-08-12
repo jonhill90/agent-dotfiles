@@ -155,12 +155,13 @@ fi
 # is not sub-second: it spans claim, worktree creation and the send itself.
 # Two dispatchers on unrelated cadences CAN both read this lane free and
 # both type into the same pane -- that collision is not prevented here.
-# Step 6's `record_dispatch` (`one_open_task_per_lane`) only protects the
-# LEDGER once both sends have already happened: the second writer gets
-# refused and held (#188 finding 1), so the ledger never lies about which
-# dispatch won, but the pane itself may already carry two competing briefs.
-# "Authoritative" names which source wins an availability READ, not an
-# exclusive claim on it.
+# Step 6's `record_dispatch` (`one_open_task_per_lane`) does NOT catch this
+# either, measured (#183 round 3): it mints a fresh nonce every call, so a
+# second writer for the same lane is never refused -- it cancels the first
+# writer's task and installs its own, leaving one clean recorded occupancy
+# with no trace that two briefs went into the pane. "Authoritative" names
+# which source wins an availability READ, not an exclusive claim on it, and
+# the ledger keeps no evidence when that read was wrong.
 declare -A WINDOW_NAME_BY_INDEX
 while IFS=$'\t' read -r idx wname; do
   [ -n "$idx" ] || continue

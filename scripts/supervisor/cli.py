@@ -173,12 +173,16 @@ def lane_free(ledger, transport, *, lane, target, window_name):
     not sub-second the way `claim.sh`'s is: it spans claim, worktree
     creation and the send itself, and NOTHING here stops two dispatchers
     from both typing a competing brief into the same live pane during it.
-    `record_dispatch`'s `one_open_task_per_lane` constraint (see its
-    docstring) only protects the LEDGER, and only after both sends have
-    already happened: the second writer is refused and held (agent-
-    dotfiles#188 finding 1), so the ledger never ends up claiming both
-    dispatches succeeded, but that is bookkeeping honesty, not pane
-    exclusion. Before that write lands, this function's "free" is honest
+    `record_dispatch`'s `one_open_task_per_lane` constraint does NOT catch a
+    double-dispatch either, measured: `cli.record_dispatch` mints a fresh
+    `nonce` on every call, so `_register_lane_tx`'s "changed identity ->
+    new incarnation" test is always true, even for the same pane seconds
+    apart. A second writer's call does not refuse or hold -- it succeeds,
+    cancels the first writer's task, and installs its own as the lane's one
+    open task. The ledger ends up recording one clean occupancy, with
+    nothing left to show two briefs went into that pane (agent-dotfiles#188
+    finding 2 / #183 round 3). So there is no bookkeeping honesty here
+    either, only pane exclusion's absence: this function's "free" is honest
     only as of the instant it was asked, exactly as `claim.sh` says of its
     own assignee check. This estate runs two dispatchers on unrelated
     cadences and has already paid for a duplicate dispatch once (#70); the
@@ -260,8 +264,12 @@ def record_dispatch(
       without a live tmux server is not the portability fix #140 asks for, and
       it makes this testable without a transport stub.
 
-    Nothing reads any of this yet. That is the safety property, not an
-    oversight: `lanes.sh` still classifies panes exactly as it did.
+    agent-dotfiles#174: `lane_free` now reads this record back to decide
+    whether a lane is safe to dispatch to. "Nothing reads any of this yet"
+    was true under #140 and is not true anymore -- update this paragraph,
+    not just the callers, the next time this changes again. `lanes.sh`
+    still classifies panes exactly as it did; only availability/ownership
+    authority moved onto what this function writes.
 
     agent-dotfiles#144 finding 2: this used to make five independent `Ledger`
     calls -- register, reconstruct, assign, mark-pending, mark-delivered --
