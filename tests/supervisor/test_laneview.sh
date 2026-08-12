@@ -22,6 +22,41 @@ else
   bad "an unknown renderer name fails, not falls back" "rc=$rc out=$out"
 fi
 
+# ...and the list it names must be of things that can actually be passed.
+# `ls | sed 's/\.sh$//'` did not filter non-`.sh` entries, so it offered
+# `README.md` as an implementation -- in the one message a human reads when
+# they have got the name wrong (#246 finding D). Asserted without naming any
+# renderer: this case is about the listing, not about which renderers exist,
+# so deleting one must not fail it (see README.md's deletion claim).
+if grep -qE 'implementations: [a-z]' <<<"$out" && ! grep -q 'README' <<<"$out"; then
+  ok "the renderer list offers renderers, not every file in the directory"
+else
+  bad "the renderer list offers renderers, not every file in the directory" "$out"
+fi
+
+# laneview.sh's empty-`$json` guard answers review one's finding 4 and, until
+# #246, was asserted by nothing: reverting it left the suite fully green. A
+# lanes.sh that exits 0 having printed nothing is the case the guard names --
+# `--json` prints `[]` for a session with no lanes, so empty is unambiguous --
+# and the guard's whole value is WHICH message the human gets: a diagnosis
+# rather than a json.loads traceback out of the renderer. Driven from a copy
+# of laneview.sh beside a stub lanes.sh, because laneview.sh resolves the real
+# one relative to itself; the renderer directory is the real one. The impl
+# named is not text.sh: this case is laneview.sh's, not a renderer's, and
+# naming text.sh would inflate README.md's deletion count with a case that is
+# not about text.sh at all.
+E=$(mktemp -d)
+cp "$LANEVIEW" "$E/laneview.sh"
+ln -s "$HERE/../../scripts/supervisor/laneview" "$E/laneview"
+printf '#!/bin/bash\nexit 0\n' > "$E/lanes.sh"
+out=$(bash "$E/laneview.sh" opensessions fixture 2>&1); rc=$?
+if [ "$rc" -ne 0 ] && grep -q 'produced no output' <<<"$out" \
+   && ! grep -qi 'traceback' <<<"$out"; then
+  ok "empty lanes.sh output is diagnosed, never handed to a renderer"
+else
+  bad "empty lanes.sh output is diagnosed, never handed to a renderer" "rc=$rc out=$out"
+fi
+
 # End-to-end against the same stub tmux and fixture mechanism test_lanes.sh
 # uses, so this exercises the real lanes.sh --json -> laneview.sh -> text.sh
 # path, not a hand-built json blob.
@@ -75,6 +110,22 @@ else
   bad "text.sh gives scrolled a glyph of its own, not unknown's" "$out"
 fi
 
+# Both renderers' FALLBACK arms, as opposed to their keys. `scrolled` above
+# checks a key; these check what happens to a state neither map has heard of,
+# which is what the round-two fixes actually changed and what nothing asserted
+# (#246 finding B). `validate_laneview_state_maps` does not cover this: it
+# makes the default arm unreachable for the states lanes.sh ships *today*, it
+# never runs in the renderer's path, and it depends on `extract_lane_states`'
+# regex seeing every state. So the state named here is deliberately one
+# lanes.sh does not ship -- the fallback is the subject.
+UNMAPPED_JSON='[{"window":4,"name":"w-future","command":"claude.exe","state":"future-state"}]'
+out=$(PATH=/usr/bin:/bin bash "$TEXT_IMPL" demo-session "$UNMAPPED_JSON" 2>&1)
+if grep -qE '^\s*# w-future\s+future-state$' <<<"$out"; then
+  ok "text.sh gives an unheard-of state a glyph of its own, not blocked's ?"
+else
+  bad "text.sh gives an unheard-of state a glyph of its own, not blocked's ?" "$out"
+fi
+
 OS_IMPL="$HERE/../../scripts/supervisor/laneview/opensessions.sh"
 S=$(mktemp -d); mkdir -p "$S/bin"
 cp "$HERE/stubs/curl-opensessions" "$S/bin/curl"
@@ -86,6 +137,36 @@ if grep -q '"status": "waiting"' "$S/log1"; then
   ok "opensessions.sh maps scrolled to waiting, not idle"
 else
   bad "opensessions.sh maps scrolled to waiting, not idle" "$(cat "$S/log1") out=$out"
+fi
+
+# The sidebar half of the fallback check above: a state this script has never
+# heard of is not evidence a lane is available, so it renders `stale` and says
+# so. `idle` here would draw an unknown lane as a healthy green tick, which is
+# the #231 defect with a different cause.
+out=$(PATH="$S/bin:$PATH" CURL_STUB_LOG="$S/log4" CURL_STUB_COUNT="$S/n4" \
+  bash "$OS_IMPL" demo-session "$UNMAPPED_JSON" 2>&1)
+if grep -q '"status": "stale"' "$S/log4" \
+   && grep -q "no mapping for lanes.sh state 'future-state'" <<<"$out"; then
+  ok "opensessions.sh renders an unheard-of state stale and says so, not idle"
+else
+  bad "opensessions.sh renders an unheard-of state stale and says so, not idle" \
+    "$(cat "$S/log4") out=$out"
+fi
+
+# The two renderers deliberately disagree about the supervisor row: text.sh
+# prints it (asserted above), opensessions.sh drops it, because OpenSessions'
+# fixed vocabulary has no value for "not a lane" and every value it could pick
+# is a claim about an agent (#246 finding F; README.md, "Where the two
+# deliberately disagree"). Pinned here so the divergence is a decision that is
+# checked, not one that is only described.
+SUPERVISOR_JSON='[{"window":1,"name":"arch","command":"claude.exe","state":"supervisor"},
+{"window":2,"name":"l-a","command":"claude.exe","state":"free"}]'
+out=$(PATH="$S/bin:$PATH" CURL_STUB_LOG="$S/log5" CURL_STUB_COUNT="$S/n5" \
+  bash "$OS_IMPL" demo-session "$SUPERVISOR_JSON" 2>&1)
+if [ "$(grep -c '/api/agent-event' "$S/log5")" = "1" ] && ! grep -q '"arch"' "$S/log5"; then
+  ok "opensessions.sh never draws the supervisor row as an agent"
+else
+  bad "opensessions.sh never draws the supervisor row as an agent" "$(cat "$S/log5") out=$out"
 fi
 
 # The #231 review's blocking finding: post() used to `exit 1` from the

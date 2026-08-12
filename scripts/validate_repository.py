@@ -1023,6 +1023,56 @@ def validate_laneview_state_maps(root: Path) -> list[Finding]:
     return findings
 
 
+LANEVIEW_REF_RE = re.compile(r"\blaneview\b")
+
+
+def validate_laneview_isolation(root: Path) -> list[Finding]:
+    """`laneview/README.md` rule 3: no renderer, and no `laneview.sh`, may be
+    sourced by or run as a dependency of a headless supervisor script.
+
+    Rule 3 shipped with #231 enforced by nothing (#246). `dispatch.sh`'s own
+    header is this repository's standing argument that a documented rule
+    outlives the discipline behind it, and #73/#81 are what that costs. This
+    is the binary: every `*.sh` under `scripts/supervisor/` other than
+    `laneview.sh` and the renderers themselves must not reach for a viewer.
+
+    A reference in a COMMENT is allowed and a reference in CODE is not. The
+    rule is about dependency, not about mentioning the thing -- a supervisor
+    script that explains in a comment why it does not call a viewer is
+    obeying rule 3, and a check that failed on that would be a check people
+    route around. Anything outside a comment is a call, a source, or a path
+    being built, and all three are the failure this guards.
+    """
+    supervisor = root / "scripts" / "supervisor"
+    if not supervisor.is_dir():
+        return []
+    laneview_dir = supervisor / "laneview"
+
+    findings: list[Finding] = []
+    for script in sorted(supervisor.rglob("*.sh")):
+        if script.name == "laneview.sh" or laneview_dir in script.parents:
+            continue
+        hits = [
+            (n, line.strip())
+            for n, line in enumerate(
+                script.read_text(encoding="utf-8").splitlines(), 1
+            )
+            if LANEVIEW_REF_RE.search(line) and not line.lstrip().startswith("#")
+        ]
+        for number, line in hits:
+            findings.append(
+                Finding(
+                    "error",
+                    script,
+                    f"line {number} references laneview outside a comment "
+                    f"(`{line}`) -- laneview/README.md rule 3: a renderer "
+                    "must cost nothing when unused, so no headless "
+                    "supervisor script may source or run one (#246)",
+                )
+            )
+    return findings
+
+
 def validate(root: Path, target: Path | None = None) -> list[Finding]:
     skill_dirs = discover_skill_dirs(root, target)
     findings = validate_skill_collection(skill_dirs)
@@ -1037,6 +1087,7 @@ def validate(root: Path, target: Path | None = None) -> list[Finding]:
         findings.extend(validate_skill_source_pins(root))
         findings.extend(validate_lane_state_docs(root))
         findings.extend(validate_laneview_state_maps(root))
+        findings.extend(validate_laneview_isolation(root))
         findings.extend(validate_privacy(root))
         findings.extend(validate_static_context(root))
 

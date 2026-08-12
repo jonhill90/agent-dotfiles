@@ -37,7 +37,15 @@ It must:
    as a dependency of, `dispatch.sh`, `watchdog.sh`, `notify.sh`, or any
    other headless supervisor script. `laneview.sh` is only ever invoked by
    a human or a human-facing process (a tmux plugin, an interactive
-   shell).
+   shell). `validate_laneview_isolation` in
+   `scripts/validate_repository.py` **errors** on any `*.sh` under
+   `scripts/supervisor/` — other than `laneview.sh` and the renderers —
+   that names `laneview` outside a comment. This rule shipped with #231
+   enforced by nothing, which is the shape `dispatch.sh`'s own header
+   warns about and #73/#81 priced (#246). A comment is allowed: the rule
+   is about dependency, and a check that failed on a script explaining
+   why it does *not* call a viewer is one people satisfy by deleting the
+   explanation.
 4. **Name every state, and never let an unnamed one read as healthy.**
    `lanes.sh` ships eleven states today. A renderer that maps the ones it
    recognizes and defaults the rest is not neutral about the others —
@@ -69,6 +77,42 @@ demonstrated:
 | `text.sh` | one line per lane to stdout | none — no daemon, no plugin | proves "apart": works in a bare shell, in cron, over SSH, with the supervisor never running |
 | `opensessions.sh` | a tmux sidebar pane, via OpenSessions' `/api/agent-event` + `/set-status` HTTP API | a Rust daemon + sidebar client per tmux client (TPM-installed plugin) | proves "together": the tmux-plugin path #173 measured live, unchanged in mechanism from `lanebridge.sh` |
 
+### Where the two deliberately disagree: the supervisor row
+
+`text.sh` prints it (`. arch  supervisor`); `opensessions.sh` drops it
+(`if r["state"] == "supervisor": continue`). #246 asked for a choice —
+document the difference or make them agree — and the choice is **keep them
+different**, because the difference is the renderers' vocabularies, not an
+oversight:
+
+- `text.sh` prints `lanes.sh`'s state name verbatim beside every glyph, so
+  `supervisor` is a thing it can say. A human reading that line is told
+  exactly what the window is, and the "never a dispatch target" fact is
+  carried by the word itself. Dropping the row would hide a window the
+  reader can see in tmux.
+- `opensessions.sh` renders into OpenSessions' fixed `AgentStatus`
+  vocabulary — idle/running/stale/waiting/error — which has no value
+  meaning "not a lane". Every value it *could* pick is a claim about an
+  agent, and the honest-looking one, `idle`, means "waiting for work" in a
+  sidebar whose purpose is showing which agents are free. The supervisor
+  pane is the one window a dispatch must never reach (`lanes.sh`'s header:
+  a brief sent there `/clear`s the loop and replaces it), so drawing it as
+  available is rule 4's defect with a different cause. Omitting the row is
+  rule 2 applied to a single tile: absence rather than a wrong claim.
+
+The rule that generalizes: a renderer whose vocabulary can *name* a state
+shows it; a renderer that would have to translate it into a claim it does
+not mean omits it and says why here.
+
+Making them agree would have retired one oddity — `opensessions.sh`'s
+`supervisor) echo idle` arm is unreachable while the filter stands, and the
+validator requires it anyway. That is a real argument and it loses to the
+above. The arm stays and is now commented as deliberate: rule 4 is about
+what the map *names*, the filter is upstream of the map, and if the filter
+is ever removed the arm is the only thing keeping `supervisor` off the
+`*)` stale path. `tests/supervisor/test_laneview.sh` asserts the drop, so
+the divergence is checked and not merely described.
+
 Removing either is a deletion of its one file *under `scripts/`*. Neither
 implementation imports from the other, and `laneview.sh` does not
 special-case either name — it re-enumerates this directory, so deleting
@@ -78,13 +122,37 @@ One caveat, measured in review of #231 rather than assumed: the earlier
 form of this claim was verified with a grep scoped to `scripts/supervisor`
 and then stated as if it covered the tree. It does not.
 `tests/supervisor/test_laneview.sh` names `text.sh` directly — deleting
-`text.sh` fails four of its cases. That is deliberate and is not coupling
-between implementations: the "apart" guarantee is a property of `text.sh`
-specifically (it renders with no tmux binary and no daemon reachable), so
-the test proving it has to name it. Deleting a renderer means deleting its
-file and the cases asserting its own behaviour. No other renderer, no
-supervisor script, and no check changes: `validate_laneview_state_maps`
-returns nothing when this directory is absent.
+`text.sh` fails **six** of its seventeen cases, measured on this change:
+
+```
+$ rm scripts/supervisor/laneview/text.sh && bash tests/supervisor/test_laneview.sh
+  ... 11 passed, 6 failed
+```
+
+That is deliberate and is not coupling between implementations: the "apart"
+guarantee is a property of `text.sh` specifically (it renders with no tmux
+binary and no daemon reachable), so the test proving it has to name it.
+Deleting a renderer means deleting its file and the cases asserting its own
+behaviour. No other renderer, no supervisor script, and no check changes:
+`validate_laneview_state_maps` returns nothing when this directory is
+absent.
+
+Every one of the six is a case about `text.sh`, which is the property the
+number is claiming; a case that merely mentions a renderer in passing does
+not belong in it. Two of #246's new cases were written naming `text.sh`
+and then rewritten not to, for exactly that reason — the guard against an
+empty `lanes.sh` is `laneview.sh`'s behaviour and now drives `opensessions`
+instead, and the renderer-listing case asserts the *shape* of the list
+rather than any renderer's name.
+
+**This figure said "four" from #231 until #246 corrected it, and re-measure
+it when you touch this suite.** Four was measured at `937e3150` and was
+right then. Round two of #231 added a fifth `text.sh` case and carried the
+old number forward unchanged — the same commit that wrote the figure
+falsified it, in the paragraph whose subject is a claim that had already
+been overstated once. It read as measured and was not (`AGENTS.md`,
+"Recording Figures"). It was **five** at `25671d9d`, and is **six** here
+because #246 added a third direct `text.sh` case.
 
 ## What #173 already measured about the tmux-sidebar path specifically
 

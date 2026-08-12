@@ -1221,3 +1221,67 @@ class LaneviewStateMapTests(unittest.TestCase):
 
         shutil.rmtree(self.laneview)
         self.assertEqual(validator.validate_laneview_state_maps(self.root), [])
+
+
+class LaneviewIsolationTests(unittest.TestCase):
+    """agent-dotfiles#246: `laneview/README.md` rule 3 -- a renderer must
+    cost nothing when unused -- shipped with #231 enforced by nothing. A
+    documented rule outlives the discipline behind it; this is the binary."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.supervisor = self.root / "scripts" / "supervisor"
+        (self.supervisor / "laneview").mkdir(parents=True)
+
+    def write(self, relative: str, body: str) -> Path:
+        path = self.supervisor / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_a_headless_script_running_a_renderer_is_an_error(self) -> None:
+        self.write("dispatch.sh", '#!/bin/bash\nbash "$HERE/laneview.sh" text\n')
+        findings = validator.validate_laneview_isolation(self.root)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].level, "error")
+        self.assertEqual(findings[0].path.name, "dispatch.sh")
+        self.assertIn("rule 3", findings[0].message)
+        self.assertIn("line 2", findings[0].message)
+
+    def test_sourcing_a_renderer_is_an_error_too(self) -> None:
+        self.write("watchdog.sh", '#!/bin/bash\n. "$HERE/laneview/text.sh"\n')
+        findings = validator.validate_laneview_isolation(self.root)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].level, "error")
+
+    def test_a_comment_naming_the_rule_is_not_a_violation(self) -> None:
+        """The rule is about dependency, not about saying the word. A check
+        that failed on a comment explaining why a script does NOT call a
+        viewer is one people delete the comment to satisfy."""
+        self.write(
+            "notify.sh",
+            "#!/bin/bash\n"
+            "# Deliberately does not call laneview.sh: rule 3.\n"
+            "  # nor laneview/text.sh, for the same reason\n"
+            "echo hi\n",
+        )
+        self.assertEqual(validator.validate_laneview_isolation(self.root), [])
+
+    def test_laneview_sh_and_its_renderers_are_exempt(self) -> None:
+        """The entry point resolves its own renderers, and a renderer is
+        allowed to be one -- the rule binds everything else."""
+        self.write("laneview.sh", '#!/bin/bash\nexec "$HERE/laneview/$1.sh"\n')
+        self.write("laneview/text.sh", "#!/bin/bash\n# laneview implementation\ncat\n")
+        self.assertEqual(validator.validate_laneview_isolation(self.root), [])
+
+    def test_a_clean_supervisor_tree_produces_no_finding(self) -> None:
+        self.write("dispatch.sh", '#!/bin/bash\nbash "$HERE/lanes.sh" --free\n')
+        self.assertEqual(validator.validate_laneview_isolation(self.root), [])
+
+    def test_no_supervisor_dir_is_not_this_repos_shape(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.supervisor)
+        self.assertEqual(validator.validate_laneview_isolation(self.root), [])
