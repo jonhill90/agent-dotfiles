@@ -89,6 +89,15 @@ TMUX_ISOLATION_ASSERT = "assert_isolated_tmux"
 TMUX_EXPLICIT_SOCKET_WRAPPER_RE = re.compile(
     r"^\s*([A-Za-z_][A-Za-z0-9_]*)\(\)\s*\{.*\s-[LS](?:\s|=|\"|')"
 )
+# `REAL_TMUX=$(command -v tmux)` / `X=\`which tmux\`` -- a variable that
+# resolves to the tmux binary itself, not the literal token `tmux`. The
+# guard must follow this or a call routed through such a variable is
+# invisible to it (agent-dotfiles#258 review).
+TMUX_BINARY_VAR_RE = re.compile(
+    r"^\s*([A-Za-z_][A-Za-z0-9_]*)="
+    r"[\"']?"
+    r"(?:\$\(\s*(?:command\s+-v|which)\s+tmux\s*\)|`\s*(?:command\s+-v|which)\s+tmux\s*`)"
+)
 TMUX_OPTIONS_WITH_ARGUMENTS = {
     "-c",
     "-C",
@@ -819,9 +828,17 @@ def validate_privacy(root: Path) -> list[Finding]:
     return findings
 
 
-def destructive_tmux_verb(tokens: list[str]) -> str | None:
+def is_tmux_token(token: str, tmux_binary_vars: frozenset[str]) -> bool:
+    if token == "tmux":
+        return True
+    return any(token in (f"${name}", f"${{{name}}}") for name in tmux_binary_vars)
+
+
+def destructive_tmux_verb(
+    tokens: list[str], tmux_binary_vars: frozenset[str] = frozenset()
+) -> str | None:
     for index, token in enumerate(tokens):
-        if token != "tmux":
+        if not is_tmux_token(token, tmux_binary_vars):
             continue
         cursor = index + 1
         while cursor < len(tokens):
@@ -843,9 +860,11 @@ def destructive_tmux_verb(tokens: list[str]) -> str | None:
     return None
 
 
-def tmux_call_has_explicit_socket(tokens: list[str]) -> bool:
+def tmux_call_has_explicit_socket(
+    tokens: list[str], tmux_binary_vars: frozenset[str] = frozenset()
+) -> bool:
     for index, token in enumerate(tokens):
-        if token != "tmux":
+        if not is_tmux_token(token, tmux_binary_vars):
             continue
         cursor = index + 1
         while cursor < len(tokens):
@@ -895,9 +914,24 @@ def validate_tmux_destructive_verbs(root: Path) -> list[Finding]:
             if path.suffix not in TMUX_SCAN_SUFFIXES:
                 continue
             try:
-                lines = path.read_text(encoding="utf-8").splitlines()
-            except UnicodeError:
+                raw = path.read_text(encoding="utf-8")
+            except UnicodeError as exc:
+                findings.append(
+                    Finding(
+                        "error",
+                        path,
+                        f"cannot decode as UTF-8, so the tmux destructive-verb "
+                        f"scan cannot run on it: {exc}",
+                    )
+                )
                 continue
+            lines = raw.splitlines()
+            tmux_binary_vars: set[str] = set()
+            for line in lines:
+                var_match = TMUX_BINARY_VAR_RE.match(line)
+                if var_match:
+                    tmux_binary_vars.add(var_match.group(1))
+            tmux_binary_vars_frozen = frozenset(tmux_binary_vars)
             saw_tmux_unset = False
             saw_tmux_tmpdir = False
             saw_isolation_assert = False
@@ -920,11 +954,11 @@ def validate_tmux_destructive_verbs(root: Path) -> list[Finding]:
                     saw_tmux_unset and saw_tmux_tmpdir and saw_isolation_assert
                 )
                 tokens = line_tokens(stripped)
-                verb = destructive_tmux_verb(tokens)
+                verb = destructive_tmux_verb(tokens, tmux_binary_vars_frozen)
                 if verb and not (
                     has_isolation
                     or isolation_ready
-                    or tmux_call_has_explicit_socket(tokens)
+                    or tmux_call_has_explicit_socket(tokens, tmux_binary_vars_frozen)
                     or (tokens and tokens[0] in isolated_wrappers)
                 ):
                     findings.append(

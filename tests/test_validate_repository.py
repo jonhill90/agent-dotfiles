@@ -272,6 +272,66 @@ class DestructiveTmuxVerbTests(unittest.TestCase):
 
         self.assertEqual(findings, [])
 
+    def test_resolved_tmux_binary_variable_does_not_escape_the_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_bin_escape.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "TMUX_BIN=$(command -v tmux)\n"
+                '"$TMUX_BIN" kill-server\n',
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertTrue(findings)
+        self.assertIn("kill-server", findings[0].message)
+
+    def test_resolved_tmux_binary_variable_with_explicit_socket_is_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_bin_socket.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "REAL_TMUX=$(command -v tmux)\n"
+                '"$REAL_TMUX" -L "$SOCKET" kill-server 2>/dev/null\n',
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertEqual(findings, [])
+
+    def test_which_tmux_backtick_variable_does_not_escape_the_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_backtick_escape.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "TMUX_BIN=`which tmux`\n"
+                '"$TMUX_BIN" kill-session -t scratch\n',
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertTrue(findings)
+        self.assertIn("kill-session", findings[0].message)
+
+    def test_unreadable_utf8_file_is_reported_not_skipped(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_bad_bytes.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_bytes(b"#!/bin/bash\ntmux kill-server\n\xff\xfe garbage\n")
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].level, "error")
+        self.assertIn("cannot decode as UTF-8", findings[0].message)
+
 
 class FallbackFrontmatterTests(unittest.TestCase):
     def test_mini_yaml_matches_real_yaml_for_skill_frontmatter(self) -> None:
