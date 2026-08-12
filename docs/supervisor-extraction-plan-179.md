@@ -8,8 +8,15 @@ already in the #179 issue body, and (2) a sequencing plan for whenever the
 work is picked up.
 
 All figures below are **measured** in this worktree on 2026-08-12 against
-the tree at `39c7389` (whose parent is `main` at `d4ae64d`), by running the
-command shown, unless marked **inferred**.
+the tree at `main` = `32e8eab` (the merge of #228, this document's base),
+by running the command shown, unless marked **inferred**.
+
+An earlier revision of this document measured against `d4ae64d` and was
+committed sixteen minutes after #228 merged, so its figures narrated a
+`main` that had already moved: 36 files and 11,508 lines where `main` held
+37 and 11,698. Every figure below has been re-run against `32e8eab`. A
+count is only as good as the moment it was taken, and that moment is now
+named in the same breath as the number.
 
 **Citations name files, functions, and variables — never line numbers.**
 #223 shipped a comment citing its own callers at line numbers that were
@@ -24,7 +31,7 @@ Both are wrong against the code on `main` right now:
 
 | Claim in issue body | Re-measured here | Command |
 |---|---|---|
-| 7,258 lines, `scripts/supervisor/` | **11,508** | `cat $(find scripts/supervisor -type f) \| wc -l` |
+| 7,258 lines, `scripts/supervisor/` | **11,698** | `cat $(find scripts/supervisor -type f) \| wc -l` |
 | 30 files, `tests/supervisor/` | **41** | `find tests/supervisor -type f \| wc -l` |
 | "every default is env-overridable" | **False** — see §3 | `grep -rn 'agent-dotfiles-supervisor' scripts/supervisor/` |
 
@@ -35,23 +42,30 @@ inventory below replaces it.
 
 ## 1. Size, enumerated
 
-`scripts/supervisor/` — **36 files, 11,508 lines**, enumerated by
+`scripts/supervisor/` — **37 files, 11,698 lines**, enumerated by
 `find scripts/supervisor -type f`:
 
-- **20 shell**: `advance-live.sh`, `bootstrap-session.sh`, `claim.sh`,
+- **21 shell**: `advance-live.sh`, `bootstrap-session.sh`, `claim.sh`,
   `digest.sh`, `director-inbox.sh`, `director-route.sh`, `dispatch.sh`,
-  `inbox-poll.sh`, `inbox-route.sh`, `inbox.sh`, `input-box.sh`,
-  `lane-done.sh`, `lanes.sh`, `notify.sh`, `watchdog.sh`, `worktree.sh`,
-  `would-revert.sh`, plus `harness/claude.sh`, `harness/codex.sh`,
-  `harness/copilot.sh` — 5,025 lines.
+  `harness-registry.sh`, `inbox-poll.sh`, `inbox-route.sh`, `inbox.sh`,
+  `input-box.sh`, `lane-done.sh`, `lanes.sh`, `notify.sh`, `watchdog.sh`,
+  `worktree.sh`, `would-revert.sh`, plus `harness/claude.sh`,
+  `harness/codex.sh`, `harness/copilot.sh` — 5,204 lines.
 - **14 Python**: `acp_transport.py`, `adapter.py`, `cli.py`, `core.py`,
   `github_source.py`, `mcp_server.py`, `recycle.py`,
   `refresh_brief_resume.py`, `sensor.py`, `sleepcheck.py`,
   `supervisor_view.py`, `transport.py`, `verdict.py`, `watchdog_notify.py`
-  — 5,309 lines.
+  — 5,320 lines.
 - **2 Markdown**: `README.md`, `loop-tick.md` — 1,174 lines.
 
-`tests/supervisor/` — **41 files, 13,507 lines**:
+`harness-registry.sh` (99 lines) is the newest of these: #228 lifted the
+harness-adapter loader out of `lanes.sh` so `watchdog.sh` could ask the
+same adapters whether a pane is busy. It was checked for outward coupling
+along every axis §2 and §3 use — no `/Users/jon`, no `../..`, no
+cross-tree source — and has none. It adds volume to the moving tree, not
+surface area.
+
+`tests/supervisor/` — **41 files, 13,652 lines**:
 
 - **18 shell suites** (`test_advance_live.sh` … `test_would_revert.sh`).
 - **15 Python test modules** plus `__init__.py` — 16 `.py` files total.
@@ -61,8 +75,9 @@ inventory below replaces it.
 
 An earlier draft of this document reported "23 shell, 9 Python" for
 `scripts/supervisor/` and "20 shell test suites, 14 Python test modules"
-for `tests/supervisor/`. Both were wrong — the first pair does not even sum
-to the correct total of 36. The lists above were produced by enumerating
+for `tests/supervisor/`. Both were wrong — "23 shell, 9 Python" sums to 32,
+which was not the tree's total at that commit (36) and is not its total now
+(37). The lists above were produced by enumerating
 the tree, which is what `AGENTS.md` requires and what the earlier draft
 skipped.
 
@@ -76,20 +91,21 @@ do not hold; re-measured here with `wc -l` over each named set:
 
 | Set | Files | Lines (measured here) | `supervisor-disposition.md`'s figure |
 |---|---|---|---|
-| Shell supervisor | `watchdog.sh`, `lanes.sh`, `dispatch.sh`, `claim.sh`, `notify.sh`, `inbox.sh`, `worktree.sh`, `director-inbox.sh`, `sleepcheck.py`, `watchdog_notify.py` | **3,298** | 1,727 |
-| Ledger | `cli.py`, `core.py`, `adapter.py`, `sensor.py`, `github_source.py`, `transport.py`, `acp_transport.py` | **3,335** | 2,137 |
+| Shell supervisor | `watchdog.sh`, `lanes.sh`, `dispatch.sh`, `claim.sh`, `notify.sh`, `inbox.sh`, `worktree.sh`, `director-inbox.sh`, `sleepcheck.py`, `watchdog_notify.py` | **3,378** | 1,727 |
+| Ledger | `cli.py`, `core.py`, `adapter.py`, `sensor.py`, `github_source.py`, `transport.py`, `acp_transport.py` | **3,346** | 2,137 |
 
-The remaining **4,875** lines — arithmetic on the two measured subtotals
-against the 11,508 total, not a third measurement — are the other shell
-scripts, the other Python modules, `README.md`, and `loop-tick.md`.
+The remaining **4,974** lines — arithmetic on the two measured subtotals
+against the 11,698 total, not a third measurement — are the other shell
+scripts (including `harness-registry.sh`), the other Python modules,
+`README.md`, and `loop-tick.md`.
 
 That the ledger has never run (no `ledger.sqlite3`, no lock file, no
 results directory under its default state path) is **inferred current**
 from `supervisor-disposition.md`, not re-measured this session.
 
 This is a real scope question for #179 that "measure the coupling" doesn't
-answer by itself: **extraction of "the supervisor" could mean the 3,298
-running lines, the full 6,633, or a decision to leave the never-called
+answer by itself: **extraction of "the supervisor" could mean the 3,378
+running lines, the full 6,724, or a decision to leave the never-called
 ledger behind (or delete it) rather than pay to port dead code.**
 `docs/SPEC.md` §14.3 frames these as layers of one design rather than
 alternatives, and `docs/supervisor-disposition.md` poses the composition
@@ -125,9 +141,15 @@ The issue body names two hardcodes. There are **three**, and the
    `scripts/` outside `README.md`'s Hill90 examples.
 2. **`sleepcheck.py`** — `DEFAULT_PROJECT_DIR`, hardcoding
    `~/.claude/projects/-Users-jon-source-repos-Personal-agent-dotfiles`.
+   Unlike #1 and #3 this one **is** overridable: the caller reads
+   `SLEEPCHECK_DIR` first and falls back to the literal only when that is
+   unset. It is on this list because the fallback bakes in both this
+   machine's home directory and this repository's path, which is what a
+   new repo would inherit — not because there is no escape hatch.
 3. **`notify.sh`** — assigns `STATE="$HOME/.local/state/agent-dotfiles-supervisor"`
-   as a bare literal with **no env override at all**, unlike every other
-   shell caller.
+   as a bare literal with **no env override at all**. It is the only one
+   of the three with no escape hatch, and unlike every other shell caller
+   it ignores `SUPERVISOR_STATE`.
 
 **Three different environment variables name the same state directory** —
 a portability hazard in its own right, since setting one does not move the
@@ -155,12 +177,46 @@ moves and inherits a session named after the repo it left.
 
 ## 4. References from outside `scripts/supervisor/` and `tests/supervisor/`
 
-`grep -rln 'scripts/supervisor\|scripts\.supervisor'`, excluding the two
-trees themselves and this document, returns exactly **six** files.
+Two instruments are needed here, and an earlier revision of this section
+credited the first with a result only the second can produce.
+
+**Instrument 1 — the path grep.** Run against `main` = `32e8eab`:
+
+```
+grep -rln 'scripts/supervisor\|scripts\.supervisor' . --exclude-dir=.git \
+  | grep -v '^./scripts/supervisor/' | grep -v '^./tests/supervisor/' \
+  | grep -v 'supervisor-extraction-plan-179'
+```
+
+It returns exactly **six** files, and these are the six:
+
+```
+docs/hierarchy-naming-57.md
+docs/loop-signals.md
+docs/supervisor-disposition.md
+docs/work-tracking.md
+settings/mcp/servers.json
+tests/test_validate_repository.py
+```
+
+**Instrument 2 — a name grep, because one coupling builds the path
+instead of writing it.** `grep -n supervisor scripts/validate_repository.py`
+returns one hit, and it is a `Path` join: the file names `"scripts"` and
+`"supervisor"` as separate segments, so no grep for the joined string can
+ever match it. The path grep above is therefore **not** the instrument
+that finds it, and the earlier revision was wrong to say so.
+
+That makes **seven** coupled files in total: the six the path grep
+returns, plus `scripts/validate_repository.py`. The earlier revision
+printed the six-file count over a seven-file list; the number was right by
+coincidence, one missing entry cancelling one extra. This is the defect
+class this section itself names below, and the count is the thing people
+plan from.
 
 **Code and config — the real couplings (three):**
 
-- **`scripts/validate_repository.py`** — its `validate_lane_state_docs`
+- **`scripts/validate_repository.py`** *(found by instrument 2, not the
+  path grep)* — its `validate_lane_state_docs`
   function reads `scripts/supervisor/lanes.sh` directly to extract the
   state machine and cross-check it against the `supervised-lane-loop`
   skill's `SKILL.md`, resolved from `apm_modules` (in this repo or
@@ -178,7 +234,7 @@ trees themselves and this document, returns exactly **six** files.
   was written and is absent from it.** It was flagged non-blocking in
   #233's own review and is still present.
 
-**Docs that cite the path (three):** `docs/hierarchy-naming-57.md`,
+**Docs that cite the path (four):** `docs/hierarchy-naming-57.md`,
 `docs/loop-signals.md`, `docs/supervisor-disposition.md`,
 `docs/work-tracking.md`. These are prose references — design rationale,
 workflow instructions — not code dependencies. They would need editing
@@ -198,9 +254,23 @@ skill that operates the tool, but its content lives in `jonhill90/skills`
 per this repo's "roster here, author elsewhere" model — so this is a name
 in a list, not a dependency on the tree.
 
+**`hooks/`: empty, so zero references.** `CLAUDE.md` lists `hooks/` among
+this repo's canonical assets and a reader will look for it here.
+`git ls-files hooks/` returns one path — `hooks/.gitkeep` — and
+`grep -rn supervisor hooks/` returns nothing. There is no hook wiring the
+supervisor into any harness today, so nothing under `hooks/` moves, breaks,
+or needs editing at extraction time. Named because "not mentioned" and
+"checked and empty" read identically to someone auditing this list later.
+
 **`apm.yml`: zero references.** The supervisor is not declared as an APM
 package or dependency; it is committed content, synced by nothing but git.
 This matters for §7 below.
+
+**#228 added no outward reference.** The one file it added,
+`harness-registry.sh`, is sourced only from inside the tree
+(`lanes.sh`, `watchdog.sh`), and the seven-file list above is unchanged
+from what it was before that merge — the merge changed the tree's size
+(§1), not its coupling surface.
 
 ## 5. What the repo's own validation and CI actually know about it
 
@@ -212,12 +282,26 @@ This matters for §7 below.
   ships no instructions file, so this test is silent on it either way.
 - `.github/workflows/validate.yml` — the only CI workflow in the repo. It
   runs `scripts/validate_repository.py`, then
-  `python -m unittest discover -s tests -v`. `unittest discover` walks
-  every package under `tests/`, so **all 41 files in `tests/supervisor/`
-  run in CI today**, with no separate job, no separate trigger, and no way
-  to skip them independently. Extracting the tree removes this coverage
+  `python -m unittest discover -s tests -v`. **Both halves of
+  `tests/supervisor/` run in CI today**, but by two different mechanisms,
+  and an earlier revision of this section credited one for both:
+  - `unittest discover` collects `test*.py` only, so it picks up the 16
+    Python modules directly.
+  - The **18 shell suites run through a Python shim**,
+    `tests/supervisor/test_shell_suites.py`, which globs `test_*.sh` beside
+    itself and shells out to each. Its own docstring records why it exists:
+    before it, *"Nothing ran them"* — `unittest discover` picked up only the
+    Python ones, and *"a regression in `lanes.sh` would have reached `main`
+    green."*
+  - The 7 stub fixtures under `stubs/` and `__init__.py` do not "run" at
+    all; the stubs are invoked *by* the shell suites as fake `gh`, `tmux`,
+    and `ps`.
+
+  There is no separate job, no separate trigger, and no way to skip the
+  supervisor tests independently. Extracting the tree removes this coverage
   from `agent-dotfiles`' CI entirely unless the new repo stands up its own
-  workflow first.
+  workflow first — and, per the shim above, a bare `unittest discover`
+  there would cover only the Python half.
 
 ## 6. The precedent already drawn once, in this exact domain — and it runs the other direction
 
@@ -257,6 +341,7 @@ adapter repo akin to what `Hill90` already has.
 | `scripts/supervisor/loop-tick.md` | **Moves to `jonhill90/skills`, or is packaged as a skill** | Jon's framing: *"the loop or skill that uses the tool might go in skills or agent-dotfiles."* It instructs an operator how to run the tool; it is not the tool |
 | `supervised-lane-loop` (rostered in `settings/default-skills.txt`, authored in `jonhill90/skills`) | **Stays rostered here; content stays in `skills`** | Already follows this repo's "roster here, author elsewhere" model; no change needed |
 | State directory location, `DEFAULT_REPOSITORIES`, the MCP server's absolute path, any LaunchAgent/cron entry | **Stays in `agent-dotfiles`, or in a new adapter layer** | Exactly the class of thing that stayed in `Hill90` under the existing precedent (§6) — machine wiring, not portable product |
+| `hooks/` | **Stays, and is a no-op either way** | Empty but for `.gitkeep`, and nothing under it references the supervisor (§4). Listed so the absence is recorded as checked, not overlooked |
 | `validate_lane_state_docs` in `scripts/validate_repository.py` | **Deleted, or rewritten to check the new repo**, decided at extraction time | It is the one check that already reaches across the boundary; after extraction it checks a directory that no longer exists here |
 | The `"supervisor"` entry in `settings/mcp/servers.json` | **Path updated to the new repo's checkout** — still hardcoded unless #233's flagged issue is fixed first | The "everyone must check out both repos in matching places" problem exists today; extraction relocates it rather than creating it |
 
@@ -285,6 +370,13 @@ Re-checked against issue and PR state, not against the brief's framing —
 some of this landed after the brief was written:
 
 - **#216** (harness identity) — **closed**, merged as `7db46f2`. No blocker.
+- **#215** (watchdog busy check) and **#228** (its fix) — **closed /
+  merged** as `32e8eab`, this document's base. It added
+  `harness-registry.sh` to the moving tree and changed `watchdog.sh`,
+  `lanes.sh`, `adapter.py`, and the test stubs — all inside it. No new
+  coupling (§4), but it is the reason §1's totals moved from 36/11,508 to
+  37/11,698, and the reason `tests/supervisor/` moved from 13,507 to
+  13,652 lines.
 - **#198** (MCP server proposal) and **#233** (its implementation) —
   **closed / merged** as `d4ae64d`. Done, but #233 is what introduced the
   fresh hardcoded-path coupling in §4 and §7. Worth fixing — resolve the
@@ -297,19 +389,36 @@ some of this landed after the brief was written:
   burden on top of the move.
 
 A search for open issues naming the supervisor
-(`gh issue list --search "supervisor in:body" --state open`) found **nine
-more** beyond #179 and #212/#225: #215 (watchdog busy check), #227
-(`test_inbox_poll.sh` CI hang), #139 (Linux/Windows portability, explicitly
-deferred), #178 (tmux plugin, §11), #52 (notification architecture), #192
-(`digest.sh` test gap), #16 (the ledger-versus-shell decision
-`docs/supervisor-disposition.md` was written for), #92 (watchdog re-arm
-reliability), and #226 (verdict-SHA rebase detection). None sits on the
-extraction boundary itself, but #227 is a currently red CI test in the tree
-that would move, and #16 is a live architectural question about which of
-the two implementations in this tree is even the right one to extract.
-Both extend "after we get it working" rather than blocking this plan: a bug
-list this long is itself evidence the tool is not done, which is the
-condition Jon already attached to the timing.
+(`gh issue list --search "supervisor in:body" --state open`) returned 16
+issues when run against `32e8eab`, which is **fifteen** beyond #179 itself:
+#16 (the ledger-versus-shell decision `docs/supervisor-disposition.md` was
+written for), #52 (notification architecture), #57 (hierarchy naming), #92
+(watchdog re-arm reliability), #139 (Linux/Windows portability, explicitly
+deferred), #178 (tmux plugin, §11), #192 (`digest.sh` test gap), #226
+(verdict-SHA rebase detection), #227 (`test_inbox_poll.sh` CI hang), #235
+(`advance-live.sh` never fetches), #237 (restore after tmux server loss),
+#238 (two supervisor instances can dispatch concurrently), #239
+(`lanes.sh` protects by window index), #240 (ledger task and window name
+identify a different brief than the pane received), and #241 (window
+indices as dispatch targets under `renumber-windows`).
+
+This is a count of a set that was enumerated, at a named commit, and it
+**will drift** — an earlier revision of this section said "nine more" and
+included #215, which had closed before that sentence was committed. Re-run
+the command rather than trusting the number; what matters is its shape, not
+its value.
+
+None of the fifteen sits on the extraction boundary itself, but #227 is a
+currently red CI test in the tree that would move, and #16 is a live
+architectural question about which of the two implementations in this tree
+is even the right one to extract. The five newest (#237–#241) are all one
+family — state inferred from tmux window names and indices rather than
+recorded — which is the `AGENTS.md` "tmux is not a database" rule still
+being paid down inside the moving tree.
+
+All of it extends "after we get it working" rather than blocking this plan:
+a bug list this long, and growing this fast, is itself evidence the tool is
+not done — which is the condition Jon already attached to the timing.
 
 ## 10. What must be true before extraction starts
 
@@ -318,7 +427,7 @@ condition Jon already attached to the timing.
    loop cannot go dark while `apm.yml` is edited and re-resolved.
 2. **#212/#225 lands first** (§9) — the one open PR touching the moving tree.
 3. **#16 has an answer, or the ledger's fate is stated explicitly** (§1.1)
-   — extraction scope (3,298 running lines versus 6,633) is undefined until
+   — extraction scope (3,378 running lines versus 6,724) is undefined until
    then.
 4. **The three hardcodes and the three env-var names in §3 are resolved**,
    in the new repo or before the move — otherwise the new repo ships
@@ -329,9 +438,14 @@ condition Jon already attached to the timing.
    `scripts/supervisor/lanes.sh` from `main` merges, or CI silently stops
    checking a state-drift class of bug this repo already paid to catch
    once (#196).
-6. **CI parity** — the new repo needs its own `unittest discover` (or
-   equivalent) wired before `tests/supervisor/`'s 41 files stop running
-   here (§5), or 13,507 lines of test coverage go dark mid-move.
+6. **CI parity, and it needs more than `unittest discover`** — the new repo
+   needs its own runner wired before `tests/supervisor/`'s 41 files stop
+   running here (§5), or 13,652 lines of test coverage go dark mid-move.
+   A bare `unittest discover` buys only the 16 Python modules: the 18 shell
+   suites run through `tests/supervisor/test_shell_suites.py`, so that shim
+   must travel with them. Under §7's "tests move wholesale" it does — the
+   point is that the gate is satisfied by the shim moving, not by the
+   command being run.
 
 ## 11. Open questions this plan does not resolve
 
