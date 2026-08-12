@@ -305,3 +305,5 @@ mechanism-side counterpart of this decision is recorded in `docs/SPEC.md`
 | Why the frame matters | It decides what gets built: under ACP the supervisor is a client and each lane is an agent behind a protocol; under A2A the project would end up standing up services |
 | Standing rule | Do not build an A2A service merely to wrap a local CLI. A local process driven over stdio does not need a network service in front of it — if a proposal ends with "and then it listens on a port," re-read this rule |
 | Boundary | ACP is a transport adapter behind the portable core, not a replacement for it — the core keeps owning the ledger, ownership-safe transitions, assignment gating, and attention (`docs/SPEC.md` §15) |
+
+<!-- mergecheck scratch: simulates a regeneration that picked up a new #300 -->
