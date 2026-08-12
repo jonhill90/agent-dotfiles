@@ -255,19 +255,23 @@ the past, and reading it is nonetheless correct — it is tmux's value, not ours
 
 A window name may be a *projection* of a record. It may not be the record.
 
-**This describes the target state, not today's code.** Right now the window name
-IS the record in three places, and they are being migrated separately — do not
-assume one issue closes all three:
+**This describes the target state, not today's code.** As of 2026-08-11, the
+window name IS the record in all three places below, and #174 is Jon's decided
+direction for changing that — not a completed change. PR #183 implements it and
+is **open and held**, blocked by two independent REQUEST CHANGES reviews filed
+as #188: a failed ledger write can leave a working lane readable as `free`, and
+`lane-free` is a query, not a claim. Nothing here has merged. Do not assume one
+issue closes all three, and do not read PR #183 existing as PR #183 landing:
 
-| call site | what the name decides | status |
+| call site | what the name decides | status as of 2026-08-11 |
 |---|---|---|
-| `dispatch.sh:122` | availability (`^free-[0-9]+$`) | **#174 / PR #183** — the read moves to the ledger |
-| `lane-done.sh:92` | completion (the rename *is* the record) | **partly** — PR #183 adds a ledger write but leaves the rename `\|\| exit 1`, so it is still load-bearing, not cosmetic |
-| `claim.sh:141` | ownership (parses the issue number out of the name) | **not started** — outside #174's scope |
+| `dispatch.sh:122` | availability (`^free-[0-9]+$`) | **unmigrated** — still the window-name gate; #174/PR #183 (open, held on #188) is the plan |
+| `lane-done.sh:92` | completion (the rename *is* the record) | **unmigrated** — the rename is still `\|\| exit 1`; PR #183, once it clears #188, adds a ledger write but by its own diff leaves the rename load-bearing rather than cosmetic, short of #174's own test 5 |
+| `claim.sh:141` | ownership (parses the issue number out of the name) | **unmigrated, unplanned** — outside #174's stated scope, no issue filed |
 
 `loop-tick.md` instructs the renaming behaviour (L483, L540) and **remains
-operative for all three until each is migrated.** This paragraph shrinks as they
-land and goes when the table is empty.
+operative for all three today.** This paragraph updates as each call site
+actually migrates in merged code, and goes when the table is empty.
 
 Do not read this rule as licence to stop renaming windows.
 
