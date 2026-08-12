@@ -198,6 +198,23 @@ report_stop() {
   fi
 }
 trap report_stop EXIT
+# agent-dotfiles#187: EXIT alone is not enough, and the gap is not theoretical.
+# An UNTRAPPED SIGTERM only reaches the EXIT trap when bash happens to be
+# waiting on a foreground child (the inbox.sh long poll, most of the time) --
+# it defers the signal, the child finishes, the shell exits normally and the
+# trap runs. When the signal instead lands while bash is executing its own
+# builtins -- the status write, the log line, the loop arithmetic -- the
+# default disposition kills the shell outright and the EXIT trap NEVER RUNS.
+# Measured on this file: 150 SIGTERMs at a loop boundary, 4 produced no page
+# to Jon and no `stopped` heartbeat at all. That is #160's guarantee failing
+# a few percent of the time, silently, and it is what turned this branch's CI
+# red -- the two heartbeat assertions in test_inbox_poll.sh are exactly the
+# ones that lose the race. Trapping the signal explicitly makes bash run the
+# handler at the next command boundary no matter what it was doing.
+# report_stop's own STOPPING guard makes the EXIT trap that follows a no-op.
+trap 'report_stop; exit 143' TERM   # 128 + 15
+trap 'report_stop; exit 130' INT    # 128 + 2
+trap 'report_stop; exit 129' HUP    # 128 + 1
 
 fail_count=0
 notified_down=""

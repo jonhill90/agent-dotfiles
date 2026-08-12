@@ -339,6 +339,49 @@ else
 fi
 cp "$POLL" "$D/lane/inbox-poll.sh"; chmod +x "$D/lane/inbox-poll.sh"
 
+# --- agent-dotfiles#187: SIGTERM must be trapped, not left to EXIT ---------
+# The two heartbeat assertions above (SIGTERM pages, SIGTERM records
+# `stopped`) were flaky, and turned this branch's CI red: an UNTRAPPED
+# SIGTERM only reaches an EXIT trap when bash is waiting on a foreground
+# child. When it lands while bash is in its own builtins, the default
+# disposition kills the shell and the EXIT trap never runs -- no page, no
+# `stopped` heartbeat. Measured on this script before the fix: 4 of 150
+# SIGTERMs sent nothing at all; after trapping TERM/INT/HUP explicitly,
+# 0 of 300.
+#
+# This assertion is structural on purpose. The behavioural version cannot be
+# made deterministic: the miss rate is a few percent per kill, so no loop of
+# a length worth running in CI turns a deleted trap reliably red -- it would
+# just reintroduce the flake it exists to prevent. Deleting any trap line
+# below turns THIS red every time, which is the regression worth catching.
+# The behavioural half is the pair of assertions above, plus the short loop
+# after this one.
+for sig in TERM INT HUP; do
+  grep -qE "^trap '.*report_stop.*' .*\b$sig\b" "$POLL" \
+    && ok "inbox-poll.sh traps $sig explicitly, not only EXIT" \
+    || bad "no explicit $sig trap in inbox-poll.sh" "$(grep -n '^trap ' "$POLL")"
+done
+
+# The cheap behavioural backstop: every one of a dozen SIGTERMs must page.
+# Not sensitive enough to catch the race on its own (see above) -- it is here
+# to catch gross breakage of the stop path, which it does deterministically.
+term_misses=0
+for _ in $(seq 1 12); do
+  rm -f "$D/notify.log" "$D/status" "$D/poll.log"; : > "$D/notify.log"
+  HOME="$D/state" INBOX_SCRIPT="$D/fixture-forever" ROUTE_LOG="$D/route.log" NOTIFY_LOG="$D/notify.log" \
+    INBOX_POLL_ITERATIONS=0 INBOX_POLL_STATUS="$D/status" INBOX_POLL_LOG="$D/poll.log" \
+    INBOX_POLL_BACKOFF_BASE=0 INBOX_POLL_MIN_UPTIME=0 \
+    bash "$D/lane/inbox-poll.sh" t >/dev/null 2>&1 &
+  pid=$!
+  waited=0
+  while [ ! -s "$D/status" ] && [ "$waited" -lt 50 ]; do sleep 0.1; waited=$((waited + 1)); done
+  kill -TERM "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null
+  grep -qi 'poller stopped' "$D/notify.log" 2>/dev/null || term_misses=$((term_misses + 1))
+done
+[ "$term_misses" -eq 0 ] && ok "twelve consecutive SIGTERMs each paged Jon" \
+  || bad "a SIGTERM died without paging Jon" "$term_misses of 12 sent nothing"
+
 # --- agent-dotfiles#187: the status file records the running commit --------
 # advance-live.sh's poller-restart check compares THIS line against LIVE's
 # own head sha to decide whether the poller is stale. It has to be the real
