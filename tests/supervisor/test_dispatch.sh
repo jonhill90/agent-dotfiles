@@ -1707,6 +1707,11 @@ fi
 # (not `bash "$DISPATCH"`, which would pick up PATH's bash and never see the
 # bug), the same style #199's stderr-clean case above uses, so the script's
 # own shebang selects the interpreter exactly as production does.
+#
+# The two assertions here are portable and always run. The mutation-check at
+# the end of the block is NOT portable -- it asserts a crash only pre-4.4
+# bash produces -- and probes the interpreter before demanding it; see the
+# comment there.
 echo "--- agent-dotfiles#225: bash 3.2 empty-array sites ---"
 
 # Site 1: dispatch.sh:82's `set -- "${POSITIONAL[@]}"` on the zero-argument
@@ -1777,18 +1782,63 @@ if [ "$patch_rc" -ne 0 ]; then
 else
   ok "setup: patched a copy of dispatch.sh with both 3.2-safe expansions reverted"
   chmod +x "$MUTATED_225B"
-  mut_zeroarg_err=$("$MUTATED_225B" 2>&1 1>/dev/null)
-  want_contains "mutation confirmed: the zero-arg path crashes under 3.2" "unbound variable" "$mut_zeroarg_err"
 
-  : > "$D/tmux.log"
-  rm -rf "$D/panes"; mkdir -p "$D/panes"
-  mut_reviewargs_err=$(PATH="$D/bin:$PATH" GH_ISSUES="$D/issues" GH_PRS="$D/prs" \
-    LANES_FIXTURE="$D/lanes" LANES_SESSION=t TMUX_LOG="$D/tmux.log" \
-    TMUX_PANES="$D/panes" DISPATCH_SETTLE=0 \
-    AGENT_SUPERVISOR_STATE_DIR="$(mktemp -d "$D/state.XXXXXX")" \
-    STUB_PANE_PATH="$REPO" WORKTREE_ROOT="$D/roots" \
-    "$MUTATED_225B" 212 rev-301-2 "$D/brief.md" "" "$REPO" --reviews-pr 301 2>&1 1>/dev/null)
-  want_contains "mutation confirmed: [repo]-omitted --reviews-pr crashes under 3.2" "unbound variable" "$mut_reviewargs_err"
+  # The two POSITIVE cases above run everywhere: the shipped expansions are
+  # correct under every bash, so asserting "no unbound-variable error" is a
+  # portable claim. The MUTATION half is not -- it asserts the reverted copy
+  # CRASHES, and only pre-4.4 bash raises that error at all. On Ubuntu CI
+  # /bin/bash is 5.x, the mutant runs cleanly, and both assertions failed for
+  # a reason that had nothing to do with dispatch.sh: that is what turned this
+  # branch's CI red at head 860e586 while the same suite passed on macOS.
+  #
+  # So probe whether the bug is reproducible in this interpreter before
+  # demanding the mutant reproduce it. Probe the BEHAVIOUR, not
+  # $BASH_VERSION: what this case needs to know is whether an empty
+  # "${arr[@]}" under `set -u` errors here, which is a property of the shell
+  # in front of us, and a version string is a proxy for it that can be wrong
+  # (distro backports, a rebuilt bash) in either direction.
+  #
+  # Probe the interpreter the MUTANT will actually use, read off its own
+  # shebang, so the probe and the mutant can never disagree about which bash
+  # is under test -- the mutant is executed directly (not via PATH's `bash`)
+  # precisely so its shebang chooses, exactly as production does.
+  MUT_SHELL=$(sed -n '1s|^#!||p' "$MUTATED_225B" | awk '{print $1}')
+  [ -n "$MUT_SHELL" ] || MUT_SHELL=/bin/bash
+  # TWO probes, because one cannot separate the two ways this can go wrong.
+  # The obvious single probe -- run the expansion and treat exit 1 as "it
+  # errored" -- is wrong: measured on this machine, /bin/bash 3.2.57 exits
+  # **127** on that expansion, not 1, so keying on 1 would have mis-read real
+  # 3.2 as "no bug here" and silently skipped the mutation on the one platform
+  # that has the bug. And 127 is also what a missing shell returns, so the
+  # expansion probe alone cannot tell 3.2 apart from "no such interpreter".
+  #
+  # So: probe 1 asks only "can this shell run anything at all", probe 2 asks
+  # only "did the empty expansion abort before reaching exit 7". A shell that
+  # cannot run is a FAILURE, never a skip -- a mutation-check that silently
+  # stops running is the exact failure mode this block exists to prevent.
+  "$MUT_SHELL" -c 'exit 7' >/dev/null 2>&1
+  shell_rc=$?
+  "$MUT_SHELL" -c 'set -uo pipefail; A=(); printf "%s" "${A[@]}"; exit 7' >/dev/null 2>&1
+  probe_rc=$?
+  if [ "$shell_rc" -ne 7 ]; then
+    bad "setup: probed whether an empty \"\${arr[@]}\" errors under $MUT_SHELL" \
+      "cannot run $MUT_SHELL at all (a bare 'exit 7' returned $shell_rc) -- the mutant runs under this interpreter via its shebang, so this is a failure, not a skip"
+  elif [ "$probe_rc" -eq 7 ]; then
+    echo "  (skipped, not passed: $MUT_SHELL expands an empty \"\${arr[@]}\" to zero words under set -u -- bash >= 4.4 -- so reverting the 3.2-safe expansions is UNOBSERVABLE here and the mutation cannot be checked on this machine. The two positive cases above did run. Exercise this on macOS's real /bin/bash 3.2.)"
+  else
+    mut_zeroarg_err=$("$MUTATED_225B" 2>&1 1>/dev/null)
+    want_contains "mutation confirmed: the zero-arg path crashes under 3.2" "unbound variable" "$mut_zeroarg_err"
+
+    : > "$D/tmux.log"
+    rm -rf "$D/panes"; mkdir -p "$D/panes"
+    mut_reviewargs_err=$(PATH="$D/bin:$PATH" GH_ISSUES="$D/issues" GH_PRS="$D/prs" \
+      LANES_FIXTURE="$D/lanes" LANES_SESSION=t TMUX_LOG="$D/tmux.log" \
+      TMUX_PANES="$D/panes" DISPATCH_SETTLE=0 \
+      AGENT_SUPERVISOR_STATE_DIR="$(mktemp -d "$D/state.XXXXXX")" \
+      STUB_PANE_PATH="$REPO" WORKTREE_ROOT="$D/roots" \
+      "$MUTATED_225B" 212 rev-301-2 "$D/brief.md" "" "$REPO" --reviews-pr 301 2>&1 1>/dev/null)
+    want_contains "mutation confirmed: [repo]-omitted --reviews-pr crashes under 3.2" "unbound variable" "$mut_reviewargs_err"
+  fi
 fi
 
 # --- agent-dotfiles#225: does the existing stderr-clean guard (#199) catch
