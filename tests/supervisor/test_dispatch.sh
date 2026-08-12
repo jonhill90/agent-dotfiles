@@ -1661,7 +1661,13 @@ printf '204|Fixes #193|lane/193-telegram-to-director\n' >> "$D/prs"
 out=$(LEDGER_STATE="$D/state-212" run 193 telegram-to-director "$D/brief.md" acme/agent-dotfiles "$REPO"); rc=$?
 want_exit "the authoring dispatch (#193) succeeds" "$rc" 0 "$out"
 log=$(tmuxlog)
-want_contains "and lands on the first free lane, t:3" "send-keys -t t:3" "$log"
+# TARGETS ARE WINDOW IDS HERE, LANE NAMES ARE INDICES (#241, merged after this
+# section was written). The stub synthesises `@N` as 100 + index, so lane t:3's
+# target is `t:@103`. Which LANE was chosen is still asserted as an index -- see
+# "the author's lane is named and skipped" below, which reads `skipping t:3`
+# from dispatch.sh's own message. That split is #241's whole point and these
+# assertions now carry it: the ledger keys on the slot, tmux is addressed by id.
+want_contains "and lands on the first free lane, t:3 (target t:@103)" "send-keys -t t:@103" "$log"
 
 # The authoring lane finishes and goes idle again -- exactly what makes it
 # eligible for ordinary dispatch, and exactly the case #212 exists for: a
@@ -1673,8 +1679,11 @@ want_exit "a review of PR #204 is still dispatched" "$rc" 0 "$out"
 want_contains "the author's lane is named and skipped" "skipping t:3" "$out"
 want_contains "the skip names the authoring task" "ad193-telegram-to-director" "$out"
 log=$(tmuxlog)
-want_contains "and the review lands on the OTHER free lane, t:4" "send-keys -t t:4" "$log"
-want_missing "never on the author's lane" "send-keys -t t:3 " "$log"
+want_contains "and the review lands on the OTHER free lane, t:4 (target t:@104)" "send-keys -t t:@104" "$log"
+# The negative has to move to the id too, or it stops biting: after #241 no
+# tmux call names `t:3` at all, so a `want_missing "-t t:3 "` would pass on a
+# dispatch that landed squarely on the author.
+want_missing "never on the author's lane (t:3, target t:@103)" "send-keys -t t:@103 " "$log"
 
 # Now t:4 (from the review just dispatched) is the only thing standing
 # between t:3 (free, but the author) and a refusal -- leave it occupied and
@@ -1761,7 +1770,7 @@ FIX
         run 210 rev-220 "$D/brief.md" acme/agent-dotfiles "$REPO" --reviews-pr 220); rc=$?
   want_exit "mutation confirmed: the unguarded copy dispatches a self-review" "$rc" 0 "$out"
   log=$(tmuxlog)
-  want_contains "mutation confirmed: it lands on the author's own lane, t:3" "send-keys -t t:3" "$log"
+  want_contains "mutation confirmed: it lands on the author's own lane, t:3 (target t:@103)" "send-keys -t t:@103" "$log"
 fi
 
 # --- agent-dotfiles#225: --reviews-pr with no value must refuse, not hang -
