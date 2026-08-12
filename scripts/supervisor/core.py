@@ -560,6 +560,27 @@ class Ledger:
         with contextlib.closing(self._connect()) as connection:
             return self._dict(connection.execute("SELECT * FROM lanes WHERE lane = ?", (lane,)).fetchone())
 
+    def lane_available(self, lane):
+        """Tri-state: None (lane unknown to the ledger), True (registered,
+        no outstanding task), False (registered, an outstanding task owns it).
+
+        agent-dotfiles#174: this is the query `dispatch.sh` now trusts instead
+        of the tmux window name. `None` is deliberately distinct from `False`
+        -- a lane the ledger has never heard of is not the same claim as one
+        it knows is busy, and the caller (dispatch.sh's lane-free backfill)
+        needs to tell them apart to decide whether a first-sight registration
+        is even in play. "Outstanding" mirrors the `one_open_task_per_lane`
+        index: any task not in `complete`, `failed` or `cancelled`.
+        """
+        with contextlib.closing(self._connect()) as connection:
+            if connection.execute("SELECT 1 FROM lanes WHERE lane = ?", (lane,)).fetchone() is None:
+                return None
+            open_task = connection.execute(
+                "SELECT 1 FROM tasks WHERE lane = ? AND status NOT IN ('complete', 'failed', 'cancelled')",
+                (lane,),
+            ).fetchone()
+            return open_task is None
+
     def list_lanes(self):
         with contextlib.closing(self._connect()) as connection:
             rows = connection.execute("SELECT * FROM lanes ORDER BY lane").fetchall()

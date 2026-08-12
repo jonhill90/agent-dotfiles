@@ -91,11 +91,16 @@ fi
 
 tmux rename-window -t "${SESSION}:${IDX}" "free-${IDX}" || exit 1
 
-# Record the completion (agent-dotfiles#140). BEST EFFORT, NEVER FATAL, for
-# the same reason as dispatch.sh's matching block: nothing reads the ledger
-# yet, so a failed bookkeeping write must not turn a lane that genuinely
-# finished -- and has already been renamed back into the pool -- into a
-# reported failure. Loud on failure, never silent.
+# Record the completion (agent-dotfiles#140, updated by agent-dotfiles#174).
+# BEST EFFORT, NEVER FATAL, but for a different reason now that dispatch.sh
+# reads this record to decide what is free: the rename above already
+# happened, so the lane IS free in reality regardless of whether this write
+# lands. If it fails, the ledger keeps showing this lane's last task open --
+# dispatch.sh's fail-closed read (#174) then treats the lane as occupied and
+# simply never offers it again, rather than risk mistakenly offering a lane
+# that is not actually free. That is the safe direction to be wrong in, which
+# is why this stays best-effort rather than turning a genuine completion into
+# a reported failure. Loud on failure, never silent.
 #
 # Runs AFTER the rename, so the only completion ever recorded is one that
 # actually released the lane. The task id is the window name dispatch.sh set,

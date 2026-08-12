@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import secrets
 import sys
 from pathlib import Path
@@ -115,6 +116,15 @@ def parser():
     reconstruct.add_argument("--source-url", required=True)
     reconstruct.add_argument("--source-ref", required=True)
 
+    # agent-dotfiles#174: the read side of the seam #140 opened. `dispatch.sh`
+    # calls this once per idle-looking candidate instead of trusting the
+    # window name. See `lane_free` for the migration story (first-sight
+    # backfill).
+    lane_free_parser = sub.add_parser("lane-free")
+    lane_free_parser.add_argument("--lane", required=True)
+    lane_free_parser.add_argument("--target", required=True)
+    lane_free_parser.add_argument("--window-name", required=True)
+
     sub.add_parser("status")
     return root
 
@@ -124,6 +134,65 @@ def _print(value):
 
 
 HARNESS_BY_COMMAND = {"codex": "codex", "claude": "claude", "claude.exe": "claude"}
+FREE_WINDOW_NAME_RE = re.compile(r"^free-[0-9]+$")
+
+
+def lane_free(ledger, transport, *, lane, target, window_name):
+    """Answer "is `lane` safe to dispatch to?" from the ledger, not the name.
+
+    agent-dotfiles#174. Three outcomes:
+
+    * The ledger already knows this lane (`lane_available` returns True or
+      False) -- that answer wins outright, REGARDLESS of what the window is
+      currently named. A hand-renamed window, or one still carrying a task
+      name for a task the ledger has never heard finished, must not change
+      this: the whole point of the change is that authority moved off the
+      name.
+    * The ledger has never heard of this lane, and the window is currently
+      named by the `free-N` convention -- the one-time MIGRATION path for a
+      lane whose availability today exists only as that name (every lane
+      alive before this landed, and any future lane opened by hand). This
+      registers it in the ledger, with no open task, so it reads free from
+      here on without ever consulting the name again. This is "lazy backfill
+      on first sight", the option agent-dotfiles#174 itself named: it only
+      ever fires once per lane, because the second call finds the lane
+      already known and takes the first branch above.
+    * Neither -- an unregistered lane not currently named `free-N` is
+      UNKNOWN, and unknown is not free. This is the fail-closed default: a
+      lane this code cannot positively place is never offered, the same
+      posture `lanes.sh`'s own whitelist (#126) already takes for pane state.
+    """
+    known = ledger.lane_available(lane)
+    if known is not None:
+        return {"lane": lane, "known": True, "free": known, "backfilled": False}
+    if not FREE_WINDOW_NAME_RE.match(window_name):
+        return {"lane": lane, "known": False, "free": False, "backfilled": False}
+    metadata = transport.metadata(target)
+    harness = HARNESS_BY_COMMAND.get(metadata["command"])
+    if harness is None:
+        return {
+            "lane": lane,
+            "known": False,
+            "free": False,
+            "backfilled": False,
+            "reason": f"cannot tell which harness pane command {metadata['command']!r} is",
+        }
+    # No tmux options are set here (unlike `TmuxAdapter.register_lane`): this
+    # mirrors `record_dispatch`'s own choice not to touch tmux beyond reading
+    # it (see that function's docstring) -- a real dispatch re-registers this
+    # lane with a fresh identity moments later anyway, so nothing here needs
+    # to survive past this one query.
+    ledger.register_lane(
+        lane=lane,
+        pane_id=metadata["pane_id"],
+        nonce=secrets.token_hex(16),
+        harness=harness,
+        repo=metadata["path"],
+        server_id=metadata["server_id"],
+        session_id=metadata["session_id"],
+        command=metadata["command"],
+    )
+    return {"lane": lane, "known": True, "free": True, "backfilled": True}
 
 
 def record_dispatch(
@@ -286,6 +355,10 @@ def main(argv=None):
             issues=args.issue,
             github=args.github,
             harness=args.harness,
+        )
+    elif args.command == "lane-free":
+        value = lane_free(
+            ledger, adapter.transport, lane=args.lane, target=args.target, window_name=args.window_name
         )
     elif args.command == "record-completion":
         value = record_completion(ledger, task=args.task, note=args.note)

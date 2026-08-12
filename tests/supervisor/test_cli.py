@@ -356,5 +356,108 @@ class RecordDispatchCliTest(unittest.TestCase):
             self.assertIsNone(Ledger(Path(root)).get_task("ad999-node"))
 
 
+class FakeMetadataTransport:
+    """Stands in for `TmuxTransport.metadata` -- lane_free's only tmux touch."""
+
+    def __init__(self, metadata):
+        self._metadata = metadata
+        self.calls = []
+
+    def metadata(self, target):
+        self.calls.append(target)
+        return self._metadata
+
+
+class LaneFreeTest(unittest.TestCase):
+    """agent-dotfiles#174: the read side of the seam #140 opened.
+    `dispatch.sh` calls `cli.py lane-free` once per idle-looking candidate
+    instead of trusting the window name -- these exercise `lane_free` (the
+    function `main` dispatches to) directly, without a real tmux."""
+
+    def test_a_lane_the_ledger_already_knows_answers_without_touching_tmux(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger = Ledger(Path(root))
+            ledger.register_lane(
+                lane="t:3", pane_id="%3", nonce="n", harness="claude", repo="/repo",
+                server_id="server", session_id="$0", command="claude.exe",
+            )
+            transport = FakeMetadataTransport({"pane_id": "%3", "command": "claude.exe", "path": "/repo", "server_id": "server", "session_id": "$0"})
+
+            result = cli.lane_free(ledger, transport, lane="t:3", target="t:3", window_name="ad999-some-task")
+
+            self.assertEqual({"lane": "t:3", "known": True, "free": True, "backfilled": False}, result)
+            self.assertEqual([], transport.calls, "a known lane must not need a pane read")
+
+    def test_an_occupied_lane_is_not_free_regardless_of_its_current_window_name(self):
+        """THE INVERSION: a window renamed to `free-N` by hand must not
+        change what the ledger already knows."""
+        with tempfile.TemporaryDirectory() as root:
+            ledger = Ledger(Path(root))
+            ledger.register_lane(
+                lane="t:3", pane_id="%3", nonce="n", harness="claude", repo="/repo",
+                server_id="server", session_id="$0", command="claude.exe",
+            )
+            ledger.reconstruct_task(
+                task_id="ad1-task", source_kind="issue",
+                source_url="https://github.com/acme/repo/issues/1", source_ref="1",
+                summary="in flight", source_state="OPEN", status="created", evidence=["seed"], status_marker=None,
+            )
+            ledger.assign(task_id="ad1-task", lane="t:3", pane_nonce="n", summary="in flight")
+            transport = FakeMetadataTransport({})
+
+            result = cli.lane_free(ledger, transport, lane="t:3", target="t:3", window_name="free-3")
+
+            self.assertFalse(result["free"])
+            self.assertEqual([], transport.calls)
+
+    def test_an_unknown_lane_named_free_n_is_backfilled_free_on_first_sight(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger = Ledger(Path(root))
+            transport = FakeMetadataTransport(
+                {"pane_id": "%3", "command": "claude.exe", "path": "/repo", "server_id": "server", "session_id": "$0"}
+            )
+
+            result = cli.lane_free(ledger, transport, lane="t:3", target="t:3", window_name="free-3")
+
+            self.assertEqual({"lane": "t:3", "known": True, "free": True, "backfilled": True}, result)
+            self.assertEqual(["t:3"], transport.calls)
+            self.assertIsNotNone(ledger.get_lane("t:3"))
+            self.assertTrue(ledger.lane_available("t:3"))
+
+            # And the SECOND call for the same never-seen-again lane answers
+            # from the ledger, not the name -- first sight only.
+            transport.calls.clear()
+            second = cli.lane_free(ledger, transport, lane="t:3", target="t:3", window_name="free-3")
+            self.assertEqual({"lane": "t:3", "known": True, "free": True, "backfilled": False}, second)
+            self.assertEqual([], transport.calls)
+
+    def test_an_unknown_lane_not_named_free_n_is_unknown_not_free(self):
+        """Fail closed (agent-dotfiles#174): a lane this code cannot
+        positively place is never offered -- the same posture `lanes.sh`'s
+        own whitelist (#126) takes for pane state."""
+        with tempfile.TemporaryDirectory() as root:
+            ledger = Ledger(Path(root))
+            transport = FakeMetadataTransport({"command": "claude.exe"})
+
+            result = cli.lane_free(ledger, transport, lane="t:3", target="t:3", window_name="ad999-some-task")
+
+            self.assertEqual({"lane": "t:3", "known": False, "free": False, "backfilled": False}, result)
+            self.assertEqual([], transport.calls, "an ineligible name must not even probe tmux")
+            self.assertIsNone(ledger.get_lane("t:3"))
+
+    def test_an_unmapped_harness_command_refuses_the_backfill_without_crashing(self):
+        with tempfile.TemporaryDirectory() as root:
+            ledger = Ledger(Path(root))
+            transport = FakeMetadataTransport(
+                {"pane_id": "%3", "command": "node", "path": "/repo", "server_id": "server", "session_id": "$0"}
+            )
+
+            result = cli.lane_free(ledger, transport, lane="t:3", target="t:3", window_name="free-3")
+
+            self.assertFalse(result["free"])
+            self.assertIn("node", result.get("reason", ""))
+            self.assertIsNone(ledger.get_lane("t:3"))
+
+
 if __name__ == "__main__":
     unittest.main()

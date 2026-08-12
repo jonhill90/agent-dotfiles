@@ -388,6 +388,24 @@ class LedgerTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "pane incarnation"):
             self.ledger.accept("review-870", pane_nonce="reused-pane")
 
+    def test_lane_available_is_tristate_unknown_free_or_occupied(self):
+        """agent-dotfiles#174: `dispatch.sh` now trusts this instead of the
+        tmux window name, and the three-way split matters -- an unregistered
+        lane is a different claim from a registered-but-busy one, and the
+        caller (the CLI's first-sight backfill) needs to tell them apart.
+        """
+        self.assertIsNone(self.ledger.lane_available("never-registered"))
+
+        self.assertTrue(self.ledger.lane_available("app-review"))
+
+        task = self.assign()
+        self.ledger.mark_delivery_pending(task["id"], pane_nonce="nonce-22-a")
+        self.ledger.mark_delivered(task["id"], pane_nonce="nonce-22-a")
+        self.assertFalse(self.ledger.lane_available("app-review"))
+
+        self.ledger.complete(task["id"], b"done", pane_nonce="nonce-22-a")
+        self.assertTrue(self.ledger.lane_available("app-review"))
+
     def test_delivery_pending_persists_before_send_and_blocks_direct_delivered(self):
         self.assign()
         with self.assertRaisesRegex(ValueError, "cannot transition"):
