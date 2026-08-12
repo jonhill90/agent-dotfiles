@@ -1,4 +1,4 @@
 {
-  "_doc": "Escape hatch for tests/test_cross_repo_references.py. Add an entry only when a bare '#N' citation is a legitimate historical reference to a number that no longer resolves in this repository (e.g. the issue/PR was deleted after the citation was written) -- not for numbers that are simply missing from tests/fixtures/known_references.json because that manifest is stale (refresh it instead, see scripts/refresh_known_references.py). Each entry must explain why the number cannot resolve.",
+  "_doc": "Escape hatch for tests/test_cross_repo_references.py. Add an entry only when a bare '#N' citation is a legitimate historical reference to a number that no longer resolves in this repository (e.g. the issue/PR was deleted after the citation was written) -- not for numbers that are simply missing from tests/fixtures/known_references.txt because that manifest is stale (refresh it instead, see scripts/refresh_known_references.py). Each entry must explain why the number cannot resolve.",
   "allowed": []
 }
