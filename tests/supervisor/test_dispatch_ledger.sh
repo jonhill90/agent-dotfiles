@@ -172,14 +172,30 @@ import sys
 src, dst = sys.argv[1], sys.argv[2]
 text = open(src).read()
 marker = '''  CHECK=$("$LEDGER_PYTHON" "$LEDGER_CLI" lane-free --lane "$candidate" --target "$candidate" --window-name "$wname" 2>/dev/null) || continue
-  if grep -qF '"free":true' <<<"$CHECK"; then
+  grep -qF '"free":true' <<<"$CHECK" || continue
+
+  # Test-only instrumentation (agent-dotfiles#184): when set, run this
+  # command with the candidate lane as $1 right after it reads free and
+  # before this dispatch claims it -- exactly the gap a second dispatcher
+  # would need to land a whole competing dispatch in to prove the race.
+  # No caller sets this outside tests/supervisor/test_dispatch.sh.
+  if [ -n "${DISPATCH_TEST_RACE_HOOK:-}" ]; then
+    "$DISPATCH_TEST_RACE_HOOK" "$candidate" || true
+  fi
+
+  CLAIM=$("$LEDGER_PYTHON" "$LEDGER_CLI" claim-lane --lane "$candidate" --token "$CLAIM_TOKEN" 2>/dev/null) || continue
+  if grep -qF '"claimed":true' <<<"$CLAIM"; then
     LANE="$candidate"
+    CLAIM_LANE="$candidate"
     break
   fi'''
 assert marker in text, "lane-free selection block not found -- script shape changed"
 assert text.count(marker) == 1, "lane-free selection block not unique -- script shape changed"
 mutated = '''  # MUTATED: reproduces the pre-#174 bug -- trust the window name on a
-  # ledger miss instead of refusing.
+  # ledger miss instead of refusing, bypassing the ledger read AND the
+  # agent-dotfiles#184 claim that would otherwise still catch this (the
+  # claim's own INSERT would collide with the real occupant, so the
+  # mutation must skip it too to actually reproduce the pre-#174 shape).
   if [[ "$wname" =~ ^free-[0-9]+$ ]]; then
     LANE="$candidate"
     break
