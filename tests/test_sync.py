@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -411,6 +412,28 @@ class CodexMcpTests(SyncTestCase):
         self.assertEqual(text.count("[mcp_servers.context7]"), 1)
         self.assertIn('command = "mine"', text)
         self.assertIn("[mcp_servers.deepwiki]", text)  # others still land
+
+    def test_stdio_server_renders_command_and_args(self) -> None:
+        """agent-dotfiles#198. Before this, a `command`/`args` server rendered
+        as a bare `[mcp_servers.<name>]` table with nothing under it -- valid
+        TOML declaring a server Codex could not launch. The expected shape is
+        what `codex mcp add` itself writes."""
+        self.write_fragment(
+            {"supervisor": {"type": "stdio", "command": "python3", "args": ["/x/mcp_server.py"]}}
+        )
+        self.syncer.merge_codex_mcp()
+        text = self.config.read_text()
+        self.assertIn("[mcp_servers.supervisor]", text)
+        self.assertIn('command = "python3"', text)
+        self.assertIn('args = ["/x/mcp_server.py"]', text)
+        self.assertEqual(tomllib.loads(text)["mcp_servers"]["supervisor"],
+                         {"command": "python3", "args": ["/x/mcp_server.py"]})
+
+    def test_stdio_server_without_args_still_renders_its_command(self) -> None:
+        self.write_fragment({"bare": {"command": "supervisor-mcp"}})
+        self.syncer.merge_codex_mcp()
+        self.assertEqual(tomllib.loads(self.config.read_text())["mcp_servers"]["bare"],
+                         {"command": "supervisor-mcp"})
 
     def test_skipped_when_codex_absent(self) -> None:
         self.config.unlink()
