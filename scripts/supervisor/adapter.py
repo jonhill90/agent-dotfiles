@@ -22,12 +22,14 @@ CLAUDE_ACTIVE_RE = re.compile(
 # proceed?" or a PR body's own text reads back as approval/blocked.
 #
 # It has real callers, right here: TmuxAdapter.assign_task, .observe_lane,
-# and .notify_architecture (lines 103, 135, 143, 164). What routes around it
-# is one level up -- dispatch.sh's dispatch path (via cli.py:14) deliberately
-# calls the ledger's `dispatch` recorder instead of `assign_task`, precisely
-# to keep this function's defect out of the dispatch flow. See cli.py:251,
-# which names #131 as the change that took pane inference OUT of that path.
-# "Routed around on purpose."
+# and .notify_architecture -- the last of which calls it twice, once to
+# check the pane is idle before sending and once after to confirm the send
+# landed. What routes around it is one level up -- dispatch.sh's dispatch
+# path (via cli.py's `record_dispatch` command) deliberately calls the
+# ledger's `dispatch` recorder instead of `assign_task`, precisely to keep
+# this function's defect out of the dispatch flow. See `record_dispatch`'s
+# own docstring in cli.py, which names #131 as the change that took pane
+# inference OUT of that path. "Routed around on purpose."
 #
 # That makes this the opposite of the nothing-calls-it defect dispatch.sh's
 # header describes: the implementation is unfit to call, not merely uncalled.
