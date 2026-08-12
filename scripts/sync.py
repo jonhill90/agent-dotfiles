@@ -165,6 +165,13 @@ def deep_merge(base: dict, patch: dict) -> dict:
 # qualifies membership; it never removes it.
 SKILL_MODIFIERS = frozenset({"name-only"})
 
+# Reserved section name (agent-dotfiles#181): a skill that is authored but
+# deliberately withheld from every harness's roster, with a stated reason.
+# Not a harness — `roster_union`/`neutral_union` must never fold it into an
+# install set, which is why it is parsed into its own structure below rather
+# than into `sections`.
+BENCH_SECTION = "benched"
+
 
 def _split_modifier(entry: str) -> tuple[str, str | None]:
     """`obsidian @name-only` -> ("obsidian", "name-only")."""
@@ -188,7 +195,7 @@ def load_skill_roster(repo: Path) -> tuple[list[str], dict[str, list[str]]]:
     that only wants membership keeps working unchanged; `skill_modifiers()`
     reads the annotations.
     """
-    shared, sections, _ = _parse_skill_roster(repo)
+    shared, sections, _, _ = _parse_skill_roster(repo)
     return shared, sections
 
 
@@ -197,26 +204,51 @@ def skill_modifiers(repo: Path) -> dict[str, str]:
     return _parse_skill_roster(repo)[2]
 
 
+def benched_skills(repo: Path) -> dict[str, str]:
+    """Skills authored but deliberately withheld, as `{skill: reason}`.
+
+    Read from the `[benched]` section of `default-skills.txt`. A skill
+    present here is a stated decision, not an absence — agent-dotfiles#181
+    found eleven authored, unrostered skills with no record of which of
+    those two shapes applied. `reason` may be empty for an entry with no
+    trailing `# ...` comment; `validate_skill_bench` is what rejects that,
+    not the parser.
+    """
+    return _parse_skill_roster(repo)[3]
+
+
 def _parse_skill_roster(
     repo: Path,
-) -> tuple[list[str], dict[str, list[str]], dict[str, str]]:
+) -> tuple[list[str], dict[str, list[str]], dict[str, str], dict[str, str]]:
     roster = repo / "settings" / "default-skills.txt"
     shared: list[str] = []
     sections: dict[str, list[str]] = {}
     modifiers: dict[str, str] = {}
+    benched: dict[str, str] = {}
     current: list[str] | None = None
+    in_bench = False
     for raw in roster.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         if line.startswith("[") and line.endswith("]"):
-            current = sections.setdefault(line[1:-1].strip().lower(), [])
+            header = line[1:-1].strip().lower()
+            if header == BENCH_SECTION:
+                in_bench = True
+                current = None
+            else:
+                in_bench = False
+                current = sections.setdefault(header, [])
+            continue
+        if in_bench:
+            name, _, reason = line.partition("#")
+            benched[name.strip()] = reason.strip()
             continue
         name, modifier = _split_modifier(line)
         if modifier is not None:
             modifiers[name] = modifier
         (shared if current is None else current).append(name)
-    return shared, sections, modifiers
+    return shared, sections, modifiers, benched
 
 
 def load_default_skills(repo: Path, harness: str | None = None) -> list[str]:
