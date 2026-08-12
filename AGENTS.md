@@ -256,12 +256,18 @@ the past, and reading it is nonetheless correct — it is tmux's value, not ours
 A window name may be a *projection* of a record. It may not be the record.
 
 **This describes the target state, not today's code.** Right now the window name
-IS the record in three places — `dispatch.sh:122` gates dispatch on
-`^free-[0-9]+$`, `claim.sh:141` parses the issue number out of the name to decide
-whether a claim is live, and `lane-done.sh:92`'s rename *is* the completion
-record. `loop-tick.md` instructs that behaviour (L483, L540) and **remains
-operative until the migration lands**. #174 is that migration; when it does,
-`loop-tick.md` changes in the same breath and this paragraph goes.
+IS the record in three places, and they are being migrated separately — do not
+assume one issue closes all three:
+
+| call site | what the name decides | status |
+|---|---|---|
+| `dispatch.sh:122` | availability (`^free-[0-9]+$`) | **#174 / PR #183** — the read moves to the ledger |
+| `lane-done.sh:92` | completion (the rename *is* the record) | **partly** — PR #183 adds a ledger write but leaves the rename `\|\| exit 1`, so it is still load-bearing, not cosmetic |
+| `claim.sh:141` | ownership (parses the issue number out of the name) | **not started** — outside #174's scope |
+
+`loop-tick.md` instructs the renaming behaviour (L483, L540) and **remains
+operative for all three until each is migrated.** This paragraph shrinks as they
+land and goes when the table is empty.
 
 Do not read this rule as licence to stop renaming windows.
 
