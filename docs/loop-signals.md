@@ -70,15 +70,15 @@ Every completion signal that works today is either cooperative or inferred.
 **`tmux wait-for` (cooperative).** The worker's brief ends with `tmux
 wait-for -S <channel>` as its literal last instruction (SPEC §14.1,
 `lane-done.sh:17-21`). `lane-done.sh` blocks on the bare form
-(`lane-done.sh:84`), confirms the window still carries the expected task name
-(`lane-done.sh:89-93`), then calls `cli.py record-completion`
-(`lane-done.sh:115-121`), which transitions the task to `complete`
+(`lane-done.sh:108`), confirms the window still carries the expected task name
+(`lane-done.sh:113-117`), then calls `cli.py record-completion`
+(`lane-done.sh:139-145`), which transitions the task to `complete`
 (`core.py:1062`, `cli.py:326-347`). *Authored* end to end: the channel fire
 is tmux's own primitive but the *decision* to treat it as completion, and the
 ledger write that follows, are this system's. **Status: works when the
 worker cooperates, and only then.** **How it fails, and whether silently:**
 a worker that dies, is interrupted, hits an API error, or simply stops before
-its last line never sends the signal (`lane-done.sh:67-70` — `wait-for` has
+its last line never sends the signal (`lane-done.sh:84-87` — `wait-for` has
 no timeout, "an accepted, already-documented limit"). From outside, that
 lane is indistinguishable from one still working. **This is silent**: no
 error, no log line, nothing — the lane just never completes.
@@ -104,7 +104,7 @@ exists as a second, cooperative mechanism rather than trusting this one.
 
 **Ledger dispatch/completion records (#144, authored).** `dispatch.sh` calls
 `cli.py record-dispatch` after every successful send
-(`dispatch.sh:517-545`), which writes the lane, the task, and a
+(`dispatch.sh:834-859`), which writes the lane, the task, and a
 `source_tasks` row derived from what the dispatch itself just observed —
 not from a marker that no issue in the estate carries
 (`cli.py:224-323` docstring). This is a **record**: `Ledger.record_dispatch`
@@ -210,8 +210,8 @@ between the issue and the code.
 
 - **#144** (ledger records lane state, merged) shipped the write-only
   `record-dispatch`/`record-completion` pair. As detailed above, both are
-  now *called* — `record-dispatch` from `dispatch.sh:517-545`,
-  `record-completion` from `lane-done.sh:115-121` — which is further along
+  now *called* — `record-dispatch` from `dispatch.sh:834-859`,
+  `record-completion` from `lane-done.sh:139-145` — which is further along
   than #144's own "nothing reads either record" (its closing line at the
   time it merged). What still isn't true: nothing advances a
   `record-dispatch`ed task past `delivered` except the same cooperative
