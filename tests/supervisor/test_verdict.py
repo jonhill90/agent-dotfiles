@@ -11,6 +11,8 @@ from core import Ledger  # noqa: E402
 from verdict import (  # noqa: E402
     GithubReviewVerdictSource,
     LedgerVerdictSource,
+    _content_unchanged_since,
+    _default_patch_id,
     build_source,
     main,
     resolve,
@@ -18,6 +20,63 @@ from verdict import (  # noqa: E402
 
 
 REPO = "jonhill90/agent-dotfiles"
+
+# Two diffs that make the SAME content change (`old line` -> `new line`) but
+# at different hunk offsets, the way a rebase shifts a patch without touching
+# what it changes. `git patch-id --stable` ignores hunk line numbers, so
+# these two must hash equal -- that normalisation is the whole mechanism
+# #226 relies on.
+REBASE_DIFF_OLD_OFFSET = (
+    "diff --git a/foo.txt b/foo.txt\n"
+    "index 1111111..2222222 100644\n"
+    "--- a/foo.txt\n"
+    "+++ b/foo.txt\n"
+    "@@ -10,3 +10,3 @@\n"
+    " line before\n"
+    "-old line\n"
+    "+new line\n"
+    " line after\n"
+)
+REBASE_DIFF_NEW_OFFSET = (
+    "diff --git a/foo.txt b/foo.txt\n"
+    "index 3333333..4444444 100644\n"
+    "--- a/foo.txt\n"
+    "+++ b/foo.txt\n"
+    "@@ -25,3 +25,3 @@\n"
+    " line before\n"
+    "-old line\n"
+    "+new line\n"
+    " line after\n"
+)
+# Same file, same offset as REBASE_DIFF_NEW_OFFSET, but a genuinely different
+# replacement line -- a real content change, not just a rebase shift.
+CONTENT_CHANGED_DIFF = (
+    "diff --git a/foo.txt b/foo.txt\n"
+    "index 3333333..5555555 100644\n"
+    "--- a/foo.txt\n"
+    "+++ b/foo.txt\n"
+    "@@ -25,3 +25,3 @@\n"
+    " line before\n"
+    "-old line\n"
+    "+a genuinely different line\n"
+    " line after\n"
+)
+
+
+def _reviews_runner(payload):
+    """A `runner` that answers `gh pr view --json reviews` with `payload` and
+    raises for anything else (in particular the `gh api .../compare/...`
+    calls #226 added) -- so a test that does not opt into the rebase-aware
+    comparison gets the same "cannot compute -> stays unknown" fail-closed
+    answer #218 already established, instead of silently matching on
+    whatever string this stub happens to return."""
+
+    def runner(cmd):
+        if cmd[:3] == ["gh", "pr", "view"]:
+            return payload
+        raise RuntimeError(f"no stub for command: {cmd!r}")
+
+    return runner
 
 
 class GithubReviewVerdictSourceTests(unittest.TestCase):
@@ -93,7 +152,7 @@ class GithubReviewVerdictSourceTests(unittest.TestCase):
         actually reviewed at its current state -- arriving by a different
         route (a stale SHA instead of misread prose)."""
         source = GithubReviewVerdictSource(
-            runner=lambda cmd: '{"reviews":[{"state":"APPROVED","commit":{"oid":"' + "a" * 40 + '"}}]}'
+            runner=_reviews_runner('{"reviews":[{"state":"APPROVED","commit":{"oid":"' + "a" * 40 + '"}}]}')
         )
         result = source.verdict(repo=REPO, number=1, head_sha="b" * 40)
         self.assertEqual(result["verdict"], "unknown")
@@ -101,7 +160,7 @@ class GithubReviewVerdictSourceTests(unittest.TestCase):
 
     def test_regression_218_rejection_filed_against_a_superseded_head_reads_unknown_not_rejected(self):
         source = GithubReviewVerdictSource(
-            runner=lambda cmd: '{"reviews":[{"state":"CHANGES_REQUESTED","commit":{"oid":"' + "a" * 40 + '"}}]}'
+            runner=_reviews_runner('{"reviews":[{"state":"CHANGES_REQUESTED","commit":{"oid":"' + "a" * 40 + '"}}]}')
         )
         result = source.verdict(repo=REPO, number=1, head_sha="b" * 40)
         self.assertEqual(result["verdict"], "unknown")
@@ -112,7 +171,7 @@ class GithubReviewVerdictSourceTests(unittest.TestCase):
         passes while `verdict()` actually compares `commit.oid` against
         `head_sha` rather than ignoring `head_sha` (or always matching)."""
         source = GithubReviewVerdictSource(
-            runner=lambda cmd: '{"reviews":[{"state":"APPROVED","commit":{"oid":"' + "a" * 40 + '"}}]}'
+            runner=_reviews_runner('{"reviews":[{"state":"APPROVED","commit":{"oid":"' + "a" * 40 + '"}}]}')
         )
         stale = source.verdict(repo=REPO, number=1, head_sha="b" * 40)
         current = source.verdict(repo=REPO, number=1, head_sha="a" * 40)
@@ -142,13 +201,83 @@ class GithubReviewVerdictSourceTests(unittest.TestCase):
         source = GithubReviewVerdictSource(runner=lambda cmd: '{"reviews": "oops"}')
         self.assertEqual(source.verdict(repo=REPO, number=1)["verdict"], "unknown")
 
+    def test_226_pure_rebase_promotes_the_stale_review_and_names_the_basis(self):
+        """agent-dotfiles#226: a rebase changes every SHA on the branch even
+        when it changes no content. The stale review must be reported
+        current, with the basis named -- not silently ("unknown" would be
+        the pre-#226 answer; approving with no annotation would hide how we
+        know)."""
+        old_sha, head_sha = "a" * 40, "c" * 40
+        reviews = '{"reviews":[{"state":"APPROVED","commit":{"oid":"' + old_sha + '"}}]}'
+
+        def runner(cmd):
+            if cmd[:3] == ["gh", "pr", "view"]:
+                return reviews
+            joined = " ".join(cmd)
+            if f"compare/{head_sha}...{old_sha}" in joined:
+                return REBASE_DIFF_OLD_OFFSET
+            if f"compare/{old_sha}...{head_sha}" in joined:
+                return REBASE_DIFF_NEW_OFFSET
+            raise RuntimeError(f"unexpected compare: {cmd!r}")
+
+        source = GithubReviewVerdictSource(runner=runner)
+        result = source.verdict(repo=REPO, number=1, head_sha=head_sha)
+        self.assertEqual(result["verdict"], "approved")
+        self.assertIn(old_sha, result["detail"])
+        self.assertIn(head_sha, result["detail"])
+        self.assertIn("patch-id", result["detail"])
+
+    def test_226_a_real_content_change_since_review_stays_unknown(self):
+        """The direction that must not regress (#219/#218): a head move that
+        actually changed the reviewed content still reads unknown, exactly
+        as before #226."""
+        old_sha, head_sha = "a" * 40, "c" * 40
+        reviews = '{"reviews":[{"state":"APPROVED","commit":{"oid":"' + old_sha + '"}}]}'
+
+        def runner(cmd):
+            if cmd[:3] == ["gh", "pr", "view"]:
+                return reviews
+            joined = " ".join(cmd)
+            if f"compare/{head_sha}...{old_sha}" in joined:
+                return REBASE_DIFF_OLD_OFFSET
+            if f"compare/{old_sha}...{head_sha}" in joined:
+                return CONTENT_CHANGED_DIFF
+            raise RuntimeError(f"unexpected compare: {cmd!r}")
+
+        source = GithubReviewVerdictSource(runner=runner)
+        result = source.verdict(repo=REPO, number=1, head_sha=head_sha)
+        self.assertEqual(result["verdict"], "unknown")
+
+    def test_226_an_unreachable_compare_stays_unknown_not_approved(self):
+        """Fail closed (#226's stated bar): when the comparison itself
+        cannot be computed, the verdict must stay unknown -- never
+        approved-by-default."""
+        old_sha, head_sha = "a" * 40, "c" * 40
+        reviews = '{"reviews":[{"state":"APPROVED","commit":{"oid":"' + old_sha + '"}}]}'
+
+        def runner(cmd):
+            if cmd[:3] == ["gh", "pr", "view"]:
+                return reviews
+            raise RuntimeError("gh: connection reset")
+
+        source = GithubReviewVerdictSource(runner=runner)
+        result = source.verdict(repo=REPO, number=1, head_sha=head_sha)
+        self.assertEqual(result["verdict"], "unknown")
+
+
+def _raising_runner(cmd):
+    """A `runner` that always raises -- used where a test's fake SHAs are not
+    real git objects, so the #226 rebase-content comparison must fail closed
+    ("cannot compute") rather than reach a real `gh`/network."""
+    raise RuntimeError(f"no stub for command: {cmd!r}")
+
 
 class LedgerVerdictSourceTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.ledger = Ledger(self._tmp.name, clock=lambda: 1000)
-        self.source = LedgerVerdictSource(self.ledger)
+        self.source = LedgerVerdictSource(self.ledger, runner=_raising_runner)
 
     def test_never_recorded_reads_none(self):
         self.assertEqual(self.source.verdict(repo=REPO, number=1), {"verdict": "none", "detail": ""})
@@ -233,6 +362,97 @@ class LedgerVerdictSourceTests(unittest.TestCase):
             self.ledger.record_pr_verdict(
                 repo=REPO, number=1, verdict="maybe", head_sha="a" * 40, reviewer="lane-1"
             )
+
+    def test_226_pure_rebase_promotes_the_recorded_verdict_and_names_the_basis(self):
+        old_sha, head_sha = "a" * 40, "c" * 40
+        self.ledger.record_pr_verdict(repo=REPO, number=1, verdict="approved", head_sha=old_sha, reviewer="lane-1")
+
+        def runner(cmd):
+            joined = " ".join(cmd)
+            if f"compare/{head_sha}...{old_sha}" in joined:
+                return REBASE_DIFF_OLD_OFFSET
+            if f"compare/{old_sha}...{head_sha}" in joined:
+                return REBASE_DIFF_NEW_OFFSET
+            raise RuntimeError(f"unexpected compare: {cmd!r}")
+
+        source = LedgerVerdictSource(self.ledger, runner=runner)
+        result = source.verdict(repo=REPO, number=1, head_sha=head_sha)
+        self.assertEqual(result["verdict"], "approved")
+        self.assertIn(old_sha, result["detail"])
+        self.assertIn(head_sha, result["detail"])
+        self.assertIn("patch-id", result["detail"])
+
+    def test_226_a_real_content_change_since_the_recorded_verdict_stays_unknown(self):
+        old_sha, head_sha = "a" * 40, "c" * 40
+        self.ledger.record_pr_verdict(repo=REPO, number=1, verdict="approved", head_sha=old_sha, reviewer="lane-1")
+
+        def runner(cmd):
+            joined = " ".join(cmd)
+            if f"compare/{head_sha}...{old_sha}" in joined:
+                return REBASE_DIFF_OLD_OFFSET
+            if f"compare/{old_sha}...{head_sha}" in joined:
+                return CONTENT_CHANGED_DIFF
+            raise RuntimeError(f"unexpected compare: {cmd!r}")
+
+        source = LedgerVerdictSource(self.ledger, runner=runner)
+        result = source.verdict(repo=REPO, number=1, head_sha=head_sha)
+        self.assertEqual(result["verdict"], "unknown")
+
+
+class ContentUnchangedSinceTests(unittest.TestCase):
+    """Direct tests of the #226 comparison primitive, independent of which
+    verdict source calls it."""
+
+    def test_identical_shas_are_trivially_unchanged(self):
+        self.assertTrue(
+            _content_unchanged_since(
+                runner=_raising_runner, patch_id_fn=lambda d: "x", repo=REPO, old_sha="a" * 40, new_sha="a" * 40
+            )
+        )
+
+    def test_matching_patch_ids_read_unchanged(self):
+        calls = iter([REBASE_DIFF_OLD_OFFSET, REBASE_DIFF_NEW_OFFSET])
+        result = _content_unchanged_since(
+            runner=lambda cmd: next(calls),
+            patch_id_fn=_default_patch_id,
+            repo=REPO,
+            old_sha="a" * 40,
+            new_sha="c" * 40,
+        )
+        self.assertTrue(result)
+
+    def test_differing_patch_ids_read_changed_not_unknown(self):
+        calls = iter([REBASE_DIFF_OLD_OFFSET, CONTENT_CHANGED_DIFF])
+        result = _content_unchanged_since(
+            runner=lambda cmd: next(calls),
+            patch_id_fn=_default_patch_id,
+            repo=REPO,
+            old_sha="a" * 40,
+            new_sha="c" * 40,
+        )
+        self.assertFalse(result)
+
+    def test_a_diff_fetch_failure_reads_none_not_unchanged(self):
+        result = _content_unchanged_since(
+            runner=_raising_runner, patch_id_fn=_default_patch_id, repo=REPO, old_sha="a" * 40, new_sha="c" * 40
+        )
+        self.assertIsNone(result)
+
+    def test_real_git_patch_id_normalises_hunk_offsets(self):
+        """No mocking of patch-id itself -- proves the actual instrument
+        (`git patch-id --stable`) does what #226 relies on: the same change
+        at two different hunk offsets hashes equal, a genuinely different
+        change does not."""
+        id_old = _default_patch_id(REBASE_DIFF_OLD_OFFSET)
+        id_new = _default_patch_id(REBASE_DIFF_NEW_OFFSET)
+        id_changed = _default_patch_id(CONTENT_CHANGED_DIFF)
+        self.assertIsNotNone(id_old)
+        self.assertEqual(id_old, id_new)
+        self.assertNotEqual(id_old, id_changed)
+
+    def test_empty_diff_reads_none(self):
+        self.assertIsNone(_default_patch_id(""))
+        self.assertIsNone(_default_patch_id("   \n"))
 
 
 class ResolveTests(unittest.TestCase):

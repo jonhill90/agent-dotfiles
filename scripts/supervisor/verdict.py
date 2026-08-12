@@ -30,6 +30,21 @@ returns "unknown", never "approved" or "none". `main()` wraps the whole
 resolution in its own try/except for the same reason -- a source that raises
 must still produce a well-formed "unknown" verdict, not a crashed process a
 caller might mistake for "no verdict recorded".
+
+A moved head is not always a content change (agent-dotfiles#226). #218 made
+every source refuse to answer for a head it never saw -- correct, but it
+cannot tell a content-preserving rebase (every SHA on the branch changes by
+construction) from a push that actually changed something, and this estate
+rebases constantly. `_content_unchanged_since()` narrows that: when the exact
+SHA does not match, it asks whether the diff introduced by the stale commit
+and the diff introduced by the current head -- each measured from their own
+`merge-base`, fetched via `gh api .../compare/BASE...HEAD` in diff form and
+compared with `git patch-id --stable`, which normalises away the line-number
+shifts a rebase causes -- are the same patch. A `True` promotes the verdict
+and says so in `detail`; anything else (`False`, or `None` when the
+comparison itself could not be computed -- network, an unreachable commit)
+leaves the verdict `unknown`, same as before this existed. It never
+auto-carries an approval past a change it cannot rule out.
 """
 
 from __future__ import annotations
@@ -69,11 +84,67 @@ def _subprocess_runner(command):
     return subprocess.run(command, check=True, capture_output=True, text=True, timeout=30).stdout
 
 
+def _default_patch_id(diff_text):
+    """Runs `diff_text` through the real `git patch-id --stable` and returns
+    its id, or None if no id could be computed (empty diff, git failure) --
+    None must read as "comparison inconclusive", never as "matches"."""
+    if not diff_text or not diff_text.strip():
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "patch-id", "--stable"],
+            input=diff_text,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+    except Exception:
+        return None
+    line = result.stdout.strip()
+    if not line:
+        return None
+    return line.split()[0]
+
+
+def _fetch_compare_diff(runner, repo, base, head):
+    """The diff from merge-base(base, head) to `head`, in unified-diff form,
+    via GitHub's own three-dot compare (agent-dotfiles#226) -- one call,
+    covering every commit in the range as a single diff, not per-commit
+    patch-ids that a multi-commit branch would need combined. Returns None
+    (never raises) so a caller can fail closed rather than mistake "could not
+    fetch" for "no change"."""
+    try:
+        return runner(["gh", "api", "-H", "Accept: application/vnd.github.v3.diff", f"repos/{repo}/compare/{base}...{head}"])
+    except Exception:
+        return None
+
+
+def _content_unchanged_since(*, runner, patch_id_fn, repo, old_sha, new_sha):
+    """Is the diff `old_sha` introduced (against its own merge-base with
+    `new_sha`) the same patch as the diff `new_sha` introduces (against that
+    same merge-base)? True/False when computable; None when it is not --
+    network failure, an unreachable commit -- and the caller must treat None
+    as "cannot confirm", not as a match (agent-dotfiles#226)."""
+    if old_sha == new_sha:
+        return True
+    old_diff = _fetch_compare_diff(runner, repo, new_sha, old_sha)
+    new_diff = _fetch_compare_diff(runner, repo, old_sha, new_sha)
+    if old_diff is None or new_diff is None:
+        return None
+    old_id = patch_id_fn(old_diff)
+    new_id = patch_id_fn(new_diff)
+    if old_id is None or new_id is None:
+        return None
+    return old_id == new_id
+
+
 class GithubReviewVerdictSource(VerdictSource):
     """Reads GitHub's own review state, never comment prose."""
 
-    def __init__(self, runner=None):
+    def __init__(self, runner=None, patch_id=None):
         self.runner = runner or _subprocess_runner
+        self.patch_id = patch_id or _default_patch_id
 
     def verdict(self, *, repo, number, head_sha=None):
         try:
@@ -95,11 +166,25 @@ class GithubReviewVerdictSource(VerdictSource):
                 return {"verdict": "approved", "detail": "GitHub review state APPROVED"}
             return {"verdict": "none", "detail": ""}
         current = [r for r in decisive if (r.get("commit") or {}).get("oid") == head_sha]
+        rebase_basis = None
+        if not current and decisive:
+            stale_oids = sorted({(r.get("commit") or {}).get("oid") for r in decisive if (r.get("commit") or {}).get("oid")})
+            for oid in stale_oids:
+                unchanged = _content_unchanged_since(
+                    runner=self.runner, patch_id_fn=self.patch_id, repo=repo, old_sha=oid, new_sha=head_sha
+                )
+                if unchanged:
+                    current = [r for r in decisive if (r.get("commit") or {}).get("oid") == oid]
+                    rebase_basis = (
+                        f"head moved {oid} -> {head_sha}, reviewed content unchanged "
+                        "(git patch-id over the gh api compare merge-base diff)"
+                    )
+                    break
         current_states = [r.get("state") for r in current]
         if "CHANGES_REQUESTED" in current_states:
-            return {"verdict": "rejected", "detail": f"GitHub review state CHANGES_REQUESTED at {head_sha}"}
+            return {"verdict": "rejected", "detail": rebase_basis or f"GitHub review state CHANGES_REQUESTED at {head_sha}"}
         if "APPROVED" in current_states:
-            return {"verdict": "approved", "detail": f"GitHub review state APPROVED at {head_sha}"}
+            return {"verdict": "approved", "detail": rebase_basis or f"GitHub review state APPROVED at {head_sha}"}
         if decisive:
             stale_shas = sorted({(r.get("commit") or {}).get("oid") or "unknown-sha" for r in decisive})
             return {
@@ -112,8 +197,10 @@ class GithubReviewVerdictSource(VerdictSource):
 class LedgerVerdictSource(VerdictSource):
     """Reads a verdict a reviewing lane recorded in the supervisor ledger."""
 
-    def __init__(self, ledger):
+    def __init__(self, ledger, runner=None, patch_id=None):
         self.ledger = ledger
+        self.runner = runner or _subprocess_runner
+        self.patch_id = patch_id or _default_patch_id
 
     def verdict(self, *, repo, number, head_sha=None):
         try:
@@ -126,6 +213,18 @@ class LedgerVerdictSource(VerdictSource):
             return {"verdict": "unknown", "detail": "ledger row has an unrecognised verdict value"}
         recorded_sha = row.get("head_sha")
         if head_sha is not None and recorded_sha != head_sha:
+            unchanged = _content_unchanged_since(
+                runner=self.runner, patch_id_fn=self.patch_id, repo=repo, old_sha=recorded_sha, new_sha=head_sha
+            )
+            if unchanged:
+                return {
+                    "verdict": row["verdict"],
+                    "detail": (
+                        f"ledger: {row['reviewer']} recorded at {row['updated_at']} for {recorded_sha}, "
+                        f"head moved {recorded_sha} -> {head_sha}, reviewed content unchanged "
+                        "(git patch-id over the gh api compare merge-base diff)"
+                    ),
+                }
             return {
                 "verdict": "unknown",
                 "detail": f"ledger verdict recorded at {recorded_sha}, not current head {head_sha}",

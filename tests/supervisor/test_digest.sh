@@ -151,6 +151,21 @@ case "$1 $2" in
     f="$FIX/reviews_${num}.json"
     [ -f "$f" ] && cat "$f" || echo '{"reviews":[]}'
     ;;
+  "api -H")
+    # verdict.py's #226 rebase-content comparison: `gh api -H "Accept:
+    # ..." repos/OWNER/REPO/compare/BASE...HEAD`. $4 is the path.
+    path="$4"
+    case "$path" in
+      */compare/*)
+        spec="${path##*/compare/}"
+        base="${spec%%...*}"
+        head="${spec#*...}"
+        f="$FIX/compare_${base}_${head}.diff"
+        [ -f "$f" ] && cat "$f" || exit 1
+        ;;
+      *) exit 1 ;;
+    esac
+    ;;
   *) exit 1 ;;
 esac
 S
@@ -162,7 +177,9 @@ cat > "$OK/fixtures/pr_list.json" <<'S'
   {"number":2,"title":"stale pass, dirty merge","headRefOid":"bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222","headRefName":"b2","mergeStateStatus":"DIRTY"},
   {"number":3,"title":"no CI run at all, behind","headRefOid":"cccc3333cccc3333cccc3333cccc3333cccc3333","headRefName":"b3","mergeStateStatus":"BEHIND"},
   {"number":4,"title":"current head, CI failed","headRefOid":"dddd4444dddd4444dddd4444dddd4444dddd4444","headRefName":"b4","mergeStateStatus":"CLEAN"},
-  {"number":6,"title":"review filed against a since-superseded head","headRefOid":"newnewnewnewnewnewnewnewnewnewnewnewnewn","headRefName":"b6","mergeStateStatus":"CLEAN"}
+  {"number":6,"title":"review filed against a since-superseded head","headRefOid":"newnewnewnewnewnewnewnewnewnewnewnewnewn","headRefName":"b6","mergeStateStatus":"CLEAN"},
+  {"number":7,"title":"pure rebase since review, content unchanged","headRefOid":"reb7reb7reb7reb7reb7reb7reb7reb7reb7reb7","headRefName":"b7","mergeStateStatus":"CLEAN"},
+  {"number":8,"title":"real content change since review","headRefOid":"chg8chg8chg8chg8chg8chg8chg8chg8chg8chg8","headRefName":"b8","mergeStateStatus":"CLEAN"}
 ]
 S
 cat > "$OK/fixtures/run_b1.json" <<'S'
@@ -201,6 +218,74 @@ cat > "$OK/fixtures/reviews_4.json" <<'S'
   {"state":"COMMENTED","body":"I cannot approve this, it is unsafe."},
   {"state":"CHANGES_REQUESTED","body":"Rejected: the mutation-check never went red","commit":{"oid":"dddd4444dddd4444dddd4444dddd4444dddd4444"}}
 ]}
+S
+
+# agent-dotfiles#226 MUTATION CHECK, both directions, driven end to end
+# through digest.sh + verdict.py, not just verdict.py's own unit tests.
+#
+# PR7: APPROVED at "old7...", then rebased -- headRefOid moved to "reb7...".
+# The two `gh api .../compare/BASE...HEAD` diffs below make the SAME content
+# change ("old line" -> "new line") at two different hunk offsets, exactly
+# what a rebase does to an unchanged patch. Direction 1: this must NOT read
+# stale -- verdict stays "approved", with the basis named.
+cat > "$OK/fixtures/reviews_7.json" <<'S'
+{"reviews":[
+  {"state":"APPROVED","body":"Looks good.","commit":{"oid":"old7old7old7old7old7old7old7old7old7old7"}}
+]}
+S
+cat > "$OK/fixtures/compare_reb7reb7reb7reb7reb7reb7reb7reb7reb7reb7_old7old7old7old7old7old7old7old7old7old7.diff" <<'S'
+diff --git a/foo.txt b/foo.txt
+index 1111111..2222222 100644
+--- a/foo.txt
++++ b/foo.txt
+@@ -10,3 +10,3 @@
+ line before
+-old line
++new line
+ line after
+S
+cat > "$OK/fixtures/compare_old7old7old7old7old7old7old7old7old7old7_reb7reb7reb7reb7reb7reb7reb7reb7reb7reb7.diff" <<'S'
+diff --git a/foo.txt b/foo.txt
+index 3333333..4444444 100644
+--- a/foo.txt
++++ b/foo.txt
+@@ -25,3 +25,3 @@
+ line before
+-old line
++new line
+ line after
+S
+
+# PR8: APPROVED at "old8...", then the head moved to "chg8..." with the
+# reviewed line genuinely changed further, not just rebased. Direction 2:
+# this MUST still read "unknown" -- the regression #219/#218 exist to
+# prevent, and #226 must not weaken.
+cat > "$OK/fixtures/reviews_8.json" <<'S'
+{"reviews":[
+  {"state":"APPROVED","body":"Looks good.","commit":{"oid":"old8old8old8old8old8old8old8old8old8old8"}}
+]}
+S
+cat > "$OK/fixtures/compare_chg8chg8chg8chg8chg8chg8chg8chg8chg8chg8_old8old8old8old8old8old8old8old8old8old8.diff" <<'S'
+diff --git a/foo.txt b/foo.txt
+index 1111111..2222222 100644
+--- a/foo.txt
++++ b/foo.txt
+@@ -10,3 +10,3 @@
+ line before
+-old line
++new line
+ line after
+S
+cat > "$OK/fixtures/compare_old8old8old8old8old8old8old8old8old8old8_chg8chg8chg8chg8chg8chg8chg8chg8chg8chg8.diff" <<'S'
+diff --git a/foo.txt b/foo.txt
+index 3333333..5555555 100644
+--- a/foo.txt
++++ b/foo.txt
+@@ -25,3 +25,3 @@
+ line before
+-old line
++a genuinely different line
+ line after
 S
 
 run_ok() {
@@ -246,6 +331,19 @@ chk "PR4 ci_is_current true (the failing run IS for this head)" "true" "$(jq -r 
 # bodies instead of review state, this would read "approved", not "rejected".
 chk "PR4 verdict reads rejected from real GitHub review state, not comment prose" \
   "rejected" "$(jq -r '.verdict' <<<"$p4")"
+
+# 12c/12d. agent-dotfiles#226 MUTATION CHECK, both directions (real
+# digest.sh + verdict.py output, not just verdict.py's unit tests):
+p7=$(pr 7)
+chk "PR7 (pure rebase) verdict stays approved, not demoted to unknown" \
+  "approved" "$(jq -r '.verdict' <<<"$p7")"
+grep -q "patch-id" <<<"$(jq -r '.verdict_detail' <<<"$p7")" \
+  && ok "PR7 verdict_detail names the patch-id basis for the promotion" \
+  || bad "PR7 verdict_detail names the basis" "$p7"
+
+p8=$(pr 8)
+chk "PR8 (real content change since review) verdict stays unknown -- the direction #219/#218 must not regress" \
+  "unknown" "$(jq -r '.verdict' <<<"$p8")"
 
 # 12b. agent-dotfiles#218: a review APPROVED at an old SHA must not answer for
 # a head a push has since moved past. This is the failure #218 exists to
