@@ -1,5 +1,12 @@
 # Supervisor Extraction Plan — #179
 
+> **Superseded.** The extraction this document planned landed in the
+> Phase 1.5 split PR: `scripts/supervisor/` and `tests/supervisor/` were
+> removed from this repository and now live in `jonhill90/agent-supervisor`
+> (private). File paths and line counts below describe the tree as it stood
+> before that removal — kept as the measured record the split PR relied on,
+> not as a description of this repository's current state.
+
 This is a plan and a measurement, not an extraction. Per Jon's own framing
 in #179 and the brief that produced this document, the extraction does not
 happen now — lanes are running on this code as this is written. What

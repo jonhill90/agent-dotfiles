@@ -19,7 +19,7 @@
       "type": "stdio",
       "command": "python3",
       "args": [
-        "/Users/jon/source/repos/Personal/agent-dotfiles/scripts/supervisor/mcp_server.py"
+        "/Users/jon/source/repos/Personal/agent-supervisor/scripts/supervisor/mcp_server.py"
       ]
     }
   }
