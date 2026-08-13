@@ -160,7 +160,17 @@ apm lock -v          # resolves both pinned skill-source refs without deploying
 ```
 
 `npx skills add . --list` no longer applies here — this repository has no
-local `skills/` to enumerate (#9); it correctly reports "No skills found."
+*tracked* `skills/` to enumerate (#9); it correctly reports "No skills
+found" in a checkout that has never resolved dependencies. That changes
+once `apm lock -v` or `apm install -g` has run: both materialize a local,
+gitignored `apm_modules/` at the repo root (per `apm.yml`'s `skills: ["*"]`
+pin on each dependency, currently 24 skills from `jonhill90/skills` plus 1
+fixture from `jonhill90/skills-private`), and `npx skills add .` walks
+into it and enumerates those — the full upstream set, not
+`settings/default-skills.txt`'s 13-name active roster. Read the roster
+file for what actually ships; treat `npx skills add . --list` output as
+"what's resolved on disk right now," not as this repository's roster
+(#264 step 5).
 Run language-specific tests when changing bundled scripts or tools.
 
 Citing a newly-opened issue by bare number (`#N`) in a tracked `.md` fails
