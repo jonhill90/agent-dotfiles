@@ -25,6 +25,17 @@ HARNESS_LAUNCH_CMD='codex --dangerously-bypass-approvals-and-sandbox'
 # codex does not need anything Claude's `-l` doesn't already give it.
 HARNESS_SEND_LITERAL=1
 
+# agent-dotfiles#261. How this harness is told to come back to an EXISTING
+# conversation -- `restore.sh`'s only caller, same contract as
+# harness/claude.sh's HARNESS_RESUME_CMD: `%s` is the session id
+# `harness_session.py` recorded at dispatch. Checked against the shipped
+# CLI, not assumed: `codex resume --help` documents `[SESSION_ID]` as
+# "Session id (UUID) or session name", and `--dangerously-bypass-approvals-
+# and-sandbox` is listed there too, not just on the bare `codex` command --
+# a resumed lane needs the same unattended posture the original launch did,
+# or it stalls on the first approval prompt instead of continuing the task.
+HARNESS_RESUME_CMD='codex --dangerously-bypass-approvals-and-sandbox resume %s'
+
 # Ready shape. Codex's footer -- "<model> <effort> · <cwd>" -- is the LAST
 # non-empty line whether or not a turn is running (see HARNESS_BUSY_TAIL
 # below); it is NOT proof of idle by itself, only proof this is a codex
