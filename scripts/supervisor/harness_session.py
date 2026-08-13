@@ -58,6 +58,36 @@ Nothing here can see that happen -- closing it needs the harness to publish
 its live id (a `SessionStart`/`UserPromptSubmit` hook is the documented
 channel), which is a change to Jon's deployed `~/.claude` and out of scope
 here.
+
+CODEX (agent-dotfiles#261). The claude resolver above returned empty for
+every codex lane -- `~/.claude/projects` holds nothing codex ever writes --
+so no codex lane could ever be restored; #237's positive half was never
+demonstrated for the one harness the estate actually runs unattended.
+Measured live on 2026-08-12 against a real `codex` pane (v0.147.0), never
+the estate's own live session: codex writes one JSONL rollout per
+conversation under `$CODEX_HOME/sessions/<yyyy>/<mm>/<dd>/rollout-<local
+timestamp>-<session-id>.jsonl` (`$CODEX_HOME` defaults to `~/.codex`, same
+default the `codex` CLI itself uses when the env var is unset). The id in
+the filename is a UUID and is exactly what `codex resume <SESSION_ID>`
+takes -- confirmed against `codex resume --help`, which documents
+`[SESSION_ID]` as "Session id (UUID) or session name."
+
+The file's own first line (`type: "session_meta"`) carries the same id
+again as `payload.session_id`, and every line carries a top-level ISO
+`timestamp` -- both read by the SAME `_first_timestamp` helper the claude
+path uses, unchanged, because that helper only assumes a top-level
+`timestamp` key and neither harness's shape violates that. Only the
+self-declared-id check needs a codex-specific reader: the id sits nested
+under `payload`, not at the top level the way claude's `sessionId` does.
+
+The three tests are unchanged in spirit: began during this dispatch,
+carries the dispatch marker (the lane's worktree path -- codex records its
+own `cwd` verbatim in `session_meta.payload.cwd` and again in every
+`turn_context`, so the marker match is not a coincidence of prose, it is
+codex's own process cwd), and the file's declared id agrees with its
+filename. EXACTLY ONE candidate resolves; zero or several REFUSE, same as
+claude -- this module does not get to invent a session id just because the
+harness differs.
 """
 
 from __future__ import annotations
@@ -145,8 +175,34 @@ def _carries(path, marker):
     return False
 
 
+def _declares_own_id_codex(path, session_id):
+    """Does the rollout's own `session_meta.payload.session_id` agree with
+    its filename? Codex nests the id under `payload`, unlike claude's
+    top-level `sessionId`, so this is its own reader rather than a shared
+    one -- see the CODEX section of this module's docstring.
+    """
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if '"session_id"' not in line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except (ValueError, TypeError):
+                    continue
+                payload = entry.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+                declared = payload.get("session_id")
+                if declared:
+                    return declared == session_id
+    except OSError:
+        return False
+    return False
+
+
 def candidates(*, home, marker, since):
-    """Every transcript that satisfies all three tests above. Never guesses."""
+    """Every claude transcript that satisfies all three tests above. Never guesses."""
     projects = Path(home) / ".claude" / "projects"
     if not projects.is_dir():
         return []
@@ -174,7 +230,53 @@ def candidates(*, home, marker, since):
     return found
 
 
-def resolve(*, harness, marker, since, home=None, timeout=0.0, sleep=time.sleep, clock=time.time):
+# `rollout-2026-08-12T14-59-52-019ff758-62f0-74e3-a925-66448003107f.jsonl` --
+# the id is the last 8-4-4-4-12 hex group, anchored at the end so it can
+# never accidentally match a run of hex-looking digits earlier in the local
+# timestamp portion of the name.
+CODEX_ROLLOUT_ID_RE = re.compile(
+    r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+)
+
+
+def codex_candidates(*, codex_home, marker, since):
+    """Every codex rollout that satisfies the same three tests. Never guesses."""
+    sessions = Path(codex_home) / "sessions"
+    if not sessions.is_dir():
+        return []
+    found = []
+    for transcript in sorted(sessions.glob("*/*/*/rollout-*.jsonl")):
+        match = CODEX_ROLLOUT_ID_RE.search(transcript.stem)
+        if not match:
+            continue
+        session_id = match.group(1)
+        try:
+            if transcript.stat().st_mtime < since - BEGAN_SLACK_SECONDS:
+                continue
+        except OSError:
+            continue
+        began = _first_timestamp(transcript)
+        if began is None or began < since - BEGAN_SLACK_SECONDS:
+            continue
+        if not _carries(transcript, marker):
+            continue
+        if not _declares_own_id_codex(transcript, session_id):
+            continue
+        found.append(session_id)
+    return found
+
+
+def resolve(
+    *,
+    harness,
+    marker,
+    since,
+    home=None,
+    codex_home=None,
+    timeout=0.0,
+    sleep=time.sleep,
+    clock=time.time,
+):
     """Resolve one session id, or raise LookupError naming why it refused.
 
     `timeout` polls: the transcript is written when the harness accepts the
@@ -183,12 +285,16 @@ def resolve(*, harness, marker, since, home=None, timeout=0.0, sleep=time.sleep,
     immediately rather than waited on, because more time can only add
     candidates.
     """
-    if harness != "claude":
-        raise LookupError(f"no session resolver for harness {harness!r} -- only claude is implemented")
+    if harness not in ("claude", "codex"):
+        raise LookupError(f"no session resolver for harness {harness!r} -- only claude and codex are implemented")
     home = home or os.environ.get("HOME") or str(Path.home())
+    codex_home = codex_home or os.environ.get("CODEX_HOME") or str(Path.home() / ".codex")
     deadline = clock() + timeout
     while True:
-        found = candidates(home=home, marker=marker, since=since)
+        if harness == "claude":
+            found = candidates(home=home, marker=marker, since=since)
+        else:
+            found = codex_candidates(codex_home=codex_home, marker=marker, since=since)
         if len(found) == 1:
             return found[0]
         if len(found) > 1:
@@ -206,10 +312,18 @@ def main(argv=None):
     parser.add_argument("--marker", required=True, help="a string unique to this dispatch (the lane's worktree path)")
     parser.add_argument("--since", type=float, required=True, help="epoch seconds, read before the brief was sent")
     parser.add_argument("--home", default=None)
+    parser.add_argument("--codex-home", default=None, help="defaults to $CODEX_HOME or ~/.codex")
     parser.add_argument("--timeout", type=float, default=20.0)
     args = parser.parse_args(argv)
     try:
-        print(resolve(harness=args.harness, marker=args.marker, since=args.since, home=args.home, timeout=args.timeout))
+        print(resolve(
+            harness=args.harness,
+            marker=args.marker,
+            since=args.since,
+            home=args.home,
+            codex_home=args.codex_home,
+            timeout=args.timeout,
+        ))
     except LookupError as error:
         # Exit 3, not 1: the caller must be able to tell "could not resolve"
         # -- an ordinary, expected outcome that records an empty id -- from a

@@ -25,6 +25,38 @@ HARNESS_LAUNCH_CMD='codex --dangerously-bypass-approvals-and-sandbox'
 # codex does not need anything Claude's `-l` doesn't already give it.
 HARNESS_SEND_LITERAL=1
 
+# agent-dotfiles#261. How this harness is told to come back to an EXISTING
+# conversation -- `restore.sh`'s only caller, same contract as
+# harness/claude.sh's HARNESS_RESUME_CMD: `%s` is the session id
+# `harness_session.py` recorded at dispatch. Checked against the shipped
+# CLI, not assumed: `codex resume --help` documents `[SESSION_ID]` as
+# "Session id (UUID) or session name", and `--dangerously-bypass-approvals-
+# and-sandbox` is listed there too, not just on the bare `codex` command --
+# a resumed lane needs the same unattended posture the original launch did,
+# or it stalls on the first approval prompt instead of continuing the task.
+HARNESS_RESUME_CMD='codex --dangerously-bypass-approvals-and-sandbox resume %s'
+
+# agent-dotfiles#261. Measured live on `remote.hill90.com` against real codex
+# rollouts (v0.147.0): `restore.sh`'s existence check was a claude-only
+# literal (`~/.claude/projects/*/<id>.jsonl`) and refused EVERY codex lane
+# regardless of whether its transcript was really on disk, because codex
+# never writes there -- see harness_session.py's CODEX section for the same
+# path, measured the same way. `%s` is the session id. `$CODEX_HOME`/`$HOME`
+# expand here, at SOURCE time -- the same moment claude.sh's `$HOME` above
+# does, and harness-registry.sh is re-sourced by every `restore.sh`
+# invocation, so this is never stale within a run.
+HARNESS_TRANSCRIPT_GLOB="${CODEX_HOME:-$HOME/.codex}/sessions/*/*/*/rollout-*-%s.jsonl"
+
+# agent-dotfiles#262. Same shape check as harness/claude.sh's
+# HARNESS_SESSION_ID_RE, and for the same reason: `restore.sh` interpolates
+# this value into both `HARNESS_TRANSCRIPT_GLOB` (a glob) and
+# `HARNESS_RESUME_CMD` (a shell command line), and a corrupted ledger value
+# of `*` matches the first unconditionally and is shell input in the second.
+# Codex ids captured live for #261 (`019ff741-5616-7353-...`) are UUIDs the
+# same hex-and-hyphens shape as claude's, so the two adapters share one
+# pattern rather than each hand-rolling it.
+HARNESS_SESSION_ID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
 # Ready shape. Codex's footer -- "<model> <effort> · <cwd>" -- is the LAST
 # non-empty line whether or not a turn is running (see HARNESS_BUSY_TAIL
 # below); it is NOT proof of idle by itself, only proof this is a codex
