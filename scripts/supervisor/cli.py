@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from acp_transport import ACPTransport
-from adapter import ACPAdapter, TmuxAdapter, HARNESS_COMMANDS
+from adapter import ACPAdapter, TmuxAdapter, HARNESS_COMMANDS, command_verdict
 from core import Ledger, claim_owner_token
 from github_source import GithubTaskSource
 from sensor import StateSensor
@@ -256,7 +256,17 @@ def lane_free(ledger, transport, *, lane, target, window_name):
     harness the live pane's command visibly contradicts
     (`TmuxAdapter._command_matches`), still refuses: this closes the gap for
     a harness that WAS written down, it does not turn "cannot tell" into "go
-    ahead". The success reply's `"harness"` key lets a caller (`dispatch.sh`)
+    ahead".
+
+    agent-dotfiles#234 closed the third case that ordering left open. A
+    recorded harness the pane could neither confirm NOR contradict -- both
+    Node harnesses read `node`, so `codex` recorded against a pane really
+    running copilot was accepted -- now needs the pane's argv to name it,
+    and is refused when argv names neither or cannot be read. Every reason
+    string here therefore distinguishes "does not match" (the record is
+    wrong) from "is unconfirmed" (the evidence is missing); both withhold.
+
+    The success reply's `"harness"` key lets a caller (`dispatch.sh`)
     forward the same resolved value into `record-dispatch` instead of that
     command re-deriving one from the pane command on its own.
 
@@ -300,6 +310,11 @@ def lane_free(ledger, transport, *, lane, target, window_name):
         return {"lane": lane, "known": False, "free": False, "backfilled": False}
     metadata = transport.metadata(target)
     command = metadata["command"]
+    # agent-dotfiles#234: the pane's own foreground command line, the only
+    # thing that tells `codex` and `copilot` apart once both read `node`.
+    # Absent (an older stub, a transport that cannot read `ps`) it is "",
+    # which confirms nothing and therefore withholds a shared command.
+    argv = metadata.get("argv", "")
     # Narrow inference first (unchanged from before #216: exact binary name,
     # never guessed for an ambiguous one like `node`), THEN the recorded
     # option as the fallback for a command this dict cannot place. Checking
@@ -320,17 +335,27 @@ def lane_free(ledger, transport, *, lane, target, window_name):
         }
     if inferred:
         harness = inferred
-    elif recorded and TmuxAdapter._command_matches(recorded, command):
+    elif recorded and TmuxAdapter._command_matches(recorded, command, argv):
         harness = recorded
     elif recorded:
+        # Two different refusals, named apart (agent-dotfiles#234) because
+        # they are two different operator problems: `contradicted` means the
+        # record is wrong, `ambiguous` means the evidence to check it is
+        # missing. Both withhold the lane; only one of them is a bug report.
+        if command_verdict(recorded, command, argv) == "ambiguous":
+            reason = (
+                f"recorded harness {recorded!r} is unconfirmed: pane command {command!r} is "
+                f"shared by more than one harness and its argv "
+                f"({argv or '<unreadable>'}) names none of them"
+            )
+        else:
+            reason = f"recorded harness {recorded!r} does not match pane command {command!r}"
         return {
             "lane": lane,
             "known": False,
             "free": False,
             "backfilled": False,
-            "reason": (
-                f"recorded harness {recorded!r} does not match pane command {command!r}"
-            ),
+            "reason": reason,
         }
     else:
         return {

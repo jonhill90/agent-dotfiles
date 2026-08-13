@@ -730,6 +730,36 @@ D=$(mktemp -d); hrun copilot-ready node "$D/w" STUB_BUSY_AFTER=1 STUB_BUSY_SHAPE
 check "a copilot pane that turns busy mid-probe is not sent to" "state:    working" "$D/w/st"
 not_sent "no /loop delivered into a busy copilot pane" "$D/w"
 
+# --- #234: a TOLD harness the pane's own command contradicts is cannot-tell --
+#
+# The other half of the Node collision (#234). `SUPERVISOR_HARNESS` names the
+# harness outright and, before #234, was taken on trust: the pane command was
+# never read on that branch at all. Told `codex` while a copilot pane is
+# mid-turn, the probe applies codex's chrome (`esc to interrupt`, four-line
+# tail) to paint that says `esc interrupt` -- no match -- and concludes IDLE.
+# That is a false idle reached from a wrong record rather than a missing one:
+# the watchdog then restarts a working pane. Measured before the fix, on the
+# same stubs this case uses: `state: restarted`, `/loop` delivered.
+#
+# The rule now: a named harness must be corroborated by the pane's own
+# command, and a name the command contradicts is `harness_unknown` -- which
+# this script already treats as busy.
+D=$(mktemp -d); hrun copilot-busy node "$D/w" SUPERVISOR_HARNESS=codex
+check "a told harness the pane contradicts fails closed" "state:    harness_unknown" "$D/w/st"
+not_sent "a contradicted told harness receives no keystrokes" "$D/w"
+
+# ...and the control that keeps it honest, the same shape case 6 is for case 3:
+# a told harness the pane's command AGREES with still decides normally, in both
+# directions. Told `copilot` on a `node` pane: mid-turn is still busy, and a
+# genuinely idle one with work queued is still restarted.
+D=$(mktemp -d); hrun copilot-busy node "$D/w" SUPERVISOR_HARNESS=copilot
+check "a told harness the pane corroborates still reads busy" "state:    working" "$D/w/st"
+not_sent "a corroborated told harness that is busy receives no keystrokes" "$D/w"
+
+D=$(mktemp -d); hrun copilot-ready node "$D/w" SUPERVISOR_HARNESS=copilot
+check "a told harness the pane corroborates is still restarted when idle" "state:    restarted" "$D/w/st"
+was_sent "a corroborated idle told harness is still sent a /loop" "$D/w"
+
 # 8. The registry is part of what this script needs to decide anything. If it
 #    is missing beside watchdog.sh -- a partial deploy, a copied file -- the
 #    probe must say so and assume busy rather than resurrect the old literal.

@@ -7,7 +7,7 @@ from pathlib import Path
 SUPERVISOR_DIR = Path(__file__).resolve().parents[2] / "scripts" / "supervisor"
 sys.path.insert(0, str(SUPERVISOR_DIR))
 
-from adapter import ACPAdapter, TmuxAdapter, classify_capture  # noqa: E402
+from adapter import ACPAdapter, TmuxAdapter, classify_capture, command_verdict  # noqa: E402
 from core import Ledger  # noqa: E402
 
 
@@ -196,6 +196,127 @@ class AdapterTest(unittest.TestCase):
                 event = self.adapter.observe_lane("architecture")
                 self.assertIsNotNone(event, f"no durable event for {reason}")
                 self.assertEqual(f"attention:needs-help:{reason}", event["key"])
+
+
+class NodeCollisionTest(unittest.TestCase):
+    """agent-dotfiles#234: `codex` and `copilot` both run as the process name
+    `node`, so the plausibility check accepted EITHER for a `node` pane. A
+    lane recorded `codex` that is really running copilot was silently
+    admitted -- the first case in this estate where the failure was "told
+    something false, cannot check it, so accept" rather than "cannot tell,
+    so refuse" (#124/#126's one-way ratchet).
+
+    The check is three-valued now: confirmed, contradicted, ambiguous --
+    and ambiguous withholds. `argv` (the pane's foreground command line,
+    which names the tool even when `comm` reads `node`) is what turns an
+    ambiguous answer into a confirmed one; without it, both Node harnesses
+    stay withheld.
+    """
+
+    COPILOT_ARGV = "node /opt/homebrew/bin/copilot --allow-all"
+    CODEX_ARGV = "node /Users/jon/.npm-global/lib/node_modules/@openai/codex/bin/codex.js"
+
+    def pane(self, command, argv=""):
+        return {
+            "pane_id": "%7",
+            "command": command,
+            "path": "/repo/hill90",
+            "server_id": "server-a",
+            "session_id": "$4",
+            "argv": argv,
+        }
+
+    def adapter(self, pane):
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        transport = FakeTransport()
+        transport.panes["%7"] = dict(pane, capture="", options={}, after_send="")
+        return TmuxAdapter(Ledger(Path(tempdir.name), clock=lambda: 1_000), transport)
+
+    def test_the_bug_a_lane_recorded_codex_whose_pane_really_runs_copilot_is_refused(self):
+        """THE REPRODUCTION. `node` + argv naming copilot contradicts a
+        recorded `codex`. Before #234 this registered without complaint."""
+        adapter = self.adapter(self.pane("node", self.COPILOT_ARGV))
+        with self.assertRaisesRegex(RuntimeError, "lane harness mismatch"):
+            adapter.register_lane(
+                lane="t:7", target="%7", harness="codex", repo="/repo/hill90", nonce="n"
+            )
+
+    def test_the_mirror_a_lane_recorded_copilot_whose_pane_really_runs_codex_is_refused(self):
+        adapter = self.adapter(self.pane("node", self.CODEX_ARGV))
+        with self.assertRaisesRegex(RuntimeError, "lane harness mismatch"):
+            adapter.register_lane(
+                lane="t:7", target="%7", harness="copilot", repo="/repo/hill90", nonce="n"
+            )
+
+    def test_a_node_pane_whose_argv_names_its_own_harness_still_registers(self):
+        """THE OTHER DIRECTION, and it is what keeps the refusals honest:
+        fail-closed must not become always-closed. A correctly recorded
+        Node lane is still admitted, because argv confirms it."""
+        for harness, argv in (("copilot", self.COPILOT_ARGV), ("codex", self.CODEX_ARGV)):
+            with self.subTest(harness=harness):
+                adapter = self.adapter(self.pane("node", argv))
+                record = adapter.register_lane(
+                    lane="t:7", target="%7", harness=harness, repo="/repo/hill90", nonce="n"
+                )
+                self.assertEqual(harness, record["harness"])
+
+    def test_a_node_pane_with_no_readable_argv_is_withheld_from_both(self):
+        """The residue, stated as behaviour: `ps` unavailable, the process
+        already gone, an argv that names neither tool -- nothing confirms
+        either harness, so neither is admitted. Withheld, never admitted."""
+        for argv in ("", "node", "node /usr/local/bin/some-other-node-cli"):
+            for harness in ("codex", "copilot"):
+                with self.subTest(argv=argv, harness=harness):
+                    adapter = self.adapter(self.pane("node", argv))
+                    with self.assertRaisesRegex(RuntimeError, "lane harness mismatch"):
+                        adapter.register_lane(
+                            lane="t:7", target="%7", harness=harness, repo="/repo/hill90", nonce="n"
+                        )
+
+    def test_an_unambiguous_command_needs_no_argv_at_all(self):
+        """`claude`/`claude.exe`/`codex` name exactly one harness between
+        them, so nothing about those lanes changed -- they never needed
+        argv and must not start needing it (every pre-#234 lane is one)."""
+        for harness, command in (("claude", "claude"), ("claude", "claude.exe"), ("codex", "codex")):
+            with self.subTest(command=command):
+                adapter = self.adapter(self.pane(command))
+                record = adapter.register_lane(
+                    lane="t:7", target="%7", harness=harness, repo="/repo/hill90", nonce="n"
+                )
+                self.assertEqual(harness, record["harness"])
+
+    def test_a_visibly_contradicted_command_is_still_refused(self):
+        """Unchanged from #216: `claude` recorded against a `node` pane."""
+        adapter = self.adapter(self.pane("node", self.COPILOT_ARGV))
+        with self.assertRaisesRegex(RuntimeError, "lane harness mismatch"):
+            adapter.register_lane(
+                lane="t:7", target="%7", harness="claude", repo="/repo/hill90", nonce="n"
+            )
+
+    def test_every_later_operation_rechecks_argv_not_just_registration(self):
+        """`_verified_lane` runs the same check on every assign/observe, so
+        a pane that was copilot at registration and is codex now stops
+        being the lane it was registered as."""
+        pane = self.pane("node", self.COPILOT_ARGV)
+        adapter = self.adapter(pane)
+        adapter.register_lane(
+            lane="t:7", target="%7", harness="copilot", repo="/repo/hill90", nonce="n"
+        )
+        adapter.transport.panes["%7"]["argv"] = self.CODEX_ARGV
+        with self.assertRaisesRegex(RuntimeError, "pane incarnation does not match"):
+            adapter.observe_lane("t:7")
+
+    def test_the_verdict_names_which_of_the_two_failures_it_is(self):
+        """Contradicted and ambiguous are different operator problems: one
+        means the record is wrong, the other means the evidence is missing.
+        The refusal has to say which."""
+        self.assertEqual("confirmed", command_verdict("copilot", "node", self.COPILOT_ARGV))
+        self.assertEqual("ambiguous", command_verdict("copilot", "node", ""))
+        self.assertEqual("ambiguous", command_verdict("codex", "node", ""))
+        self.assertEqual("contradicted", command_verdict("claude", "node", self.COPILOT_ARGV))
+        self.assertEqual("contradicted", command_verdict("copilot", "claude", ""))
+        self.assertEqual("confirmed", command_verdict("claude", "claude.exe", ""))
 
 
 class FakeACPTransport:

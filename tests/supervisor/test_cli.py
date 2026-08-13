@@ -495,11 +495,18 @@ class LaneFreeTest(unittest.TestCase):
         """agent-dotfiles#216: the bug's own reproduction. `council-copilot`
         runs as `node` -- indistinguishable by process name from any other
         Node harness -- so this only works because the harness option is
-        read as a recorded fact, not guessed from `command`."""
+        read as a recorded fact, not guessed from `command`.
+
+        agent-dotfiles#234 added the `argv` half: a recorded fact that the
+        pane can neither confirm nor contradict is no longer enough on its
+        own for a name two harnesses share. The lane still backfills free,
+        for the same reason it always did -- it really is copilot -- but
+        now the pane says so too."""
         with tempfile.TemporaryDirectory() as root:
             ledger = Ledger(Path(root))
             transport = FakeMetadataTransport(
-                {"pane_id": "%7", "command": "node", "path": "/repo", "server_id": "server", "session_id": "$0"},
+                {"pane_id": "%7", "command": "node", "path": "/repo", "server_id": "server",
+                 "session_id": "$0", "argv": "node /opt/homebrew/bin/copilot --allow-all"},
                 options={cli.HARNESS_OPTION: "copilot"},
             )
 
@@ -513,11 +520,13 @@ class LaneFreeTest(unittest.TestCase):
     def test_a_codex_lane_running_a_binary_not_literally_named_codex_is_backfilled(self):
         """agent-dotfiles#216 acceptance: codex under a launcher (also `node`
         live, per the issue's window-8 measurement) must work too, once its
-        harness is recorded."""
+        harness is recorded -- and, since #234, once the pane's own argv
+        confirms it is codex rather than the other Node harness."""
         with tempfile.TemporaryDirectory() as root:
             ledger = Ledger(Path(root))
             transport = FakeMetadataTransport(
-                {"pane_id": "%8", "command": "node", "path": "/repo", "server_id": "server", "session_id": "$0"},
+                {"pane_id": "%8", "command": "node", "path": "/repo", "server_id": "server",
+                 "session_id": "$0", "argv": "node /usr/local/lib/node_modules/@openai/codex/bin/codex.js"},
                 options={cli.HARNESS_OPTION: "codex"},
             )
 
@@ -526,6 +535,47 @@ class LaneFreeTest(unittest.TestCase):
             self.assertEqual(
                 {"lane": "t:8", "known": True, "free": True, "backfilled": True, "harness": "codex"}, result
             )
+
+    def test_a_lane_recorded_codex_whose_node_pane_really_runs_copilot_is_refused(self):
+        """agent-dotfiles#234, the reproduction. Both harnesses run as
+        `node`, so the recorded value could not be contradicted and was
+        accepted -- silently, and in the one direction (#124/#126) this
+        estate does not allow: admitting a lane on unverifiable identity.
+        The pane's argv names copilot; the record says codex; refuse."""
+        with tempfile.TemporaryDirectory() as root:
+            ledger = Ledger(Path(root))
+            transport = FakeMetadataTransport(
+                {"pane_id": "%7", "command": "node", "path": "/repo", "server_id": "server",
+                 "session_id": "$0", "argv": "node /opt/homebrew/bin/copilot --allow-all"},
+                options={cli.HARNESS_OPTION: "codex"},
+            )
+
+            result = cli.lane_free(ledger, transport, lane="t:7", target="t:7", window_name="free-7")
+
+            self.assertFalse(result["free"])
+            self.assertIn("codex", result.get("reason", ""))
+            self.assertIsNone(ledger.get_lane("t:7"))
+
+    def test_a_node_lane_whose_argv_confirms_nothing_is_withheld(self):
+        """The residue, as behaviour. `ps` unreadable, the process already
+        gone, a Node CLI that is neither of ours: the recorded harness is
+        then uncheckable, and uncheckable withholds. This is the ratchet
+        tightening -- a correctly-recorded copilot lane whose argv cannot
+        be read is refused rather than offered."""
+        with tempfile.TemporaryDirectory() as root:
+            ledger = Ledger(Path(root))
+            transport = FakeMetadataTransport(
+                {"pane_id": "%7", "command": "node", "path": "/repo", "server_id": "server",
+                 "session_id": "$0", "argv": ""},
+                options={cli.HARNESS_OPTION: "copilot"},
+            )
+
+            result = cli.lane_free(ledger, transport, lane="t:7", target="t:7", window_name="free-7")
+
+            self.assertFalse(result["free"])
+            self.assertIn("copilot", result.get("reason", ""))
+            self.assertIn("node", result.get("reason", ""))
+            self.assertIsNone(ledger.get_lane("t:7"))
 
     def test_an_unknown_lane_not_named_free_n_is_unknown_not_free(self):
         """Fail closed (agent-dotfiles#174): a lane this code cannot

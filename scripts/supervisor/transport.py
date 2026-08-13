@@ -24,16 +24,64 @@ class TmuxTransport:
         )
 
     def metadata(self, target):
-        fmt = "#{pane_id}|#{pane_current_command}|#{pane_current_path}|#{socket_path}|#{session_created}|#{session_id}"
+        fmt = (
+            "#{pane_id}|#{pane_current_command}|#{pane_current_path}"
+            "|#{socket_path}|#{session_created}|#{session_id}|#{pane_tty}"
+        )
         output = self._run("display-message", "-p", "-t", target, fmt).stdout.rstrip("\n")
-        pane_id, command, path, socket_path, session_created, session_id = output.split("|", 5)
+        pane_id, command, path, socket_path, session_created, session_id, tty = output.split("|", 6)
         return {
             "pane_id": pane_id,
             "command": command,
             "path": path,
             "server_id": f"{socket_path}:{session_created}",
             "session_id": session_id,
+            "argv": self.foreground_argv(tty),
         }
+
+    def foreground_argv(self, tty):
+        """The full command line(s) of the pane's foreground process group.
+
+        agent-dotfiles#234. `#{pane_current_command}` is a process NAME, and
+        `codex` and `copilot` share one (`node`) -- so it cannot distinguish
+        them and the plausibility check accepted either. argv can: a Node
+        harness's command line carries the script path, which names the tool
+        (`node /opt/homebrew/bin/copilot`).
+
+        This is a MEASUREMENT, not a record, in the sense CLAUDE.md's "tmux
+        is not a database" rule uses: the kernel wrote it, not this system,
+        so reading it is fine. `ps` is asked for the pane's tty and filtered
+        to the FOREGROUND process group (`+` in `stat`) -- the same
+        processes tmux derives `pane_current_command` from, so the two
+        readings describe one thing rather than two.
+
+        Every failure returns "" -- no tty, `ps` missing, `ps` erroring, a
+        timeout. "" cannot confirm anything, and `command_verdict` treats a
+        shared command it cannot confirm as ambiguous, i.e. refused. The
+        failure direction is the #124/#126 one: unreadable withholds.
+        """
+        if not tty:
+            return ""
+        name = tty[len("/dev/"):] if tty.startswith("/dev/") else tty
+        try:
+            proc = subprocess.run(
+                ["ps", "-t", name, "-o", "stat=,args="],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        if proc.returncode != 0:
+            return ""
+        lines = []
+        for line in proc.stdout.splitlines():
+            stat, _, args = line.strip().partition(" ")
+            args = args.strip()
+            if "+" in stat and args:
+                lines.append(args)
+        return "\n".join(lines)
 
     def capture(self, target, lines=25):
         return self._run("capture-pane", "-p", "-J", "-t", target, "-S", f"-{int(lines)}").stdout
