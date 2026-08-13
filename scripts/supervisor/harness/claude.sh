@@ -36,6 +36,14 @@ HARNESS_SEND_LITERAL=1
 # than starting a fresh agent -- which is #237's whole failure direction.
 HARNESS_RESUME_CMD='claude --dangerously-skip-permissions --resume %s'
 
+# agent-dotfiles#261: where `restore.sh` VERIFIES a resumable session id is
+# actually on disk before ever handing it to `H_RESUME_CMD` -- the check that
+# catches a corrupted or deleted transcript (the #237 mutation case) rather
+# than resuming garbage under this lane's name. `%s` is the session id;
+# `restore.sh` fills in `$HOME` itself so the glob is built the same way its
+# own `$HOME_DIR` already is.
+HARNESS_TRANSCRIPT_GLOB="$HOME/.claude/projects/*/%s.jsonl"
+
 # Ready shape -- last non-empty line only (the #65 discipline). Two shapes:
 # the real idle footer (`← 1 agent`, the count including the main agent
 # itself so 1 means nothing delegated -- #126) and a bare `❯ ...` line with

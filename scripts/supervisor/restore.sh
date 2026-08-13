@@ -137,7 +137,21 @@ while IFS="$FS" read -r lane harness session_id repo task; do
     # a session id that was corrupted, truncated, or whose file was deleted --
     # the #237 mutation case. Without it, `claude --resume <garbage>` starts
     # something, and what it starts wears this lane's name.
-    if [ -z "$HOME_DIR" ] || ! compgen -G "$HOME_DIR/.claude/projects/*/$session_id.jsonl" >/dev/null 2>&1; then
+    #
+    # agent-dotfiles#261: this used to be a claude-only literal
+    # (`$HOME_DIR/.claude/projects/*/$session_id.jsonl`), which meant restore
+    # refused EVERY codex lane -- transcript on disk or not -- because codex
+    # never writes there. `H_TRANSCRIPT_GLOB` is each harness's own answer to
+    # "where would MY session id show up on disk", the same per-harness-file
+    # discipline `H_RESUME_CMD` already uses; an empty entry (a harness this
+    # module has no transcript location for) refuses rather than guessing.
+    if [ -z "${H_TRANSCRIPT_GLOB[$hidx]}" ]; then
+      refuse "$lane" "harness '$harness' has no known transcript location -- cannot verify session $session_id is on disk"
+      continue
+    fi
+    # shellcheck disable=SC2059
+    transcript_glob=$(printf "${H_TRANSCRIPT_GLOB[$hidx]}" "$session_id")
+    if [ -z "$HOME_DIR" ] || ! compgen -G "$transcript_glob" >/dev/null 2>&1; then
       refuse "$lane" "no transcript on disk for session $session_id -- task '$task' cannot be resumed"
       continue
     fi

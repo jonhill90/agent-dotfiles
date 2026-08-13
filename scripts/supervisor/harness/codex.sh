@@ -36,6 +36,17 @@ HARNESS_SEND_LITERAL=1
 # or it stalls on the first approval prompt instead of continuing the task.
 HARNESS_RESUME_CMD='codex --dangerously-bypass-approvals-and-sandbox resume %s'
 
+# agent-dotfiles#261. Measured live on `remote.hill90.com` against real codex
+# rollouts (v0.147.0): `restore.sh`'s existence check was a claude-only
+# literal (`~/.claude/projects/*/<id>.jsonl`) and refused EVERY codex lane
+# regardless of whether its transcript was really on disk, because codex
+# never writes there -- see harness_session.py's CODEX section for the same
+# path, measured the same way. `%s` is the session id. `$CODEX_HOME`/`$HOME`
+# expand here, at SOURCE time -- the same moment claude.sh's `$HOME` above
+# does, and harness-registry.sh is re-sourced by every `restore.sh`
+# invocation, so this is never stale within a run.
+HARNESS_TRANSCRIPT_GLOB="${CODEX_HOME:-$HOME/.codex}/sessions/*/*/*/rollout-*-%s.jsonl"
+
 # Ready shape. Codex's footer -- "<model> <effort> · <cwd>" -- is the LAST
 # non-empty line whether or not a turn is running (see HARNESS_BUSY_TAIL
 # below); it is NOT proof of idle by itself, only proof this is a codex
