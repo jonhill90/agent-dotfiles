@@ -20,6 +20,7 @@
 #   HARNESS_IDS  H_COMMAND_RE  H_READY_RE  H_BUSY_RE  H_BUSY_TAIL
 #   H_BLOCKED_MARKERS  H_OPTION_ROW_RE  H_MENU_ENTER_RE  H_MENU_TAIL
 #   H_TEXT_PROMPT_RE  H_LAUNCH_CMD  H_RESUME_CMD  H_TRANSCRIPT_GLOB
+#   H_SESSION_ID_RE
 # and defines harness_index_for_command / harness_index_for_name.
 #
 # agent-dotfiles#237 loads the two COMMAND fields into arrays for the first
@@ -42,7 +43,7 @@
 HARNESS_REGISTRY_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_IDS=(); H_COMMAND_RE=(); H_READY_RE=(); H_BUSY_RE=(); H_BUSY_TAIL=()
 H_BLOCKED_MARKERS=(); H_OPTION_ROW_RE=(); H_MENU_ENTER_RE=(); H_MENU_TAIL=(); H_TEXT_PROMPT_RE=()
-H_LAUNCH_CMD=(); H_RESUME_CMD=(); H_TRANSCRIPT_GLOB=()
+H_LAUNCH_CMD=(); H_RESUME_CMD=(); H_TRANSCRIPT_GLOB=(); H_SESSION_ID_RE=()
 # LANES_HARNESS_DIR is the name `lanes.sh` has always used and its tests still
 # set (they point it at a MUTATED copy of the adapters to prove one adapter's
 # breakage cannot move another harness's lane). Kept as an alias so that
@@ -53,7 +54,7 @@ for _hf in "$HARNESS_DIR"/*.sh; do
   unset HARNESS_NAME HARNESS_COMMAND_RE HARNESS_READY_RE HARNESS_BUSY_RE HARNESS_BUSY_TAIL \
         HARNESS_BLOCKED_MARKERS HARNESS_OPTION_ROW_RE HARNESS_MENU_ENTER_RE HARNESS_MENU_TAIL \
         HARNESS_TEXT_PROMPT_RE HARNESS_LAUNCH_CMD HARNESS_RESUME_CMD HARNESS_SEND_LITERAL \
-        HARNESS_TRANSCRIPT_GLOB
+        HARNESS_TRANSCRIPT_GLOB HARNESS_SESSION_ID_RE
   # shellcheck disable=SC1090
   . "$_hf"
   : "${HARNESS_NAME:?$_hf did not set HARNESS_NAME}"
@@ -72,6 +73,7 @@ for _hf in "$HARNESS_DIR"/*.sh; do
   H_LAUNCH_CMD+=("${HARNESS_LAUNCH_CMD:-}")
   H_RESUME_CMD+=("${HARNESS_RESUME_CMD:-}")
   H_TRANSCRIPT_GLOB+=("${HARNESS_TRANSCRIPT_GLOB:-}")
+  H_SESSION_ID_RE+=("${HARNESS_SESSION_ID_RE:-}")
 done
 unset _hf
 

@@ -47,6 +47,16 @@ HARNESS_RESUME_CMD='codex --dangerously-bypass-approvals-and-sandbox resume %s'
 # invocation, so this is never stale within a run.
 HARNESS_TRANSCRIPT_GLOB="${CODEX_HOME:-$HOME/.codex}/sessions/*/*/*/rollout-*-%s.jsonl"
 
+# agent-dotfiles#262. Same shape check as harness/claude.sh's
+# HARNESS_SESSION_ID_RE, and for the same reason: `restore.sh` interpolates
+# this value into both `HARNESS_TRANSCRIPT_GLOB` (a glob) and
+# `HARNESS_RESUME_CMD` (a shell command line), and a corrupted ledger value
+# of `*` matches the first unconditionally and is shell input in the second.
+# Codex ids captured live for #261 (`019ff741-5616-7353-...`) are UUIDs the
+# same hex-and-hyphens shape as claude's, so the two adapters share one
+# pattern rather than each hand-rolling it.
+HARNESS_SESSION_ID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
 # Ready shape. Codex's footer -- "<model> <effort> · <cwd>" -- is the LAST
 # non-empty line whether or not a turn is running (see HARNESS_BUSY_TAIL
 # below); it is NOT proof of idle by itself, only proof this is a codex

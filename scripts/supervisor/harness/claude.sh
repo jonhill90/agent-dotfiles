@@ -44,6 +44,17 @@ HARNESS_RESUME_CMD='claude --dangerously-skip-permissions --resume %s'
 # own `$HOME_DIR` already is.
 HARNESS_TRANSCRIPT_GLOB="$HOME/.claude/projects/*/%s.jsonl"
 
+# agent-dotfiles#262. The SHAPE of a real session id, checked before it is
+# ever interpolated into `HARNESS_TRANSCRIPT_GLOB` (a glob) or
+# `HARNESS_RESUME_CMD` (a shell command line). A ledger value of `*` matches
+# the glob unconditionally and, unescaped in the resume command, is shell
+# input -- `restore.sh` rejects anything that does not match this shape as
+# UNRECOVERABLE before either use, rather than hoping every future call site
+# remembers to escape it. Every claude session id observed in this file's own
+# fixtures and live captures is a UUID (`11111111-1111-4111-8111-...`); a
+# value that is not hex-and-hyphens in that shape cannot be a real one.
+HARNESS_SESSION_ID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
 # Ready shape -- last non-empty line only (the #65 discipline). Two shapes:
 # the real idle footer (`← 1 agent`, the count including the main agent
 # itself so 1 means nothing delegated -- #126) and a bare `❯ ...` line with

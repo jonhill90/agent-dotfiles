@@ -183,7 +183,22 @@ rm -rf "$D/state"; : > "$D/launched.log"
 record ad237test:2 ad901-first "not-a-uuid-at-all"
 nomatch=$(bash "$SUP/restore.sh" --dry-run 2>&1)
 want "MUTATION: a non-uuid id is refused too, not passed to the harness" \
-  "UNRECOVERABLE.*no transcript on disk" "$nomatch"
+  "UNRECOVERABLE.*not a well-formed" "$nomatch"
+
+# agent-dotfiles#262. A GLOB METACHARACTER in the id is the sharpest case:
+# `restore.sh` used to interpolate the ledger value straight into a glob and
+# only ask whether anything matched, so a corrupted id of exactly `*` matched
+# any transcript on disk and proceeded to resume `*` -- a bare glob typed into
+# a live shell, where it can expand before the harness ever sees it. Real
+# reproduction, not a synthetic case: this is the reviewer's exact ledger
+# value from the PR #262 review comment.
+rm -rf "$D/state"; : > "$D/launched.log"
+record ad237test:2 ad901-first '*'
+globcase=$(bash "$SUP/restore.sh" --dry-run 2>&1)
+want "MUTATION: a glob-metacharacter id ('*') is refused, not expanded" \
+  "UNRECOVERABLE.*not a well-formed" "$globcase"
+wantnot "MUTATION: the resume command line for the glob id was never built" \
+  "resume \*" "$globcase"
 
 # ------------------------------------------------------------- CODEX --------
 # agent-dotfiles#261. The claude fixtures above never exercised the codex

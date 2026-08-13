@@ -133,6 +133,19 @@ while IFS="$FS" read -r lane harness session_id repo task; do
       refuse "$lane" "harness '$harness' has no resume dialect -- task '$task' cannot be resumed"
       continue
     fi
+    # agent-dotfiles#262: the ledger's `harness_session_id` is validated
+    # against its harness's KNOWN SHAPE before it ever reaches a glob or a
+    # command line -- not escaped at one call site, because it is
+    # interpolated into TWO: `H_TRANSCRIPT_GLOB` below (a glob, where a
+    # corrupted value of `*` matches unconditionally) and `H_RESUME_CMD`
+    # (typed into a live shell, where an unescaped `*` is shell input the
+    # harness never sees as a literal argument). An empty H_SESSION_ID_RE
+    # means this harness's shape is not known here and fails closed the same
+    # way an empty H_RESUME_CMD/H_TRANSCRIPT_GLOB already does.
+    if [ -z "${H_SESSION_ID_RE[$hidx]}" ] || ! [[ "$session_id" =~ ${H_SESSION_ID_RE[$hidx]} ]]; then
+      refuse "$lane" "harness session id '$session_id' is not a well-formed '$harness' session id -- task '$task' cannot be resumed"
+      continue
+    fi
     # The transcript must actually be on disk. This is the check that catches
     # a session id that was corrupted, truncated, or whose file was deleted --
     # the #237 mutation case. Without it, `claude --resume <garbage>` starts
