@@ -675,128 +675,6 @@ def validate_skill_source_pins(root: Path) -> list[Finding]:
     return findings
 
 
-LANE_STATE_RE = re.compile(r"\bstate=([a-z][a-z-]*)")
-DOC_STATE_ROW_RE = re.compile(r"^\|\s*`([a-z][a-z-]*)`\s*\|")
-SUPERVISED_LANE_LOOP_SLUG = "supervised-lane-loop"
-
-
-def extract_lane_states(lanes_sh: Path) -> set[str]:
-    """The state literals `lanes.sh` actually assigns, as shipped -- not
-    as remembered by a doc elsewhere. `\\bstate=` (not a bare grep on
-    `state=`) so a hypothetical `...estate=` variable can't false-match;
-    every real assignment in the file is `state=word` at a token
-    boundary (line start, after `;`, `then`, or whitespace) (#196)."""
-    if not lanes_sh.is_file():
-        return set()
-    return set(LANE_STATE_RE.findall(lanes_sh.read_text(encoding="utf-8")))
-
-
-def extract_documented_states(skill_md: Path) -> set[str]:
-    """State names documented as the first, backtick-quoted column of a
-    markdown table row anywhere in the skill doc -- deliberately not
-    scoped to one heading, since a state named in prose elsewhere in the
-    doc still counts as documented for this check's purpose (#196)."""
-    states: set[str] = set()
-    for line in skill_md.read_text(encoding="utf-8").splitlines():
-        match = DOC_STATE_ROW_RE.match(line.strip())
-        if match:
-            states.add(match.group(1))
-    return states
-
-
-def find_resolved_supervised_lane_loop_skill(root: Path) -> Path | None:
-    """The locally-resolved `supervised-lane-loop/SKILL.md` from the
-    apm.yml-pinned `jonhill90/skills` dependency -- the same apm_modules
-    tree `apm install` (project-scoped, gitignored) or `apm install -g`
-    (this machine's estate, under `~/.apm`) already populates. `apm`
-    materializes a resolved dependency under both its declared alias and
-    its `<owner>/<repo>` path, so both are tried. Returns None, never
-    raises, when nothing is resolved -- the caller skips loudly rather
-    than treating an unresolved pin as either a pass or a crash (#196).
-    """
-    names: list[str] = []
-    for dep in parse_skill_source_dependencies(root):
-        if not dep.get("skills"):
-            continue
-        git_url = str(dep.get("git", ""))
-        owner_repo = git_url.split("github.com/", 1)[-1]
-        owner_repo = owner_repo[: -len(".git")] if owner_repo.endswith(".git") else owner_repo
-        if owner_repo != "jonhill90/skills":
-            continue
-        alias = dep.get("alias")
-        if alias:
-            names.append(str(alias))
-        names.append(owner_repo)
-
-    for apm_modules in (root / "apm_modules", Path.home() / ".apm" / "apm_modules"):
-        for name in names:
-            candidate = apm_modules / name / "skills" / SUPERVISED_LANE_LOOP_SLUG / "SKILL.md"
-            if candidate.is_file():
-                return candidate
-    return None
-
-
-def validate_lane_state_docs(root: Path) -> list[Finding]:
-    """`lanes.sh`'s state machine and the `supervised-lane-loop` skill's
-    documentation of it must not drift (agent-dotfiles#196, filed from
-    `jonhill90/skills#158`): three states shipped 2026-08-05 to
-    2026-08-12 undocumented until that fix. Only fails the direction that
-    is a hazard -- a state `lanes.sh` emits that the doc never names, so
-    an operator reads guidance for a machine that no longer matches it.
-    A doc-only state (one `lanes.sh` no longer emits) is stale but safe
-    and is not flagged; removing a state must not force a coordinated
-    two-repo change for no safety benefit.
-
-    Findings here are "warning", not "error": `error` fails
-    `validate_repository.py`'s exit code (see `main()`), and this check's
-    fix half the time lives in `jonhill90/skills`, a repository this PR
-    cannot touch. Making it an error would force "add a state to
-    lanes.sh" to block on "land and pin a docs PR in another repo" before
-    merging here -- exactly the two-repo ceremony the issue argues
-    against. A warning still prints, still names the state and the file,
-    and still fails loudly when the local pin can't be resolved at all --
-    it just doesn't gate the merge that shipped the state.
-    """
-    lanes_sh = root / "scripts" / "supervisor" / "lanes.sh"
-    if not lanes_sh.is_file():
-        return []
-    shipped = extract_lane_states(lanes_sh)
-    if not shipped:
-        return []
-
-    skill_md = find_resolved_supervised_lane_loop_skill(root)
-    if skill_md is None:
-        return [
-            Finding(
-                "warning",
-                lanes_sh,
-                "supervised-lane-loop/SKILL.md is not resolved locally "
-                "(no apm_modules tree under this repo or ~/.apm) -- run "
-                "`apm install` or `apm install -g` to enable the "
-                "lanes.sh/skill state-drift check (#196); skipping",
-            )
-        ]
-
-    missing = sorted(shipped - extract_documented_states(skill_md))
-    if not missing:
-        return []
-    try:
-        display_skill_md = skill_md.relative_to(Path.home())
-        display_skill_md = Path("~") / display_skill_md
-    except ValueError:
-        display_skill_md = skill_md
-    return [
-        Finding(
-            "warning",
-            lanes_sh,
-            "lanes.sh ships state(s) "
-            + ", ".join(f"`{s}`" for s in missing)
-            + f" not documented in {display_skill_md} -- update the "
-            "supervised-lane-loop skill in jonhill90/skills and bump "
-            "its apm.yml pin here (#196)",
-        )
-    ]
-
 
 def validate_privacy(root: Path) -> list[Finding]:
     """Flag tracked markdown containing terms from the untracked
@@ -900,10 +778,11 @@ def line_has_tmux_isolation(line: str) -> bool:
 def validate_tmux_destructive_verbs(root: Path) -> list[Finding]:
     """Reject destructive tmux verbs unless the call is visibly isolated.
 
-    The allowed form mirrors scripts/supervisor/tmux-isolation.sh:
-    unset TMUX, set TMUX_TMPDIR, and run assert_isolated_tmux before the
-    destructive command. The scanner intentionally lives in the existing
-    repository validator so CI executes it.
+    The allowed form: unset TMUX, set TMUX_TMPDIR, and run
+    assert_isolated_tmux before the destructive command (originally
+    modeled on tmux-isolation.sh in the supervisor tree, since moved to
+    jonhill90/agent-supervisor). The scanner intentionally lives in the
+    existing repository validator so CI executes it.
     """
     findings: list[Finding] = []
     for directory in TMUX_SCAN_DIRS:
@@ -1112,91 +991,6 @@ def validate_static_context(root: Path) -> list[Finding]:
     return findings
 
 
-PY_GLYPH_BLOCK_RE = re.compile(r"^glyph\s*=\s*\{(.*?)^\}", re.DOTALL | re.MULTILINE)
-PY_GLYPH_KEY_RE = re.compile(r'"([a-z][a-z-]*)"\s*:')
-SH_CASE_BLOCK_RE = re.compile(r"^map_status\(\)\s*\{(.*?)^\}", re.DOTALL | re.MULTILINE)
-SH_CASE_ARM_RE = re.compile(r"^\s*([a-z][a-z|-]*)\)", re.MULTILINE)
-
-
-def extract_renderer_states(renderer: Path) -> set[str] | None:
-    """The lane states one `laneview/` renderer's map actually names, read
-    out of the map itself rather than a comment beside it -- the same
-    "parse what ships, not what a doc remembers" shape as
-    `extract_lane_states` (#196).
-
-    Two map forms are understood, one per renderer shipped today: a python
-    `glyph = {...}` dict (`text.sh`) and a `map_status()` case statement
-    (`opensessions.sh`). Returns None -- "this renderer has no map I can
-    read" -- for anything else, which the caller reports as a warning
-    rather than an error: a future renderer that legitimately has no state
-    map (one that prints `lanes.sh`'s states verbatim, say) must not be
-    unmergeable, but it must not be silently unchecked either.
-    """
-    text = renderer.read_text(encoding="utf-8")
-    glyph_block = PY_GLYPH_BLOCK_RE.search(text)
-    if glyph_block:
-        return set(PY_GLYPH_KEY_RE.findall(glyph_block.group(1)))
-    case_block = SH_CASE_BLOCK_RE.search(text)
-    if case_block:
-        states: set[str] = set()
-        for arm in SH_CASE_ARM_RE.findall(case_block.group(1)):
-            states.update(part for part in arm.split("|") if part)
-        return states
-    return None
-
-
-def validate_laneview_state_maps(root: Path) -> list[Finding]:
-    """Every `laneview/` renderer must name every state `lanes.sh` ships.
-
-    Filed from the review of #231, which measured the failure: `scrolled`
-    (lanes.sh's copy-mode branch) was in neither renderer's map, so
-    `opensessions.sh` fell through `*) echo idle` and drew a lane
-    `dispatch.sh` will refuse to use as a healthy green tick. A viewer that
-    is confidently wrong about a lane is worse than one that is absent,
-    which is `laneview/README.md` rule 2.
-
-    Unlike `validate_lane_state_docs` these are **errors**, not warnings.
-    That check's fix half the time lives in `jonhill90/skills` and would
-    force two-repo ceremony; both sides of this one are files in this
-    repository, so "add a state to lanes.sh" can and should mean "say what
-    each viewer draws for it" in the same change.
-    """
-    lanes_sh = root / "scripts" / "supervisor" / "lanes.sh"
-    laneview_dir = root / "scripts" / "supervisor" / "laneview"
-    if not lanes_sh.is_file() or not laneview_dir.is_dir():
-        return []
-    shipped = extract_lane_states(lanes_sh)
-    if not shipped:
-        return []
-
-    findings: list[Finding] = []
-    for renderer in sorted(laneview_dir.glob("*.sh")):
-        mapped = extract_renderer_states(renderer)
-        if mapped is None:
-            findings.append(
-                Finding(
-                    "warning",
-                    renderer,
-                    "no lane-state map this check can read (expected a "
-                    "python `glyph = {...}` dict or a `map_status()` case) "
-                    "-- this renderer is unchecked against lanes.sh's "
-                    "states (#231)",
-                )
-            )
-            continue
-        missing = sorted(shipped - mapped)
-        if missing:
-            findings.append(
-                Finding(
-                    "error",
-                    renderer,
-                    "lanes.sh ships state(s) "
-                    + ", ".join(f"`{s}`" for s in missing)
-                    + " this renderer's map does not name -- give each one "
-                    "an arm rather than letting it take the default (#231)",
-                )
-            )
-    return findings
 
 
 def validate(root: Path, target: Path | None = None) -> list[Finding]:
@@ -1211,8 +1005,6 @@ def validate(root: Path, target: Path | None = None) -> list[Finding]:
         findings.extend(validate_roster_credit(root))
         findings.extend(validate_roster_resolves(root))
         findings.extend(validate_skill_source_pins(root))
-        findings.extend(validate_lane_state_docs(root))
-        findings.extend(validate_laneview_state_maps(root))
         findings.extend(validate_privacy(root))
         findings.extend(validate_tmux_destructive_verbs(root))
         findings.extend(validate_static_context(root))

@@ -70,10 +70,12 @@ settings/                # wrapper-owned config fragments (claude, copilot, pi, 
                          # harness and enforces that on all four (SPEC §4.1)
 docs/
 scripts/
-  supervisor/            # portable tmux-lane supervisor core, moved from
-                         # jonhill90/Hill90; the launchd adapter stays there
-tests/                   # unittest suite for scripts/, incl. tests/supervisor/
+tests/                   # unittest suite for scripts/
 ```
+
+The tmux-lane supervisor core previously lived at `scripts/supervisor/` and
+`tests/supervisor/` here; it moved to `jonhill90/agent-supervisor` (private)
+in the Phase 1.5 split (#179).
 
 Projection is installer-owned (`apm install -g` + `scripts/sync.py apply`).
 The former committed symlink matrix (`.claude/skills`, `.codex/skills`, …)
@@ -255,40 +257,18 @@ the past, and reading it is nonetheless correct — it is tmux's value, not ours
 
 A window name may be a *projection* of a record. It may not be the record.
 
-**This is now partly true of the code, and #174 is Jon's decided direction for
-the rest.** Two of the three call sites below migrated in merged code on
-2026-08-11 (PR #183 as `27e6a67`, PR #200 as `860b5ae`); the third has not, and
-no issue is filed for it. Read each row against the code before relying on it —
-these rows were stale once, and this table lying about merged code is what #205
-exists to repair:
+**This principle, and the case study that motivated it, now live with the
+code they describe.** The call-site migration table (#174), the `#102`
+incident (dispatch capacity silently falling to zero while lanes sat idle,
+repaired by editing the "database" with `tmux rename-window`), and
+`loop-tick.md`'s renaming instructions were all about `scripts/supervisor/`
+and `tests/supervisor/`, which moved to `jonhill90/agent-supervisor`
+(private) in the Phase 1.5 split (#179). The detailed evidence belongs
+there now; this section keeps only the rule itself, for any future tmux
+usage written directly in this repository (installer, hooks, sync).
 
-| call site | what the name decides | status as of 2026-08-12 |
-|---|---|---|
-| `dispatch.sh:330` → `cli.py:190` | availability (`^free-[0-9]+$`) | **migrated** (#174/PR #183, merged `27e6a67`) — the ledger answers for any lane it knows, whatever the window is called; the name is consulted only to backfill a lane the ledger has *never* seen, and never again after that |
-| `lane-done.sh:113-117`, `:139-145`, `:174-179` | completion (the rename *was* the record) | **migrated** (#194/PR #200, merged `860b5ae`) — the ledger release runs first and unconditionally, and the rename is no longer `\|\| exit 1` but a cosmetic projection. The name-match guard at `:113-117` remains, and is now the *only* gate between a fired `wait-for` channel and that release — covered by `test_lane_done.sh`'s name-mismatch section since #205 |
-| `claim.sh:141` | ownership (parses the issue number out of the name) | **unmigrated, unplanned** — outside #174's stated scope, no issue filed |
-
-agent-dotfiles#241 changed how those windows are *addressed* without changing
-any of this: `lanes.sh`, `dispatch.sh` and `lane-done.sh` now target windows by
-`#{window_id}` because indices are not stable under `renumber-windows on`. A
-window id is tmux's own value, so reading one is a **measurement** by the test
-above, not a record — the rows below are unaffected, and `lane-done.sh`'s
-line references moved only because the file grew.
-
-`loop-tick.md` instructs the renaming behaviour (L499, L501) and **remains
-operative for all three today** — renaming did not stop, it stopped being the
-record for the two migrated rows. This paragraph updates as each call site
-actually migrates in merged code, and goes once every row reads migrated.
-
-Do not read this rule as licence to stop renaming windows.
-
-**Why it is written down at all:** nobody chose this. Window names began as
-labels for a human, a script reached for the cheapest available "is this lane
-idle" signal, claims reused the string, and completion became a rename. Five
-locally-reasonable steps summing to something nobody would pick — which is why
-nobody defended it when it failed. #102 is that failure: dispatch capacity
-silently fell to zero while five lanes sat idle, and it was repaired by editing
-the "database" with `tmux rename-window`.
+Do not read this rule as licence to stop renaming windows in the code that
+still does so — that code just isn't in this repository anymore.
 
 It is also why "no tmux on Windows" costs a state store as well as a terminal.
 

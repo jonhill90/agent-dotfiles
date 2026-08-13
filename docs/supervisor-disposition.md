@@ -1,5 +1,12 @@
 # Supervisor Disposition — Two Supervisors, One Decision
 
+> **Note (Phase 1.5 split):** both supervisors analyzed below have since
+> moved to `jonhill90/agent-supervisor` (private); `scripts/supervisor/` and
+> `tests/supervisor/` no longer exist in this repository. `agent-dotfiles#16`
+> was still open when this note was added — this document remains the
+> decide-ready material for that decision, but the code and file paths it
+> cites now live in the other repository.
+
 This repository contains two supervisors. One of them runs. This document is
 the decide-ready material for `agent-dotfiles#16`: what each one actually is,
 what each has that the other does not, whether the reasons the ledger was
