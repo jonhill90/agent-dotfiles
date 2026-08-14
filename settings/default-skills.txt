@@ -18,7 +18,7 @@ tmux
 # evidence credit until it clears failed x2 baseline, passed x3 with the
 # model pinned, and a counter-scenario at x2. The 2026-08-11 cost-gate
 # exception (PR #43, issue #45) named five specific, already-existing
-# skills — it is not a standing policy, and none of the eleven below was
+# skills — it is not a standing policy, and none of the twelve below was
 # named in it.
 [benched]
 ask-a-council          # authored in jonhill90/skills#147, which does not discuss rostering; no §10.1 rule 5 evidence bar run
@@ -29,6 +29,7 @@ loop-memory            # jonhill90/skills#134: "Ship public opt-in; §10.1 rule 
 mine-transcripts       # jonhill90/skills#137: user-invoked periodic review tool, ship public opt-in
 notify                 # jonhill90/skills#146: user-invoked only per its own description; no evidence bar run
 prd                    # jonhill90/skills#129: rostering deferred to the §10.1 evidence bar
+research-the-limit     # jonhill90/skills#182: new skill, unproven in practice; ship public opt-in, roster later on evidence per §10.1 rule 5
 spec                   # jonhill90/skills#129: rostering deferred to the §10.1 evidence bar
 tdd                    # jonhill90/skills#129: rostering deferred to the §10.1 evidence bar
 verify-the-instrument  # jonhill90/skills#135: "Ship public opt-in; §10.1 rule 5 forbids rostering on arrival"
