@@ -22,6 +22,9 @@ tmux
 # named in it.
 [benched]
 ask-a-council          # authored in jonhill90/skills#147, which does not discuss rostering; no §10.1 rule 5 evidence bar run
+determine-intent       # jonhill90/skills#190: new skill, unproven in practice; ship public opt-in, roster later on evidence per §10.1 rule 5
+determine-signals      # jonhill90/skills#191: new skill, unproven in practice; ship public opt-in, roster later on evidence per §10.1 rule 5
+devils-advocate        # jonhill90/skills#192: new skill, unproven in practice; ship public opt-in, roster later on evidence per §10.1 rule 5
 distill                # jonhill90/skills#136: "a new skill still earns its roster slot rather than arriving with one"
 keep-me-honest         # jonhill90/skills#129: rostering "is a separate step ... governed by the §10.1 evidence bar"
 loop-contract          # jonhill90/skills#133: "Do not roster it on arrival"; §10.1 rule 5 unmet
