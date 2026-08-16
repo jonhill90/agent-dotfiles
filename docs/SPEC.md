@@ -1010,7 +1010,11 @@ no longer lives in this repository; it moved to `jonhill90/agent-supervisor`
 (private) in commit `2925720`. The design decision recorded below is still
 accurate as a decision and stays canonical for future citation, but "today's
 mechanism" and "in active use today" below describe the other repository's
-code now, not this one's.
+code now, not this one's. This repository is a client of it, not its host —
+`settings/mcp/servers.json`'s `"supervisor"` entry points at a checkout of
+that repo. Where this design spec itself should live after the split is a
+separate, still-open question, tracked in
+`docs/supervisor-extraction-plan-179.md` §11.
 
 ### 14.1 Today's mechanism, and it is the only one
 
@@ -1056,6 +1060,9 @@ tmux/ACP adapters this section describes moved to `jonhill90/agent-supervisor`
 (private) along with `scripts/supervisor/` and `tests/supervisor/` (commit
 `2925720`; see §14's note). The boundary decision below is still accurate and
 stays canonical, but "the core" is now that repository's code, not this one's.
+The core/adapter split described in §15.1 is unchanged by the move; only the
+core's location changed, and where this spec itself should live is the same
+open question noted in §14 (`docs/supervisor-extraction-plan-179.md` §11).
 
 ### 15.1 What the core owns vs. what an adapter owns
 
