@@ -1003,6 +1003,15 @@ Design context and the measured figures below are recorded in full in
 `jonhill90/agent-dotfiles#22`; this section is the canonical citation
 point for future issues and should be cited rather than restated.
 
+**Moved (Phase 1.5 split, #179, 2026-08-12):** the code this section
+describes — `scripts/supervisor/` (`lane-done.sh`, `dispatch.sh`, the
+ledger's `cli.py`/`core.py`/`adapter.py`, etc.) and `tests/supervisor/` —
+no longer lives in this repository; it moved to `jonhill90/agent-supervisor`
+(private) in commit `2925720`. The design decision recorded below is still
+accurate as a decision and stays canonical for future citation, but "today's
+mechanism" and "in active use today" below describe the other repository's
+code now, not this one's.
+
 ### 14.1 Today's mechanism, and it is the only one
 
 Supervisor-to-worker handoff is **cooperative tmux `wait-for`**: the
@@ -1041,6 +1050,12 @@ it to drive the loop directly is prohibited, not merely discouraged.
 Design context and the measured figures below are recorded in full in
 `jonhill90/agent-dotfiles#23`; this section is the canonical citation
 point for future issues and should be cited rather than restated.
+
+**Moved (Phase 1.5 split, #179, 2026-08-12):** the portable core and the
+tmux/ACP adapters this section describes moved to `jonhill90/agent-supervisor`
+(private) along with `scripts/supervisor/` and `tests/supervisor/` (commit
+`2925720`; see §14's note). The boundary decision below is still accurate and
+stays canonical, but "the core" is now that repository's code, not this one's.
 
 ### 15.1 What the core owns vs. what an adapter owns
 

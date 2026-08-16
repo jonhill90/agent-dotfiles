@@ -297,7 +297,11 @@ and `e33f08b`.
 Design context recovered from the Codex rollout at 2026-08-09T16:33Z and
 re-raised by Jon on 2026-08-10 (`jonhill90/agent-dotfiles#23`); the
 mechanism-side counterpart of this decision is recorded in `docs/SPEC.md`
-§15.
+§15. **Moved (Phase 1.5 split, #179, 2026-08-12):** the supervisor and lane
+code this decision governs moved to `jonhill90/agent-supervisor` (private);
+the decision itself is still accurate and stays canonical here, but the
+"core" and "lane" it refers to are that repository's code now, not this
+one's — see the note on `docs/SPEC.md` §15.
 
 | Decision | Choice |
 |---|---|
