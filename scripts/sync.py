@@ -149,6 +149,30 @@ def strip_frontmatter(text: str) -> str:
     return text
 
 
+def resolve_hook_commands(hooks_block: dict, repo: Path) -> dict:
+    """Rewrite `"command": "hooks/<script>"` entries in a Claude Code hooks
+    block to this repo's absolute path (agent-dotfiles#276). The fragment
+    checked into settings/claude/settings.json stays repo-relative and
+    portable; only the live ~/.claude/settings.json this writes needs an
+    absolute path, because Claude Code invokes hook commands from whatever
+    cwd the session is in, not from the repo root.
+
+    A command that does not start with "hooks/" is left untouched -- this
+    only owns paths into this repo's own hooks/ directory, never a hook a
+    user or another package declared.
+    """
+    resolved = json.loads(json.dumps(hooks_block))  # deep copy, JSON-safe
+    for entries in resolved.values():
+        if not isinstance(entries, list):
+            continue
+        for matcher_entry in entries:
+            for hook in matcher_entry.get("hooks", []):
+                command = hook.get("command", "")
+                if command.startswith("hooks/"):
+                    hook["command"] = str(repo / command)
+    return resolved
+
+
 def deep_merge(base: dict, patch: dict) -> dict:
     out = dict(base)
     for key, value in patch.items():
@@ -959,6 +983,14 @@ class Sync:
                 fragment["skillOverrides"] = deep_merge(
                     fragment.get("skillOverrides", {}), overrides
                 )
+            # hooks/*.sh commands in the fragment are repo-relative (checked
+            # in, portable across machines and worktrees) -- rewrite them to
+            # this install's absolute path before they reach the live
+            # settings.json, which Claude Code invokes from an arbitrary
+            # cwd (agent-dotfiles#276).
+            if "hooks" in fragment:
+                fragment = dict(fragment)
+                fragment["hooks"] = resolve_hook_commands(fragment["hooks"], self.repo)
         if fragment_name == "pi":
             # Pi reads the shared ~/.agents/skills tree too (SPEC §4.1 Tier B,
             # verified under V9). Entries are paths, not names.
@@ -1023,6 +1055,29 @@ class Sync:
             ]
             merged[key] = sorted(set(foreign) | set(wanted))
             owned[key] = sorted(set(wanted))
+
+        # "hooks" is a dict of event -> list of matcher entries, so it is
+        # invisible to the plain list_keys dance above (deep_merge would
+        # replace each event's list wholesale, deleting a hook the user or
+        # another package added by hand). Same ownership discipline as
+        # above, adapted for entries that are dicts, not hashable strings
+        # (agent-dotfiles#276): keep foreign matcher entries, drop what we
+        # previously wrote and no longer want, add what we want now.
+        if "hooks" in fragment or "hooks" in owned:
+            fragment_hooks = fragment.get("hooks", {})
+            live_hooks = live.get("hooks", {})
+            owned_hooks = owned.setdefault("hooks", {})
+            merged_hooks = dict(live_hooks)
+            for event in set(fragment_hooks) | set(owned_hooks):
+                wanted_entries = fragment_hooks.get(event, [])
+                owned_entries = owned_hooks.get(event, [])
+                foreign_entries = [
+                    entry for entry in live_hooks.get(event, [])
+                    if entry not in owned_entries
+                ]
+                merged_hooks[event] = foreign_entries + wanted_entries
+                owned_hooks[event] = wanted_entries
+            merged["hooks"] = merged_hooks
 
         live_path.parent.mkdir(parents=True, exist_ok=True)
         live_path.write_text(

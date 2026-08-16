@@ -206,8 +206,18 @@ mechanism (§4.1) are unchanged and still live here.
 - **Jon's own hooks** (validation, safety checks) live in `hooks/` as
   plain scripts; per-harness wiring is installer-owned:
   - Claude Code: wrapper merges hook entries into `~/.claude/settings.json`.
+    **Implemented 2026-08-16 (agent-dotfiles#276):** six `PreToolUse`
+    guards — destructive tmux verbs, protected tmux targets, commits to
+    `main`, `gh api` body-posting footguns, a lane closing its own issue,
+    and ad hoc writes to the live ledger — each blocking with exit 2 and a
+    named reason. `scripts/sync.py`'s `resolve_hook_commands()` rewrites the
+    fragment's repo-relative `hooks/*.sh` commands to this install's
+    absolute path before merging into the live file. See `hooks/README.md`
+    for the full enumeration this issue produced, including what stayed
+    prose and why.
   - Pi: wrapper installs a thin extension (TS module) that shells out to
-    the same `hooks/` scripts on `session_start` / `agent_end`.
+    the same `hooks/` scripts on `session_start` / `agent_end`. **Not yet
+    built** — agent-dotfiles#276 scoped to Claude Code only.
   - Codex/Copilot: no hook surface (harness baselines Finding 2) —
     enforcement rides instructions + skill descriptions; E14 tests this
     degraded mode in Phase 2.
