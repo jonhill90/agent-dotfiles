@@ -20,11 +20,15 @@ to decide, and `RECOMMENDATIONS.md` quotes the load-bearing parts of
 citations below are inherited rather than independently verified against the
 source files.
 
-## This repository's mechanism already, before any loop vocabulary
+## The estate's mechanism already, before any loop vocabulary
 
 `docs/SPEC.md` §14 and §15 are canonical and are cited, not restated, here.
-Read them before designing any loop that spans more than one Claude Code
-session:
+**Moved (Phase 1.5 split, #179, 2026-08-12):** the code implementing this
+mechanism — `scripts/supervisor/` and `tests/supervisor/` — moved to
+`jonhill90/agent-supervisor` (private); §14/§15's design decisions stay
+canonical in this repository, but the mechanism itself runs from the other
+repository now, not this one. Read them before designing any loop that spans
+more than one Claude Code session:
 
 - **§14** settles the supervisor/worker handoff: cooperative `tmux wait-for`
   is the only mechanism in active use, its four measured limits (serializes
