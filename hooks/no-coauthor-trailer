@@ -1,0 +1,26 @@
+#!/bin/sh
+# git commit-msg hook -- refuses a commit whose message carries a
+# Co-Authored-By trailer (#275). Jon has stated, 16+ times across this
+# estate, that every commit made on his behalf must have only Jon Hill as
+# author and committer -- no harness/AI co-author trailer, ever. A rule
+# enforced only by memory keeps getting broken by harness defaults that
+# append the trailer automatically; this makes the commit fail instead.
+#
+# Installed harness-agnostically via `git config --global core.hooksPath`
+# (scripts/sync.py install_git_hooks) so it fires for every repo on the
+# machine, not just the checkout it was authored in.
+#
+# Args: $1 = path to the file holding the proposed commit message
+#       (see githooks(5) commit-msg).
+
+msg_file="$1"
+
+if grep -Ei '^co-authored-by:' "$msg_file" >/dev/null 2>&1; then
+    echo "ERROR: commit message carries a Co-Authored-By trailer." >&2
+    echo "Jon Hill is the sole author and committer on every commit in" >&2
+    echo "this estate -- no harness or AI co-author trailer, ever (#275)." >&2
+    echo "Remove the trailer and commit again." >&2
+    exit 1
+fi
+
+exit 0
