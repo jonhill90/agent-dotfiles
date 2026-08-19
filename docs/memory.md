@@ -25,12 +25,16 @@ $AGENT_MEMORY_VAULT/
 - Frontmatter requires `type: user|feedback|project|reference`; title,
   description, UTC `created`/`updated`, source, and tags are recommended.
 - Consumption is permissive. Malformed or stale facts are lint findings, not
-  reasons to make the rest of the vault unreadable.
+  reasons to make the rest of the vault unreadable — `scripts/memory_lint.py`
+  is that linter: read-only, no model call, detect-and-report only (#280).
 
 The format follows the progressive-disclosure operating model of Karpathy's
-LLM wiki and the permissive bundle conventions of Google OKF v0.1. Personal
-note-taxonomy systems are intentionally excluded: agent memory and Jon's
-knowledge vault are separate systems.
+LLM wiki and the permissive bundle conventions of Google OKF. The vault's
+`agent/index.md` declares `okf_version: "0.1"` today; `docs/okf-adoption-280.md`
+carries the OKF v0.2 gap report, the additive migration design (no vault
+writes in that pass), and `scripts/memory_lint.py`, the read-only linter
+built for it (#280). Personal note-taxonomy systems are intentionally
+excluded: agent memory and Jon's knowledge vault are separate systems.
 
 ## Behavior
 
