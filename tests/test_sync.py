@@ -423,6 +423,94 @@ class SettingsMergeTests(SyncTestCase):
         self.assertEqual(json.loads(live.read_text()), {"theme": "dark"})
         self.assertNotIn(str(live), self.syncer.state["settings"])
 
+    def test_hook_commands_resolve_to_this_repos_absolute_path(self) -> None:
+        # agent-dotfiles#276: the fragment is repo-relative and portable;
+        # the live settings.json Claude Code actually invokes needs an
+        # absolute path, since a hook fires from an arbitrary session cwd.
+        fragment = self.repo / "settings" / "claude" / "settings.json"
+        fragment.write_text(json.dumps({
+            "hooks": {
+                "PreToolUse": [
+                    {"matcher": "Bash", "hooks": [
+                        {"type": "command", "command": "hooks/main-branch-guard.sh"},
+                    ]},
+                ],
+            },
+        }))
+        live = self.home / ".claude" / "settings.json"
+        live.parent.mkdir(parents=True)
+        live.write_text("{}")
+
+        self.syncer.merge_settings("claude", live)
+
+        merged = json.loads(live.read_text())
+        command = merged["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        self.assertEqual(command, str(self.repo / "hooks" / "main-branch-guard.sh"))
+
+    def test_hook_merge_preserves_a_foreign_hook_and_withdraws_a_stale_one(
+        self,
+    ) -> None:
+        # A hand-added hook the user (or another package) wrote must
+        # survive `sync apply`, exactly like the top-level list-key
+        # discipline this mirrors. And a hook this wrapper wrote in a
+        # previous run, then stopped wanting, must be withdrawn rather than
+        # accumulating forever (the same stale-`disabledSkills` defect this
+        # file already exists to prevent, one level deeper).
+        fragment = self.repo / "settings" / "claude" / "settings.json"
+        theirs = {"type": "command", "command": "/opt/their-tool/check.sh"}
+        ours_old = {"type": "command", "command": "hooks/old-guard.sh"}
+        ours_new = {"type": "command", "command": "hooks/main-branch-guard.sh"}
+
+        live = self.home / ".claude" / "settings.json"
+        live.parent.mkdir(parents=True)
+
+        # "theirs" is on disk already, never part of our fragment -- a hook
+        # the user or another package wrote by hand.
+        live.write_text(json.dumps({
+            "hooks": {"PreToolUse": [
+                {"matcher": "Bash", "hooks": [theirs]},
+            ]},
+        }))
+
+        # First run: we ship old-guard.sh.
+        fragment.write_text(json.dumps({
+            "hooks": {"PreToolUse": [
+                {"matcher": "Bash", "hooks": [ours_old]},
+            ]},
+        }))
+        self.syncer.merge_settings("claude", live)
+        after_first = json.loads(live.read_text())["hooks"]["PreToolUse"]
+        self.assertIn({"matcher": "Bash", "hooks": [theirs]}, after_first)
+        self.assertIn(
+            {"matcher": "Bash", "hooks": [
+                {"type": "command", "command": str(self.repo / "hooks" / "old-guard.sh")},
+            ]},
+            after_first,
+        )
+
+        # Second run: old-guard.sh is retired in favour of main-branch-guard.sh.
+        fragment.write_text(json.dumps({
+            "hooks": {"PreToolUse": [
+                {"matcher": "Bash", "hooks": [ours_new]},
+            ]},
+        }))
+        self.syncer.merge_settings("claude", live)
+        after_second = json.loads(live.read_text())["hooks"]["PreToolUse"]
+
+        self.assertIn({"matcher": "Bash", "hooks": [theirs]}, after_second)
+        self.assertIn(
+            {"matcher": "Bash", "hooks": [
+                {"type": "command", "command": str(self.repo / "hooks" / "main-branch-guard.sh")},
+            ]},
+            after_second,
+        )
+        self.assertNotIn(
+            {"matcher": "Bash", "hooks": [
+                {"type": "command", "command": str(self.repo / "hooks" / "old-guard.sh")},
+            ]},
+            after_second,
+        )
+
 
 class McpMergeTests(SyncTestCase):
     def write_fragment(self, servers: dict) -> None:
