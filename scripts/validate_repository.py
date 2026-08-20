@@ -86,9 +86,6 @@ TMUX_DESTRUCTIVE_PREFIXES = ("respawn-",)
 TMUX_SCAN_DIRS = ("scripts", "tests")
 TMUX_SCAN_SUFFIXES = {".py", ".sh", ".bash", ".md"}
 TMUX_ISOLATION_ASSERT = "assert_isolated_tmux"
-TMUX_EXPLICIT_SOCKET_WRAPPER_RE = re.compile(
-    r"^\s*([A-Za-z_][A-Za-z0-9_]*)\(\)\s*\{.*\s-[LS](?:\s|=|\"|')"
-)
 # `REAL_TMUX=$(command -v tmux)` / `X=\`which tmux\`` -- a variable that
 # resolves to the tmux binary itself, not the literal token `tmux`. The
 # guard must follow this or a call routed through such a variable is
@@ -738,30 +735,6 @@ def destructive_tmux_verb(
     return None
 
 
-def tmux_call_has_explicit_socket(
-    tokens: list[str], tmux_binary_vars: frozenset[str] = frozenset()
-) -> bool:
-    for index, token in enumerate(tokens):
-        if not is_tmux_token(token, tmux_binary_vars):
-            continue
-        cursor = index + 1
-        while cursor < len(tokens):
-            candidate = tokens[cursor]
-            if candidate in {"-L", "-S"}:
-                return cursor + 1 < len(tokens)
-            if candidate.startswith(("-L", "-S")) and len(candidate) > 2:
-                return True
-            if candidate in TMUX_OPTIONS_WITH_ARGUMENTS:
-                cursor += 2
-                continue
-            if not candidate.startswith("-") and not (
-                "=" in candidate and not candidate.startswith(("-", "="))
-            ):
-                break
-            cursor += 1
-    return False
-
-
 def line_tokens(line: str) -> list[str]:
     try:
         return shlex.split(line, comments=True, posix=True)
@@ -781,8 +754,24 @@ def validate_tmux_destructive_verbs(root: Path) -> list[Finding]:
     The allowed form: unset TMUX, set TMUX_TMPDIR, and run
     assert_isolated_tmux before the destructive command (originally
     modeled on tmux-isolation.sh in the supervisor tree, since moved to
-    jonhill90/agent-supervisor). The scanner intentionally lives in the
-    existing repository validator so CI executes it.
+    jonhill90/agent-supervisor). This is the same idiom
+    tmux-destructive-verb-guard.sh enforces at PreToolUse time; the two
+    used to diverge -- this scanner also accepted a bare `-L`/`-S`
+    explicit-socket flag as an alternate isolation idiom, which the
+    runtime hook never did. That second idiom shares tmux's default
+    socket *directory* with the operator's live server (only the socket
+    *name* differs), so it isolates by naming convention rather than by
+    filesystem separation: a colliding or guessed name reaches the real
+    server, and a leftover socket file survives `kill-session` and must be
+    deleted by hand rather than removed with one `rm -rf` of a scratch
+    directory. agent-dotfiles#260 measured this against a live estate:
+    both idioms kept a session off `tmux list-sessions` on the default
+    socket, but `-L` wrote its socket file into the same directory
+    (`/tmp/tmux-<uid>`) the default socket lives in, which already held
+    hundreds of leftover sockets from past test runs -- exactly the
+    estate pollution TMUX_TMPDIR's own scratch directory avoids. The
+    scanner intentionally lives in the existing repository validator so
+    CI executes it.
     """
     findings: list[Finding] = []
     for directory in TMUX_SCAN_DIRS:
@@ -814,14 +803,10 @@ def validate_tmux_destructive_verbs(root: Path) -> list[Finding]:
             saw_tmux_unset = False
             saw_tmux_tmpdir = False
             saw_isolation_assert = False
-            isolated_wrappers: set[str] = set()
             for line_number, line in enumerate(lines, start=1):
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#"):
                     continue
-                wrapper_match = TMUX_EXPLICIT_SOCKET_WRAPPER_RE.search(stripped)
-                if wrapper_match:
-                    isolated_wrappers.add(wrapper_match.group(1))
                 has_isolation = line_has_tmux_isolation(stripped)
                 if "unset TMUX" in stripped or "env -u TMUX" in stripped:
                     saw_tmux_unset = True
@@ -834,12 +819,7 @@ def validate_tmux_destructive_verbs(root: Path) -> list[Finding]:
                 )
                 tokens = line_tokens(stripped)
                 verb = destructive_tmux_verb(tokens, tmux_binary_vars_frozen)
-                if verb and not (
-                    has_isolation
-                    or isolation_ready
-                    or tmux_call_has_explicit_socket(tokens, tmux_binary_vars_frozen)
-                    or (tokens and tokens[0] in isolated_wrappers)
-                ):
+                if verb and not (has_isolation or isolation_ready):
                     findings.append(
                         Finding(
                             "error",
