@@ -194,7 +194,13 @@ class DestructiveTmuxVerbTests(unittest.TestCase):
 
         self.assertEqual(findings, [])
 
-    def test_explicit_socket_flags_allow_destructive_verb(self) -> None:
+    def test_explicit_socket_flags_alone_no_longer_allow_destructive_verb(self) -> None:
+        # agent-dotfiles#260: -L/-S used to be accepted as an alternate
+        # isolation idiom. Migrated off it -- it only isolates by socket
+        # *name* inside the same directory as the default socket (measured
+        # against a live estate), unlike TMUX_TMPDIR's own scratch
+        # directory. TMUX_TMPDIR + assert_isolated_tmux is now the only
+        # idiom this scanner (and tmux-destructive-verb-guard.sh) accepts.
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             test_file = root / "tests" / "test_socket.sh"
@@ -207,7 +213,9 @@ class DestructiveTmuxVerbTests(unittest.TestCase):
 
             findings = validator.validate_tmux_destructive_verbs(root)
 
-        self.assertEqual(findings, [])
+        self.assertEqual(len(findings), 2)
+        self.assertIn("kill-server", findings[0].message)
+        self.assertIn("kill-session", findings[1].message)
 
     def test_tmux_option_with_argument_does_not_hide_bare_destructive_verb(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -257,7 +265,10 @@ class DestructiveTmuxVerbTests(unittest.TestCase):
         self.assertTrue(findings)
         self.assertIn("kill-window", findings[0].message)
 
-    def test_explicit_socket_tmux_wrapper_allows_destructive_verb(self) -> None:
+    def test_explicit_socket_tmux_wrapper_no_longer_allows_destructive_verb(self) -> None:
+        # agent-dotfiles#260: a wrapper function routing tmux through -L
+        # used to be recognized as isolated too. Same migration as
+        # test_explicit_socket_flags_alone_no_longer_allow_destructive_verb.
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             test_file = root / "tests" / "test_wrapper.sh"
@@ -270,7 +281,8 @@ class DestructiveTmuxVerbTests(unittest.TestCase):
 
             findings = validator.validate_tmux_destructive_verbs(root)
 
-        self.assertEqual(findings, [])
+        self.assertTrue(findings)
+        self.assertIn("kill-server", findings[0].message)
 
     def test_resolved_tmux_binary_variable_does_not_escape_the_guard(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -288,7 +300,11 @@ class DestructiveTmuxVerbTests(unittest.TestCase):
         self.assertTrue(findings)
         self.assertIn("kill-server", findings[0].message)
 
-    def test_resolved_tmux_binary_variable_with_explicit_socket_is_allowed(self) -> None:
+    def test_resolved_tmux_binary_variable_with_explicit_socket_is_no_longer_allowed(
+        self,
+    ) -> None:
+        # agent-dotfiles#260: same migration, routed through a resolved
+        # $(command -v tmux) variable instead of the literal `tmux` token.
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             test_file = root / "tests" / "test_bin_socket.sh"
@@ -301,7 +317,8 @@ class DestructiveTmuxVerbTests(unittest.TestCase):
 
             findings = validator.validate_tmux_destructive_verbs(root)
 
-        self.assertEqual(findings, [])
+        self.assertTrue(findings)
+        self.assertIn("kill-server", findings[0].message)
 
     def test_which_tmux_backtick_variable_does_not_escape_the_guard(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -331,6 +348,30 @@ class DestructiveTmuxVerbTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].level, "error")
         self.assertIn("cannot decode as UTF-8", findings[0].message)
+
+    def test_bare_unisolated_new_session_is_not_caught_mutation_check(self) -> None:
+        # agent-dotfiles#260 mutation check: this scanner (and
+        # tmux-destructive-verb-guard.sh, its PreToolUse counterpart) only
+        # gate destructive verbs -- kill-server/kill-session/kill-window/
+        # respawn-*. `new-session` isn't one, so a test that leaks a
+        # session onto the operator's default socket (agent-dotfiles#411)
+        # passes both checks with zero findings. Isolation on the winning
+        # TMUX_TMPDIR idiom is enforced by convention at session-creation
+        # time, not by a mechanism that can reject a bare `tmux
+        # new-session`. This test documents that real gap; it is not a
+        # regression to "fix" by making the scanner pass.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            test_file = root / "tests" / "test_leaky.sh"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text(
+                "tmux new-session -d -s bootstrap-test-mutation\n",
+                encoding="utf-8",
+            )
+
+            findings = validator.validate_tmux_destructive_verbs(root)
+
+        self.assertEqual(findings, [])
 
 
 class FallbackFrontmatterTests(unittest.TestCase):
