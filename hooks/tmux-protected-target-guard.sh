@@ -43,7 +43,7 @@ fi
 if echo "$HOOK_COMMAND" | grep -qE '\.tmux\.conf'; then
   if echo "$HOOK_COMMAND" | grep -qE '(>>?[^&]*\.tmux\.conf|tee\b.*\.tmux\.conf|source-file\b.*\.tmux\.conf|sed\s+-i.*\.tmux\.conf|\bmv\b.*\.tmux\.conf|\bcp\b.*\.tmux\.conf)'; then
     hook_block "$RULE" \
-      "this command writes to, replaces, or reloads ~/.tmux.conf, the operator's real tmux config. Experiment on remote.hill90.com instead (NOTEBOOK-jon-directives.md standing rule 11: 'never touch his tmux config')."
+      "this command writes to, replaces, or reloads ~/.tmux.conf, the operator's real tmux config. Experiment on the operator's disposable remote sandbox instead (NOTEBOOK-jon-directives.md standing rule 11: 'never touch his tmux config')."
   fi
 fi
 
