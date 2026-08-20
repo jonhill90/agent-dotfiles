@@ -36,3 +36,25 @@ research-the-limit     # jonhill90/skills#182: new skill, unproven in practice; 
 spec                   # jonhill90/skills#129: rostering deferred to the §10.1 evidence bar
 tdd                    # jonhill90/skills#129: rostering deferred to the §10.1 evidence bar
 verify-the-instrument  # jonhill90/skills#135: "Ship public opt-in; §10.1 rule 5 forbids rostering on arrival"
+
+# --- benched 2026-08-20 -----------------------------------------------------
+# Six skills authored in jonhill90/skills that CI's orphan-check reported as
+# neither rostered nor benched. They are benched, not rostered, because §10.1
+# rule 5's evidence bar has not been run for any of them -- no failed x2
+# baseline, no passed x3 with the model pinned, no counter-scenario. Rostering
+# on usefulness alone is the credit this file exists to refuse.
+#
+# Recorded because it is the strongest argument FOR them and still is not
+# evidence: on 2026-08-19 four of these six covered decisions that were then
+# made by hand in the same session -- adopt-or-build (adopt a framework vs
+# build), mechanize (skill vs script), decide-by-variant (build variants
+# instead of offering prose options), derive-independently-then-compare
+# (re-derive before trusting a corpus claim). They were installed locally that
+# night for evaluation. Local install is not a roster decision, and this line
+# is what keeps those two facts from being conflated.
+adopt-or-build                     # jonhill90/skills#204: authored, locally installed for evaluation; §10.1 rule 5 bar not run
+decide-by-variant                  # jonhill90/skills#203: authored, locally installed for evaluation; §10.1 rule 5 bar not run
+derive-independently-then-compare  # jonhill90/skills#208: authored, locally installed for evaluation; §10.1 rule 5 bar not run
+mechanize                          # jonhill90/skills#211: authored, locally installed for evaluation; §10.1 rule 5 bar not run
+prompt-corpus                      # jonhill90/skills#215: authored, locally installed for evaluation; §10.1 rule 5 bar not run
+refuse-invented-identity           # jonhill90/skills#179: authored, locally installed for evaluation; §10.1 rule 5 bar not run
