@@ -423,3 +423,5 @@ adopt/adapt/author/reject decision (and its predecessor,
 migration).
 
 See [AGENTS.md](AGENTS.md) for contribution rules.
+
+<!-- throwaway pending-check fixture for agent-dotfiles#244 -->
