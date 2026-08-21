@@ -184,6 +184,38 @@ class MemoryLintTest(unittest.TestCase):
         report = ml.build_report(self.vault, date(2026, 1, 1), 90)
         self.assertTrue(any("okf_version" in f.message and "0.2" in f.message for f in report.findings))
 
+    # -- strict mode (agent-dotfiles#300 guard) -----------------------------
+
+    def test_unlinked_fact_is_not_an_error_by_default(self) -> None:
+        write_fact(self.facts, "orphan", "type: reference")
+        self.write_index("# Facts\n\nnothing links here\n")
+        report = ml.build_report(self.vault, date(2026, 1, 1), 90)
+        self.assertEqual(report.errors(), [])
+        self.assertEqual(ml.main(["--vault", str(self.vault)]), 0)
+
+    def test_unlinked_fact_is_a_strict_error(self) -> None:
+        write_fact(self.facts, "orphan", "type: reference")
+        self.write_index("# Facts\n\nnothing links here\n")
+        report = ml.build_report(self.vault, date(2026, 1, 1), 90)
+        self.assertTrue(any(f.check == "index" for f in report.strict_errors()))
+        self.assertEqual(ml.main(["--vault", str(self.vault), "--strict"]), 1)
+
+    def test_fully_linked_vault_passes_strict(self) -> None:
+        write_fact(self.facts, "a", "type: reference")
+        self.write_index("# Facts\n\n- [[a]]\n")
+        report = ml.build_report(self.vault, date(2026, 1, 1), 90)
+        self.assertEqual(report.strict_errors(), [])
+        self.assertEqual(ml.main(["--vault", str(self.vault), "--strict"]), 0)
+
+    def test_broken_link_target_stays_advisory_even_in_strict_mode(self) -> None:
+        # #280: a linter may FLAG a dangling [[link]], never ASSIGN one --
+        # so strict mode must not fail the build on it.
+        write_fact(self.facts, "a", "type: reference", body="See [[does-not-exist]].\n")
+        self.write_index("# Facts\n\n- [[a]]\n")
+        report = ml.build_report(self.vault, date(2026, 1, 1), 90)
+        self.assertEqual(report.strict_errors(), [])
+        self.assertEqual(ml.main(["--vault", str(self.vault), "--strict"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
