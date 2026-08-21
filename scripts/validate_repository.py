@@ -86,7 +86,7 @@ TMUX_DESTRUCTIVE_PREFIXES = ("respawn-",)
 TMUX_SCAN_DIRS = ("scripts", "tests")
 TMUX_SCAN_SUFFIXES = {".py", ".sh", ".bash", ".md"}
 TMUX_ISOLATION_ASSERT = "assert_isolated_tmux"
-TMUX_EXPLICIT_SOCKET_WRAPPER_RE = re.compile(
+TMUX_EXPLICIT_SOCKET_WRAPPER_RE = re.compile(  # conflict-test marker
     r"^\s*([A-Za-z_][A-Za-z0-9_]*)\(\)\s*\{.*\s-[LS](?:\s|=|\"|')"
 )
 # `REAL_TMUX=$(command -v tmux)` / `X=\`which tmux\`` -- a variable that
