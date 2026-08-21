@@ -1,4 +1,4 @@
-close-the-loop
+close-the-loop  # conflict-test marker
 create-skill
 dispatching-subagents
 failing-test-first
