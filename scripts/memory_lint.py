@@ -24,6 +24,13 @@ trust/lifecycle families, broken links, duplicates, possible
 contradictions, index drift -- is advisory and does not change the exit
 code. OKF §11 requires consumers not reject a bundle for any of those, and
 a linter that fails the build on a warning stops being trusted quickly.
+
+`--strict` additionally fails on an unlinked fact (agent-dotfiles#300): a
+fact with no `agent/index.md` link is unreachable by recall, which is a
+regression a guard should catch before it accumulates. Broken `[[link]]`
+targets stay advisory even in `--strict` -- resolving one needs a human
+judgement call (deleted vs. renamed vs. never written) that this read-only
+tool cannot make; per #280, a linter may FLAG, it may never ASSIGN.
 """
 
 from __future__ import annotations
@@ -98,12 +105,30 @@ class Report:
     index_lines: int = 0
     findings: list[Finding] = field(default_factory=list)
     field_counts: dict[str, int] = field(default_factory=dict)
+    unlinked_fact_count: int = 0
 
     def add(self, level: str, check: str, message: str) -> None:
         self.findings.append(Finding(level, check, message))
 
     def errors(self) -> list[Finding]:
         return [f for f in self.findings if f.level == "error"]
+
+    def strict_errors(self) -> list[Finding]:
+        """Conformance errors plus unlinked facts (agent-dotfiles#300): the
+        two defect families that must not silently drift back. Broken
+        `[[link]]` targets are excluded on purpose -- a linter may FLAG a
+        dangling link, it may never ASSIGN one (#280), so it cannot gate a
+        build red without a human's judgement call on each one."""
+        strict = list(self.errors())
+        if self.unlinked_fact_count:
+            strict.append(
+                Finding(
+                    "error",
+                    "index",
+                    f"{self.unlinked_fact_count}/{self.fact_count} facts have no corresponding index.md link (strict mode)",
+                )
+            )
+        return strict
 
 
 def read_concept(path: Path) -> Concept:
@@ -384,6 +409,7 @@ def check_index(vault: Path, facts: list[Concept], report: Report) -> None:
     fact_slugs = {c.slug for c in facts}
     missing_from_index = fact_slugs - linked_slugs
     orphaned_in_index = linked_slugs - fact_slugs
+    report.unlinked_fact_count = len(missing_from_index)
     report.add(
         "warn" if missing_from_index else "info",
         "index",
@@ -449,6 +475,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--vault", type=Path, default=None, help="Vault root (default: $AGENT_MEMORY_VAULT)")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of text")
     parser.add_argument("--stale-verified-days", type=int, default=90, help="Flag verified[] entries older than N days")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Also fail on an unlinked fact (agent-dotfiles#300), not just OKF section 11 conformance",
+    )
     args = parser.parse_args(argv)
 
     vault = args.vault or (Path(os.environ["AGENT_MEMORY_VAULT"]) if os.environ.get("AGENT_MEMORY_VAULT") else None)
@@ -462,7 +493,7 @@ def main(argv: list[str] | None = None) -> int:
     today = datetime.now(timezone.utc).date()
     report = build_report(vault, today, args.stale_verified_days)
     print(render_json(report) if args.json else render_text(report))
-    return 1 if report.errors() else 0
+    return 1 if (report.strict_errors() if args.strict else report.errors()) else 0
 
 
 if __name__ == "__main__":
