@@ -58,3 +58,13 @@ derive-independently-then-compare  # jonhill90/skills#208: authored, locally ins
 mechanize                          # jonhill90/skills#211: authored, locally installed for evaluation; §10.1 rule 5 bar not run
 prompt-corpus                      # jonhill90/skills#215: authored, locally installed for evaluation; §10.1 rule 5 bar not run
 refuse-invented-identity           # jonhill90/skills#179: authored, locally installed for evaluation; §10.1 rule 5 bar not run
+
+# --- benched 2026-08-20 (agent-dotfiles#287) --------------------------------
+# Four skills merged in jonhill90/skills#220 and #221, hours before #287 was
+# filed against a stale local checkout. research-the-limit (the skill #287
+# actually names) was already benched by #269 on 2026-08-14 and needed no
+# change; these four are the real orphan-check gap as of this fix.
+durable-fact-before-label          # jonhill90/skills#221: new skill, unproven in practice; ship public opt-in, roster later on evidence per §10.1 rule 5
+plan-parallel-execution            # jonhill90/skills#220: new skill, unproven in practice; ship public opt-in, roster later on evidence per §10.1 rule 5
+test-in-the-consumer-context       # jonhill90/skills#220: new skill, unproven in practice; ship public opt-in, roster later on evidence per §10.1 rule 5
+wire-it-when-you-write-it          # jonhill90/skills#220: new skill, unproven in practice; ship public opt-in, roster later on evidence per §10.1 rule 5
