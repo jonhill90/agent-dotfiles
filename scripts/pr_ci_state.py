@@ -33,7 +33,25 @@ The five states (issue #244):
   4. check suite(s) exist, failed, current shape  -> actionable: read the log
   5. check suite(s) exist, failed, stale shape    -> actionable: rebase
      (a failed run's name is absent from the base branch's own latest
-     check runs — the job it names no longer exists on current main)
+     check runs — the job it names no longer exists on current main; skipped,
+     not reported stale, if the base branch's head commit has no check-runs
+     of its own to compare against — an empty baseline is "unknown", not
+     "no match")
+
+Case 5 is implemented against the base branch's *rendered* check-run names
+(ground truth from a real GitHub response), not by statically parsing
+workflow YAML — sharded/matrix job names like `shell-suites (shard 0..4)`
+come out already rendered, so no name-guessing heuristic is needed. It
+depends on the base branch's head commit having its own check-runs (true
+here: `validate.yml` triggers on `push: branches: [main]`); a repo whose
+CI only triggers on `pull_request` would have no baseline to compare
+against, and this script reports that as case-4 (failed, shape unverified)
+rather than guessing.
+
+A completed run's conclusion is treated as failed unless it is explicitly
+`success`, `skipped`, or `neutral` — a fail-closed allowlist, not a
+fail-open denylist of known-bad conclusions, so a GitHub conclusion value
+not on any list here (e.g. `stale`) is never silently read as passing.
 
 Read-only. Never pushes, rebases, or comments — it reports, the caller acts.
 """
@@ -92,9 +110,12 @@ def gh_json(args: list[str]):
     if err is not None:
         return None, err
     try:
-        return json.loads(out), None
+        value = json.loads(out)
     except json.JSONDecodeError as exc:
         return None, f"gh {' '.join(args)} returned unparseable JSON: {exc}"
+    if value is None:
+        return None, f"gh {' '.join(args)} returned null"
+    return value, None
 
 
 def resolve_repo(repo: str | None) -> tuple[str | None, str | None]:
@@ -131,6 +152,7 @@ def evaluate(pr: str, repo: str | None) -> Verdict:
 
     head_sha = pr_data["headRefOid"]
     mergeable = pr_data["mergeable"]
+    merge_state = pr_data["mergeStateStatus"]
     base_ref = pr_data["baseRefName"]
 
     suites, err = gh_json(
@@ -139,10 +161,19 @@ def evaluate(pr: str, repo: str | None) -> Verdict:
     if err is not None:
         return unmeasured(f"could not read check-suites for {head_sha}: {err}", repo=resolved_repo)
 
-    detail = {"repo": resolved_repo, "pr": pr, "head_sha": head_sha, "mergeable": mergeable}
+    detail = {
+        "repo": resolved_repo,
+        "pr": pr,
+        "head_sha": head_sha,
+        "mergeable": mergeable,
+        "mergeStateStatus": merge_state,
+    }
 
     if len(suites) == 0:
-        if mergeable == "CONFLICTING":
+        # mergeStateStatus DIRTY is the same fact GitHub derives mergeable
+        # CONFLICTING from; checking both catches the rare tick where they
+        # have not been reported in sync.
+        if mergeable == "CONFLICTING" or merge_state == "DIRTY":
             return Verdict(
                 EXIT_ACTIONABLE,
                 "case-1-conflicting-no-suite",
@@ -197,7 +228,13 @@ def evaluate(pr: str, repo: str | None) -> Verdict:
         if base_err is None:
             base_names = {r["name"] for r in base_runs}
             failed_names = {r["name"] for r in failed}
-            if failed_names and failed_names.isdisjoint(base_names):
+            # An empty base_names is "no baseline", not "nothing matches" —
+            # isdisjoint() is trivially true against an empty set, which
+            # would otherwise flag every genuine failure as stale whenever
+            # the base branch's head commit has no recorded check-runs of
+            # its own (e.g. push-to-main triggers are wired but haven't
+            # fired recently).
+            if base_names and failed_names and failed_names.isdisjoint(base_names):
                 detail["base_sha"] = base_sha
                 detail["base_check_run_names"] = sorted(base_names)
                 return Verdict(

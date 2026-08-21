@@ -244,6 +244,68 @@ class CaseTests(unittest.TestCase):
         self.assertEqual(verdict.case, "case-5-stale-job-shape")
         self.assertIn("old main", verdict.message)
 
+    def test_empty_base_baseline_is_not_treated_as_a_stale_match(self) -> None:
+        """A base branch with zero check-runs of its own is 'no baseline',
+        not 'nothing matches' — isdisjoint() against an empty set is
+        trivially true, which would otherwise flag every real failure on a
+        quiet base branch as stale."""
+        responses = [
+            REPO_VIEW,
+            (
+                "pr view",
+                _completed(
+                    json.dumps(
+                        {
+                            "headRefOid": "abc123",
+                            "mergeable": "MERGEABLE",
+                            "mergeStateStatus": "CLEAN",
+                            "baseRefName": "main",
+                        }
+                    )
+                ),
+            ),
+            ("check-suites", _completed(json.dumps([{"id": 1}]))),
+            (
+                "commits/abc123/check-runs",
+                _completed(
+                    json.dumps(
+                        [{"name": "repository", "status": "completed", "conclusion": "failure"}]
+                    )
+                ),
+            ),
+            ("commits/mainsha/check-runs", _completed(json.dumps([]))),
+            ("commits/main", _completed(json.dumps({"sha": "mainsha"}))),
+        ]
+        with patch("subprocess.run", side_effect=_run_seq(responses)):
+            verdict = pr_ci_state.evaluate("50", None)
+        self.assertEqual(verdict.exit_code, pr_ci_state.EXIT_ACTIONABLE)
+        self.assertEqual(verdict.case, "case-4-failed")
+
+    def test_dirty_merge_state_alone_triggers_case_1_without_conflicting(self) -> None:
+        """mergeStateStatus can report DIRTY a tick before mergeable catches
+        up to CONFLICTING; either signal alone is enough."""
+        responses = [
+            REPO_VIEW,
+            (
+                "pr view",
+                _completed(
+                    json.dumps(
+                        {
+                            "headRefOid": "abc123",
+                            "mergeable": "UNKNOWN",
+                            "mergeStateStatus": "DIRTY",
+                            "baseRefName": "main",
+                        }
+                    )
+                ),
+            ),
+            ("check-suites", _completed(json.dumps([]))),
+        ]
+        with patch("subprocess.run", side_effect=_run_seq(responses)):
+            verdict = pr_ci_state.evaluate("50", None)
+        self.assertEqual(verdict.exit_code, pr_ci_state.EXIT_ACTIONABLE)
+        self.assertEqual(verdict.case, "case-1-conflicting-no-suite")
+
     def test_all_passed_is_clean(self) -> None:
         responses = [
             REPO_VIEW,
