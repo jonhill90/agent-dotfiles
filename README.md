@@ -423,3 +423,4 @@ adopt/adapt/author/reject decision (and its predecessor,
 migration).
 
 See [AGENTS.md](AGENTS.md) for contribution rules.
+conflict-test marker 1787276501
