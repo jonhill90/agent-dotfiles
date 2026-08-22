@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-08-12T10:09:23.275648+00:00'
+generated_at: '2026-08-16T01:19:24.827337+00:00'
 apm_version: 0.24.1
 dependencies:
 - repo_url: jonhill90/skills
@@ -17,7 +17,7 @@ dependencies:
   host: github.com
   resolved_commit: 6c19c64dddd0681cb36f7f7ae5bde7ae8dcbdec7
   resolved_ref: 6c19c64dddd0681cb36f7f7ae5bde7ae8dcbdec7
-  version: 0.0.0
+  version: unknown
   package_type: skill_bundle
   content_hash: sha256:411bf1cfc72b536f13ef207375cbed9aeabbcf52e424591d3401a3236efe3985
   skill_subset:
