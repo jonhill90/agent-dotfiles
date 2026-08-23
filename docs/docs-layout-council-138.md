@@ -112,10 +112,14 @@ other file's own status line/banner:
 
 - `SPEC.md` — carries a dated status line, updated 2026-07-29, not stale.
 - `provenance-manifest.md`, `migration-audit.md` — both explicitly historical
-  by design (audit/ledger documents); `migration-audit.md` states its own
-  successor (`provenance-manifest.md`) in its first paragraph — this *is*
-  the banner pattern the issue describes from Hill90's `docs/product/`,
-  just spelled as prose instead of a blockquote.
+  by design (audit/ledger documents). **Corrected 2026-08-23:** the pointer
+  runs the opposite direction from what was stated here —
+  `provenance-manifest.md` names itself as successor to `migration-audit.md`
+  in its own first line, and `migration-audit.md`'s closing line only
+  generically points forward to "a successor provenance manifest" without
+  naming it. This *is* still the banner pattern the issue describes from
+  Hill90's `docs/product/`, just spelled as prose instead of a blockquote —
+  only the attribution of which document names which was wrong.
 - No file in any of the four repos' `docs/` was found undated, unbannered,
   and stale. `agent-evals/docs/evals.md` is a single, current file.
 
@@ -162,7 +166,9 @@ The batch also surfaced a second, opposite reading of pure document count
 that deserves to be on record, not buried under the majority.
 
 **The split, tallied by prompt variant** (12 arms; "subdivide" = would give
-`agent-dotfiles`'s 12 docs more than one directory *now*):
+`agent-dotfiles`'s 12 docs more than one directory *now*, as measured
+2026-08-11 — **corrected 2026-08-23:** 15 flat docs today; re-count before
+relying on this number):
 
 | Variant | Claude | Codex | Copilot | Net |
 |---|---|---|---|---|
@@ -243,7 +249,8 @@ still not unanimous even in the best-matched cell).
 **Answer to "at what size does it change":** the batch's own numbers put a
 soft floor at 4–8 heterogeneous documents for the *content-only, no-real-
 identity* reading (blind arms: Claude "5-6," Codex "6 to 8," Copilot "4-5" —
-already below `agent-dotfiles`' current 12). That reading does not automatically
+already below `agent-dotfiles`'s 12-doc count as measured 2026-08-11 — now
+15, corrected 2026-08-23). That reading does not automatically
 transfer to the real, named repo, precisely because name-visibility is the
 variable that best explains why the other three groups diverge from it. The
 honest statement is: *if* `agent-dotfiles` were evaluated as an anonymous
@@ -364,7 +371,8 @@ and repeated it back.
   2026-07-13, verified by direct inspection of the commit rather than
   asserted by any arm (Q4).
 - **Revisit, don't schedule.** The trigger for `agent-dotfiles` is a new
-  document class that doesn't fit the current 12 (see `migration-audit.md`
+  document class that doesn't fit the 12-doc set measured 2026-08-11 (now
+  15, corrected 2026-08-23 — re-count before relying on this; see `migration-audit.md`
   / `agent-engineering-lineage.md` as the closest existing candidates for
   eventual relocation, §1) — not a raw file count. When that trigger fires,
   re-run a blind-style arm against the file set at that time rather than

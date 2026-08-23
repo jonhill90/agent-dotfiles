@@ -280,8 +280,12 @@ Design inputs: Karpathy's llm-wiki gist and Google OKF v0.1. INMPARA
 and the Second Brain were reviewed for boundary-setting only — owner
 decision: they are personal note-taking systems, not harness inputs,
 and contribute nothing to the memory schema. The maintained contract is
-[memory.md](memory.md); detailed analysis remains in git history at `a4de1ac`
-and `e33f08b`.
+[memory.md](memory.md). **Corrected 2026-08-23:** this previously cited
+detailed analysis as living in git history at `a4de1ac` and `e33f08b`;
+neither SHA resolves in this repository's current history (checked against
+a full fetch from `origin`, all refs) — the underlying research is not
+recoverable from this repo as cited. `memory.md` is the maintained record
+of the conclusions.
 
 | Decision | Choice |
 |---|---|

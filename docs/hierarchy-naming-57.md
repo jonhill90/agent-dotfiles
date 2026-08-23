@@ -1,5 +1,17 @@
 # Agent Hierarchy Naming — Grounded in Loop Research (`agent-dotfiles#57`)
 
+**Note (added 2026-08-23):** Part 2's comparison table and Part 3 cite
+`scripts/supervisor/` files (`claim.sh`, `watchdog.sh`, `lanes.sh`,
+`notify.sh`, `dispatch.sh`, `adapter.py`) and `loop-tick.md` as living in
+this repository. As of commit `2925720` (#265, 2026-08-12 — one day after
+this document was written), that code moved to `jonhill90/agent-supervisor`
+(private) — confirmed by `git ls-files scripts/supervisor tests/supervisor`
+returning no files here. The comparisons and file:line citations below
+describe that repository's code as it stood on 2026-08-11, not this one's
+current state; the design conclusions and naming recommendation are
+unaffected. This mirrors the notes already carried by `docs/SPEC.md` §14-15
+and `docs/supervisor-extraction-plan-179.md` for the same split.
+
 Jon's redirect on #57: *"Research this. What is best practice for loops. Then
 sanity-check it."* The naming question is downstream of that research, not
 the other way round — this document does the research first, checks it

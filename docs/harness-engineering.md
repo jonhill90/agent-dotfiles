@@ -1,9 +1,15 @@
 # Harness Engineering
 
 This document records the current deployment model and the verified harness
-boundaries. The dated investigation that produced these decisions remains in
-git history, principally commits `106e69c`, `c089a95`, `8a222ce`, `065bc9d`,
-and `dff03d0`.
+boundaries. **Corrected 2026-08-23:** this previously cited the dated
+investigation that produced these decisions as remaining in git history at
+commits `106e69c`, `c089a95`, `8a222ce`, `065bc9d`, and `dff03d0` — none of
+these five SHAs resolves in this repository's current history (checked
+against a full fetch from `origin`, all refs; same defect independently
+found in `docs/PRD.md`, `docs/SPEC.md`, `docs/memory.md`, and
+`docs/provenance-manifest.md`). The underlying research is not recoverable
+from this repo as cited; this document's own content is the maintained
+record of the conclusions.
 
 ## Deployment model
 

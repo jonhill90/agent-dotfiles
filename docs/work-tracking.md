@@ -81,16 +81,18 @@ reliably preserve them.
 
 Work was tracked in Linear (workspace `jonhill90`, team `AI`) for about a
 day. Commit messages and PR bodies from jonhill90/skills#44–jonhill90/skills#50 carry `Refs AI-259`
-style references. An `AI-` autolink is registered on the repository so
-those keep resolving:
+style references. **Corrected 2026-08-23:** this section previously stated
+an `AI-` autolink is registered on the repository. Running the verify
+command shows none is currently registered:
 
 ```bash
-gh api repos/jonhill90/agent-dotfiles/autolinks     # verify
+$ gh api repos/jonhill90/agent-dotfiles/autolinks     # verify
+[]
 ```
 
-Keep it. GitHub autolinks are prefix-triggered, so `AI-` and `#` cannot
-collide, and removing it would degrade seven PR bodies to plain text for
-no gain. The Linear issues are closed, not deleted.
+So the historical `AI-259`-style references in jonhill90/skills#44–#50 will
+render as plain text, not links, until one is (re-)registered. The Linear
+issues themselves are closed, not deleted.
 
 | Linear | GitHub | Subject |
 |---|---|---|
