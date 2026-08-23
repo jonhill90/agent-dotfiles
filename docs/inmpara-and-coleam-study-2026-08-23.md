@@ -71,10 +71,14 @@ wikilink counts per file (full table generated, range shown):
 
 **Coverage of the Notes folder is partial, measured, not assumed.** Across
 all 27 MOCs there are 457 total wikilinks (327 unique targets); 130 of those
-457 are raw numeric-ID links (e.g. `[[202506222021]]`) pointing at Notes
-files, 114 of them unique. Against 295 numeric-ID Notes files that exist,
-114/295 = **39% are linked from any MOC**; the remaining 61% are reachable
-only by folder browse or full-text search.
+457 are raw numeric-ID links (e.g. `[[202506222021]]`), 114 of them unique.
+Resolving each of those 114 IDs against the vault (not assuming they all
+land in Notes): 111 are `01 - Notes` files (Daily/Atomic/Research), 3
+resolve instead to `00 - Inbox/00t - Thoughts` — outside the 295-file Notes
+denominator this figure is defined against, so they don't count toward it.
+Against 295 numeric-ID Notes files that exist, 111/295 = **38% are linked
+from any MOC**; the remaining 62% are reachable only by folder browse or
+full-text search.
 
 **Staleness, measured against each MOC's own `updated:` frontmatter field:**
 `Azure.md` → `2025-06-21`, `AI.md` → `2025-06-21`, `Governance.md` →
@@ -101,7 +105,7 @@ it is not invisible to an agent.
 `moc-template.md`, `note-template.md`, `project-template.md`,
 `process-clipping.md`, `process-research.md`), 2 CSS-class reference notes,
 and one long guide, `Working with Jon's Second Brain - Complete Claude
-Guide.md` (306 lines) — a hand-written operating manual for an AI assistant
+Guide.md` (370 lines, `wc -l` on the file directly) — a hand-written operating manual for an AI assistant
 working in the vault (folder paths, naming rules, frontmatter shapes,
 tagging philosophy).
 
@@ -280,7 +284,7 @@ main correction from the first draft:
   to roster it once it clears the §10.1 evidence bar — not to write it.
 - **Coordinated N-way worktree merge with one integration branch** (#4) —
   multi-lane coordination logic is exactly what this repo already
-  extracted, on purpose, into `jonhill90/agent-supervisor` (#179); building
+  extracted, on purpose, into `jonhill90/agent-supervisor` (agent-dotfiles#179); building
   a new version of it back into agent-dotfiles risks re-growing the
   coupling that split was written to remove.
 - **A reactive entry point and a fixed primitive-palette classification**
@@ -355,10 +359,10 @@ written rules, not by the opposing case's opinion:**
 - The N-way `worktree-create`/`worktree-merge` pattern (#4 in the original
   numbering) is coordination logic across multiple parallel lanes — the
   same shape of problem this repo already extracted, on purpose, as
-  `jonhill90/agent-supervisor` (#179, "the tmux-lane supervisor core
+  `jonhill90/agent-supervisor` (agent-dotfiles#179, "the tmux-lane supervisor core
   previously lived at `scripts/supervisor/`… it moved"). Building a new
   multi-worktree orchestration mechanism back into agent-dotfiles risks
-  re-growing the coupling #179 was written to remove.
+  re-growing the coupling agent-dotfiles#179 was written to remove.
 - Only the underlying **mechanisms** survive the objection — state-vs-event
   (already held, no gap), and the *idea* that ablation/drift-check/reactive-
   scan are worth having *somewhere* in the estate. What does not survive is
