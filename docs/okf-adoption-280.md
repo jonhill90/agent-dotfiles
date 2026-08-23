@@ -10,6 +10,35 @@ is exactly the kind of signal this skill exists to recheck. Measured
 2026-08-16: 8,648 stars, `Apache-2.0`, repo `pushed_at` 2026-08-15,
 `updated_at` 2026-08-16 (`gh api repos/GoogleCloudPlatform/knowledge-catalog`).
 
+**Citation correction (2026-08-23, agent-dotfiles#312 step 1):** the
+citation above is now stale. Upstream followed the spec out to its own
+repository, `GoogleCloudPlatform/open-knowledge-format` (`SPEC.md` at
+repo root, not `okf/SPEC.md`) — `knowledge-catalog`'s own copy is a
+"frozen, unmaintained snapshot" per `lorsabyan/okf-skill`'s README, which
+tracks the move. This does not invalidate this document's own gap
+findings below: `SPEC.md` is byte-identical between the two repos as of
+#312's check (`diff` against `knowledge-catalog@c06e3ee`, zero lines of
+difference). But real change has landed at the new address since this
+document's own 2026-08-16 read — see the note immediately below — so a
+future reader following this citation forward should use
+`GoogleCloudPlatform/open-knowledge-format` (Apache-2.0, measured
+2026-08-23: 26 stars, `pushed_at` 2026-08-21), not the frozen mirror.
+
+**What changed at the new address since this document's 2026-08-16
+read, not yet reflected anywhere above:** an ISO-8601-offset tightening
+landed 2026-08-20/21 (`open-knowledge-format` commits `3dc3029`/`6a2845d`/
+`0b87c52`/`ad30107`) — every timestamp field now requires an explicit
+UTC offset, not a bare date. This shipped with **no `okf_version` bump**
+to signal it; `okf-skill`'s own `CHANGELOG.md` documents getting caught
+by exactly this (a bare-`YYYY-MM-DD` validator check produced 16 spurious
+warnings against the new form). Not yet load-bearing here — this vault's
+own `stale_after`/`sources[].last_modified` coverage is still 0/74 (per
+`docs/okf-0.2-study-2026-08-23.md` §5) — but if either field is ever
+populated, write a full ISO 8601 datetime with an offset, not a bare
+date, per this tightening. `log.md`'s own `## YYYY-MM-DD` heading form is
+a different, unaffected convention (the spec's §9 is explicit that stays
+bare-date). Full detail: `docs/okf-0.2-study-2026-08-23.md` §2.
+
 ## `determine-intent` / `determine-signals`, used and reported on
 
 **`determine-intent`.** Literal ask: research OKF v0.2, design an additive
