@@ -1,17 +1,23 @@
 # hooks/
 
-Canonical, harness-agnostic guard scripts (SPEC §3.3). Each is a Claude Code
-`PreToolUse` hook: it reads the attempted tool call as JSON on stdin and
-decides with an exit code — `0` allows, `2` blocks and feeds stderr back to
-the model as the reason. No model judgment is involved in the decision
-itself; the model only reads the refusal.
+Canonical, harness-agnostic guard scripts (SPEC §3.3). Each of the six guard
+scripts below (rows 1-6 in the table) is a Claude Code `PreToolUse` hook: it
+reads the attempted tool call as JSON on stdin and decides with an exit code
+— `0` allows, `2` blocks and feeds stderr back to the model as the reason. No
+model judgment is involved in the decision itself; the model only reads the
+refusal. This directory also holds `lib/common.sh`, the shared plumbing the
+guards source, and `no-coauthor-trailer`, a separate git `commit-msg` hook —
+not a `PreToolUse` hook.
 
 Wiring: `settings/claude/settings.json` declares each hook with a
 repo-relative `hooks/<script>.sh` command; `scripts/sync.py`'s
 `resolve_hook_commands()` rewrites that to this install's absolute path
 before writing `~/.claude/settings.json` (a hook fires from an arbitrary
 session cwd, so a relative path there would resolve against the wrong
-directory). Pi gets the same scripts via a thin extension per SPEC §3.3;
+directory). **Corrected 2026-08-23:** Pi does not yet get these guards —
+SPEC §3.3 scopes a thin TS extension that would shell out to the same
+`hooks/` scripts, but agent-dotfiles#276 built Claude Code wiring only; the
+Pi extension is not yet built (was previously stated as already delivered).
 Codex/Copilot have no hook surface and rely on instructions instead.
 
 ## Origin — agent-dotfiles#276

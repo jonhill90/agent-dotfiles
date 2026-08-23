@@ -2,8 +2,12 @@
 
 Agent memory is a personal, cross-harness Obsidian vault accessed through
 ordinary file operations. The dotfiles install conventions and validate the
-path; they never sync memory content. Detailed design history remains in
-commits `106e69c`, `a4de1ac`, `e33f08b`, and `b752300`.
+path; they never sync memory content. **Corrected 2026-08-23:** this
+previously cited detailed design history as living in commits `106e69c`,
+`a4de1ac`, `e33f08b`, and `b752300` — none of these four SHAs resolves in
+this repository's current history (checked against a full fetch from
+`origin`, all refs). The underlying research is not recoverable from this
+repo as cited.
 
 ## Contract
 

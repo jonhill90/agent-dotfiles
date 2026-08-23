@@ -67,6 +67,23 @@ npx skills add . --list                    # expect: 12 skills enumerated
 ```
 
 Re-run at `84db88b` (PRs jonhill90/skills#113 and jonhill90/skills#114 merged): all five produce exactly that.
+
+**Corrected 2026-08-23 — these expected values are stale, re-measure at
+current HEAD before trusting them:**
+- `validate_repository.py` no longer counts skills at all: agent-dotfiles#9
+  (2026-08-10) removed the local `skills/` directory in favor of pinned
+  `jonhill90/skills`/`jonhill90/skills-private` dependencies in `apm.yml`,
+  so the validator now prints `Validated 0 skill(s): 0 error(s), 2
+  warning(s)` (the two warnings say the orphan/description-token checks
+  "cannot run: no local skills/") — not "12 skills, 0 errors, 0 warnings".
+- `python3 -m unittest discover -s tests` currently runs **413 tests, OK**,
+  not 200 — the count has grown substantially since this table was last
+  measured.
+- `npx skills add . --list` has no local `skills/` directory to enumerate
+  from either, for the same #9 reason.
+- `sync.py status`/`doctor`'s pass/fail counts describe deployed machine
+  state under `$HOME`, which this document elsewhere correctly warns moves
+  without a commit — not re-pinned here, just flagged as volatile.
 An independent reviewer confirmed the same five at the previous commit with 198
 tests; jonhill90/skills#114 added two. If your count is 200 and rising, that is expected.
 
@@ -183,14 +200,25 @@ disk-based script cannot see; `measure_e15.py` now prints a `NOT COUNTED ABOVE`
 section naming its blind spots. Issue #5 carries the unresolved half: what §6
 is actually for.
 
-## Open work — 6 issues, none blocking
+## Open work — as measured 2026-08-23, 14 open issues, one plausibly blocking
+
+**Corrected 2026-08-23:** this table previously said "6 issues, none
+blocking" and listed #5 as an open milestone. `gh issue list --repo
+jonhill90/agent-dotfiles --state open` currently returns 14 open issues:
+#1, #2, #3, #4, #6, #16, #44, #52, #57, #139, #266, #272, #281, agent-dotfiles#302 — and
+#5 is closed (2026-08-11), not open. Notably agent-dotfiles#302 ("An unclaimed git stash
+in the shared agent-dotfiles checkout blocks EVERY new lane in this
+repo") reads as actively blocking, unlike the rest of this list. The table
+below is not re-derived in full here (that needs its own pass reading each
+issue); treat the "none blocking" framing as stale and re-check agent-dotfiles#302
+specifically before relying on it.
 
 | # | State | Honest read |
 |---|---|---|
-| #5 | milestone | Half done. `measure_e15.py` now names its blind spots; its second "Done when" bullet is unmet — `validate_repository.py:302` still swallows unresolved names. Deciding what §6 *means* is a judgement call, not a task. |
 | jonhill90/skills#96 | closed 2026-08-03 | `name-only` is real — one of four `skillOverrides` values — and unbuilt. It optimises ~490 tokens while ~1,758 sit untouched behind `disableBundledSkills`. |
 | #6 | parked | Rejected design for managing foreign skills. At least one of its five rejection arguments is undercut by this repo's own later finding that `npx skills use` does not install. Revisit trigger: a foreign skill actually landing. |
 | jonhill90/skills#52–jonhill90/skills#55 | parked | Memory-design questions behind explicit triggers. Leave them. |
+| agent-dotfiles#302 | open, not triaged here | Titled as actively blocking every new lane in the shared checkout — needs its own read, not covered by this handoff. |
 
 **#5 and #6 were `jonhill90/skills#95` and `#97` until 2026-08-09**, when they
 were transferred here. GitHub redirects the old numbers, so

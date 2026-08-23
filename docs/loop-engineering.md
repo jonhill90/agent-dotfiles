@@ -331,10 +331,16 @@ Receipts are written **by the wrapper, not the agent**, so they exist even
 when a run crashes or a cap fires mid-turn — this is the operational form of
 this repo's own "leave a handoff a cold session could resume from"
 instruction, and the corpus explicitly says so. A known-failures file that
-grows to 20–50 real cases is an eval substrate in a different coat; this
-repository already has one (`scripts/eval_arm.py`, `scripts/eval_score.py`,
-`tests/evals/`) that a loop's known-failures file should feed rather than
-duplicate.
+grows to 20–50 real cases is an eval substrate in a different coat.
+**Corrected 2026-08-23:** this previously said the substrate
+(`scripts/eval_arm.py`, `scripts/eval_score.py`, `tests/evals/`) lives in
+this repository; none of those paths exist here (`find . -iname
+"eval_arm*" -o -iname "eval_score*"` and a search for an `evals/`
+directory both return nothing). Commit `ec077c0` ("feat: extract
+behavioral evaluations into private agent-evals", 2026-08-09) moved them
+to the private `jonhill90/agent-evals` repository, six days before this
+document's own last substantive edit. A loop's known-failures file should
+feed that substrate rather than duplicate it.
 
 The circuit-breaker rule belongs to run memory even though the cap itself is
 a contract field: before each retry, check the ledger, and if the same
@@ -370,10 +376,14 @@ them:
   authorizes under the 2026-08-10 merge-autonomy grant, and what makes
   that safe are three separate things, not restated here.
 
-No skill implementing `loop-contract` or `loop-memory` exists in this
-repository yet — the corpus's specs for both are implementation-ready but
-unimplemented, and this document does not implement them; it records the
-decision surface a future skill or loop design has to answer.
+**Corrected 2026-08-23:** this previously said no skill implementing
+`loop-contract` or `loop-memory` existed yet. Both now exist, authored in
+`jonhill90/skills` on 2026-08-11 (jonhill90/skills#133, #134) and listed
+`[benched]` in this repository's `settings/default-skills.txt` —
+deliberately withheld from the default roster pending the §10.1 rule 5
+evidence bar, but installable via `npx skills add`. This document no
+longer records a decision surface for an unimplemented skill; what remains
+open is what evidence would clear the roster bar for each.
 
 ## Quick reference — designing a new loop here
 

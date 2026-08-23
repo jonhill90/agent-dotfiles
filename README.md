@@ -337,7 +337,7 @@ loads when the agent touches that package, which suits a monorepo.
 ## Core Workflow Skills
 
 The default roster is `settings/default-skills.txt` — currently a flat list
-of eight names. The wrapper *can* scope it per harness, and enforces that on
+of thirteen names. The wrapper *can* scope it per harness, and enforces that on
 all four, but nothing uses the mechanism today. Where the roster scopes a skill away from a harness,
 the wrapper writes that exclusion into that harness's own settings, so the
 roster is enforced rather than merely declared. All four harnesses are
@@ -355,22 +355,28 @@ covered: `skillOverrides` on Claude Code, `disabledSkills` on Copilot, a
 | `obsidian` | Notes, vaults and daily notes via the Obsidian CLI | all four |
 | `safe-deletion` | Verify contents match their described purpose before deleting | all four |
 | `tmux` | Operate persistent interactive terminal sessions safely | all four |
+| `close-the-loop` | Confirm you have everything needed to finish a change before starting it | all four |
+| `dispatching-subagents` | Decide whether to delegate work to subagents, set isolation, verify output | all four |
+| `primer` | Orient in an unfamiliar codebase before starting work | all four |
+| `sanity-check` | Check reasoning with a second, independently-briefed reviewer | all four |
+| `supervised-lane-loop` | Run a long-lived supervisor loop over worker agent lanes | all four |
 
 The per-harness mechanism is built and enforced on all four harnesses, but
-**nothing currently uses it** — every harness resolves the same eight
-skills. `sanity-check` was its one live instance until 2026-07-29, when it
-moved to public opt-in for failing §10.1 rule 5: no skill-rung run was ever
-measured, and its counter-scenario is explicitly invalid.
+**nothing currently uses it** — every harness resolves the same thirteen
+skills. `sanity-check` was excluded from the default package until
+2026-08-11, when commit `cf21cc2` moved it and four siblings
+(`close-the-loop`, `dispatching-subagents`, `primer`,
+`supervised-lane-loop`) into the roster on measured context cost (PR #43,
+issue #45) — see [docs/provenance-manifest.md](docs/provenance-manifest.md).
 
-Five further skills are published here but excluded from the default
-package — `primer`, `close-the-loop`, `dispatching-subagents`,
-`sanity-check`, and `supervised-lane-loop` —
-because no failing eval justified their static description cost. All five
-remain independently installable, and the reasoning for each is recorded in
-[docs/provenance-manifest.md](docs/provenance-manifest.md).
-`supervised-lane-loop` is the newest and the least measured: it is vendored
-practice from another repository, carries its own "practice, not measured"
-status line, and has no eval behind it at all.
+**Historical, corrected 2026-08-23:** until 2026-08-11 this section
+described five further skills as "published here but excluded from the
+default package" — `primer`, `close-the-loop`, `dispatching-subagents`,
+`sanity-check`, and `supervised-lane-loop` — because no failing eval had
+justified their static description cost. Commit `cf21cc2` reversed that:
+all five are now in the default roster (see the table above), on measured
+context cost rather than a new failing eval. The paragraph is kept here as
+a record of that decision, not as a description of the current roster.
 
 The behavioral layer is deliberately minimal: loop discipline lives in the
 canonical instructions, and skills are added only when a failing eval

@@ -1,5 +1,20 @@
 # Loop signals
 
+**Note (added 2026-08-23):** `scripts/supervisor/` and `tests/supervisor/`
+were removed from this repository in commit `2925720` (#265, 2026-08-12)
+and now live in `jonhill90/agent-supervisor` (private) — confirmed by
+`git ls-files scripts/supervisor tests/supervisor` returning no files here.
+This document's file:line citations below (`watchdog.sh`, `lanes.sh`,
+`dispatch.sh`, `sleepcheck.py`, `inbox-poll.sh`, `cli.py`, `core.py`,
+`adapter.py`, `github_source.py`, etc.) describe that tree as it stood one
+day earlier, when this document was written — a historical record of the
+signal enumeration, not a description of this repository's current code.
+This mirrors the notes already carried by `docs/supervisor-disposition.md`,
+`docs/supervisor-extraction-plan-179.md`, and `docs/loop-engineering.md`
+for the same split; `2925720`'s own commit message explains why this
+document specifically was left uncorrected at the time ("its subject is
+analysis/convention, not the tree itself").
+
 Enumeration of the signals that can drive the supervisor loop — part 2 of
 [#173](https://github.com/jonhill90/agent-dotfiles/issues/173). Part 1 (the
 VPS tmux-plugin experiments) is recorded on that issue and is untouched here;
@@ -219,7 +234,10 @@ between the issue and the code.
   "where would a completion record live," not "what makes one get written."
 - **#163** (heartbeat alarm, closed) — current code matches its description
   with no drift; see above.
-- **#209** (open, in flight) closes `dispatch.sh`'s lane-*selection*
+- **#209** (since merged — corrected 2026-08-23, was "open, in flight";
+  `gh issue view 209` reports state `MERGED`; the current state of
+  `dispatch.sh`/`core.py` can only be checked in `jonhill90/agent-supervisor`
+  now, per the note at the top of this document) closes `dispatch.sh`'s lane-*selection*
   TOCTOU with an atomic `claim-lane`/`release-lane-claim` pair in
   `core.py`. As of this writing `dispatch.sh` contains no `claim-lane` call
   (`grep -c claim-lane scripts/supervisor/dispatch.sh` → 0) — `lane-free`

@@ -7,15 +7,21 @@
   surface and the roster is enforced on each. P2-M5, P2-M6 and P2-M7
   all closed 2026-07-27 (§13). `sanity-check` moved to public opt-in
   2026-07-29 (§4.1), so per-harness scoping currently has no user.
-  Open: #5 (§6 budget blind spot) and E20's unbound columns (Codex FAIL
-  ×3, Pi 1 of 3, Copilot unmeasured). jonhill90/skills#96 (`name-only`)
-  closed 2026-08-03.
+  Open: E20's unbound columns (Codex FAIL ×3, Pi 1 of 3, Copilot
+  unmeasured — could not re-measure from this repo, evidence lives in the
+  private jonhill90/agent-evals repository). jonhill90/skills#96
+  (`name-only`) closed 2026-08-03. **Corrected 2026-08-23:** #5 (§6 budget
+  blind spot), previously listed open here, closed 2026-08-11.
 - **Owner:** Jon Hill
 - **Inputs:** [PRD](PRD.md), [harness engineering](harness-engineering.md),
   and [memory](memory.md). Behavioral evals' methodology now lives in
   `docs/evals.md` in the private repository jonhill90/agent-evals, evidence
-  unavailable publicly. Dated research is preserved in git history
-  (`106e69c`, `c089a95`, `8a222ce`, `065bc9d`, `a4de1ac`, `e33f08b`).
+  unavailable publicly. **Corrected 2026-08-23:** this previously cited
+  dated research as preserved in git history at `106e69c`, `c089a95`,
+  `8a222ce`, `065bc9d`, `a4de1ac`, `e33f08b` — none of these six SHAs
+  resolves in this repository's current history (checked against a full
+  fetch from `origin`, all refs). The underlying research is not
+  recoverable from this repo as cited.
 - **Companion artifact:** [provenance manifest](provenance-manifest.md) —
   every adopt/adapt/author/reject decision in this spec is recorded there.
 - **Scope of this spec:** Phase 1 (v1) — Claude Code + Pi, all five layers
@@ -206,7 +212,7 @@ mechanism (§4.1) are unchanged and still live here.
 - **Jon's own hooks** (validation, safety checks) live in `hooks/` as
   plain scripts; per-harness wiring is installer-owned:
   - Claude Code: wrapper merges hook entries into `~/.claude/settings.json`.
-    **Implemented 2026-08-16 (agent-dotfiles#276):** six `PreToolUse`
+    **Implemented 2026-08-19 (agent-dotfiles#276):** six `PreToolUse`
     guards — destructive tmux verbs, protected tmux targets, commits to
     `main`, `gh api` body-posting footguns, a lane closing its own issue,
     and ad hoc writes to the live ledger — each blocking with exit 2 and a
@@ -304,8 +310,10 @@ instruction block as the contract.** Content is never synced by this repo.
   context by definition. The `obsidian` skill wraps the **official
   Obsidian CLI** (app ≥1.12, verified hands-on) for richer operations
   when the app is running; the CLI errors when the app is closed, so it
-  is never a memory-path dependency
-  (hands-on evidence: commit `b752300`). `install.sh` checks the
+  is never a memory-path dependency (hands-on evidence: previously cited
+  as commit `b752300`, which does not resolve in this repository's current
+  history as of 2026-08-23 — checked against a full fetch from `origin`,
+  all refs). `install.sh` checks the
   installer version and CLI registration instead of installing a
   third-party binary. A new
   small `memory-conventions` skill (authored, ~300 tokens) owns the
@@ -960,12 +968,12 @@ Open items are surfaced as GitHub issues labelled `verification`
 
 | # | Item | Blocking? |
 |---|---|---|
-| V1 | APM follows `.apm/` symlinks for local-path install/pack | **Verified 2026-07-12** (APM 0.24.1, evidence commit `dff03d0`): in-package symlinks whose targets stay inside the package root are dereferenced and deploy to user skill paths. APM's `--skill` filter was re-verified on the clean 2026-07-13 remote run. |
+| V1 | APM follows `.apm/` symlinks for local-path install/pack | **Verified 2026-07-12** (APM 0.24.1, evidence commit previously cited as `dff03d0`, not resolvable in current history as of 2026-08-23): in-package symlinks whose targets stay inside the package root are dereferenced and deploy to user skill paths. APM's `--skill` filter was re-verified on the clean 2026-07-13 remote run. |
 | V2 | APM hooks primitive at user scope | No — wrapper owns hook wiring until proven (§3.3) |
 | V3 | `targets:` in `~/.apm/apm.yml` scopes global compile | No — cleanup fallback specified (§7) |
 | V4 | Pi local-extension install mechanics | No — deferred; only needed if an eval-justified hook is adopted (§4) |
 | V5 | (Phase 2) Copilot CLI MCP path, `~/.copilot/AGENTS.md`, `~/.agents/skills` symlink handling; Codex hook mechanism | **Resolved 2026-07-18** (hands-on, macOS, Codex CLI 0.144.1 / Copilot CLI 1.0.70): APM writes both `~/.copilot/AGENTS.md` and `copilot-instructions.md` marker-owned, mooting the per-platform filename question; Copilot MCP = `~/.copilot/mcp-config.json` (`mcpServers` schema); Codex MCP = `[mcp_servers.*]` tables in `~/.codex/config.toml` (wrapper owns a marker block); both read `~/.agents/skills` natively; neither has a hook surface — E14 degraded mode applies |
-| V6 | Official Obsidian CLI vs third-party obsidian-cli | **Resolved 2026-07-12, owner override** (evidence commit `b752300`): official CLI adopted for the optional `obsidian` skill; memory uses direct files and has no CLI dependency. Verified hands-on on 1.12.7. The CLI does not auto-launch the app. `sync doctor` rejects vaults on corporate mounts. |
+| V6 | Official Obsidian CLI vs third-party obsidian-cli | **Resolved 2026-07-12, owner override** (evidence commit previously cited as `b752300`, not resolvable in current history as of 2026-08-23): official CLI adopted for the optional `obsidian` skill; memory uses direct files and has no CLI dependency. Verified hands-on on 1.12.7. The CLI does not auto-launch the app. `sync doctor` rejects vaults on corporate mounts. |
 | V7 | Community tmux-skill candidates vs `tmux` acceptance checks | **Resolved 2026-07-27: incumbent retained.** `npx skills search tmux` returned six candidates; **five were fetched and read** against `tests/evals/acceptance/tmux.md` and none passes. Checks 4 (recover a stuck pane without touching unrelated ones) and 5 (interactive auth flow) are unmet by all five. The sixth, `0xbigboss/claude-code@tmux`, failed to install and is recorded as unmeasured rather than as a fail. The closest, `shawnpana/smux`, has real send verification but costs 90 description tokens against the incumbent's 72, requires a third-party binary, and is really an agent-messaging skill (comparison — private repository jonhill90/agent-evals, evidence unavailable publicly (`tests/evals/results/2026-07-27-v7-tmux-candidates.md`)). Trigger stays live: it fires again for a candidate clearing all five at ≤72 tokens |
 | V8 | APM serves stale root-file content after source edits ("files unchanged" while content differs) | **Resolved 2026-07-13:** apply detaches only marker-owned managed roots before compile, forcing regeneration; a failed compile restores the last-known-good roots. Covered by regression tests. |
 | V9 | Claude Code and Pi per-skill disable surfaces | **Resolved 2026-07-26, both affirmative** (hands-on; §4.1 Tier B): Claude Code `skillOverrides` on v2.1.220, Pi `skills` denylist on 0.80.6. Copilot followed on 2026-07-27 (V10), so all four have one |
@@ -976,7 +984,7 @@ Open items are surfaced as GitHub issues labelled `verification`
 | M | Deliverable | Done when |
 |---|---|---|
 | M1 | Repo rename + layout migration (§2, §9.1–2) | validation suite green on new layout; `npx skills add . --list` still resolves |
-| M2 | APM package works | **Done 2026-07-12** (evidence commit `dff03d0`): skills deployed to both paths, marker-owned root files written, hand-authored files preserved |
+| M2 | APM package works | **Done 2026-07-12** (evidence commit previously cited as `dff03d0`, not resolvable in current history as of 2026-08-23): skills deployed to both paths, marker-owned root files written, hand-authored files preserved |
 | M3 | Wrapper v1 | **Done 2026-07-12**: `sync apply/status/doctor/remove` implemented TDD (11 tests); live apply on this Mac — 6 stale root files torn down, `~/.pi/agent/AGENTS.md` projected (core + overlay), status clean; committed symlink matrix retired, validator enforces absence |
 | M1.5 | Skill roster cut | **Done 2026-07-13:** cut skills deleted; kept tool checks committed; the filtered APM install contains seven accepted skills while benched public skills remain individually installable. Validator enforces the split. |
 | M4 | Memory tooling | **Done 2026-07-12**: "Agent Memory" vault created in iCloud + registered; `AGENT_MEMORY_VAULT` wired; memory-conventions skill shipped; doctor validates vault (personal + exists); basic-memory user-scope MCP removed; E12 passes 2× on CC×Fable and Pi×default incl. cross-harness recall (results — private repository jonhill90/agent-evals, evidence unavailable publicly (`tests/evals/results/2026-07-12-e12-memory-writeback.md`)) |
