@@ -133,20 +133,27 @@ per-agent knowledge / corpus ledger / RAG) — this corpus is that
 document's third store, and its own text is explicit that the corpus
 "has no consumption-facing map at all... judged items promote out of
 it into the vault or per-agent knowledge, which is where an agent
-actually reads from." This map does not reopen that boundary; it
-supplies the map-before-search property that boundary's own contract
-requires (see "Contract" below) without changing what the corpus is
-for.
+actually reads from." This map does not reopen that boundary, and it
+is **not** fulfilling a requirement of it: `agent-dotfiles#315`'s own
+table states plainly that "no map-before-search requirement applies"
+to the corpus ledger specifically, because it is "not a consumption
+surface" an agent browses directly — that contract binds the
+per-agent-knowledge store, not this one (see "Why this map exists
+anyway" below).
 
 - **The corpus** answers "what did Jon actually say, and is it still
   open." It is a derivation source and a search target for a *specific
   prompt or decision*, not somewhere an agent reads standing context
   from at session start.
-- **The vault** (`$AGENT_MEMORY_VAULT/agent/index.md`, 82 lines over 76
-  facts as of this write) is the *distilled, durable* record — a fact
-  promoted out of the corpus once it's been judged worth keeping
-  standing. Read this at session start; do not read the corpus at
-  session start.
+- **The vault** (`$AGENT_MEMORY_VAULT/agent/index.md` — size:
+  `wc -l "$AGENT_MEMORY_VAULT/agent/index.md"`; fact count:
+  `ls "$AGENT_MEMORY_VAULT/agent/facts" | wc -l`) is the *distilled,
+  durable* record — a fact promoted out of the corpus once it's been
+  judged worth keeping standing. Read this at session start; do not
+  read the corpus at session start. Both numbers move the moment a
+  fact is added or dropped, so the commands are given here instead of
+  a count — the same reasoning this map already applies to every view
+  query above.
 - **A repo's own `docs/`** (this repository's `docs/`, or
   `jonhill90/agent-tui`'s, mapped the same way by `docs/index.md`
   there — `agent-tui#136`) answers "what does this specific codebase's
@@ -181,7 +188,20 @@ right view). "What do we currently believe about X, standing" → vault.
   already recorded, never infers one — see that view's own section
   above.
 
-## Contract — the same one `agent-dotfiles#315`/`agent-tui#136` require
+## Why this map exists anyway — properties it holds, not a contract requirement
+
+Neither cited issue makes this map obligatory. `agent-dotfiles#315`'s
+own contract table exempts the corpus by name (above); `agent-tui#136`
+is a measurement of one repo's `docs/index.md` — real numbers on how
+much less an agent has to read with a map versus without one, not a
+rule that requires a map to exist anywhere. What actually justifies
+this file is the argument `agent-tui#136`'s measurement supports generally: five
+real SQL views with nothing pointing at them is a genuinely hard
+surface for an agent that has never seen this ledger to discover on
+its own, the same "no consumption-facing map at all" gap the corpus's
+own boundary text already names. Building the map is worth doing on
+that argument alone. It also happens to hold the same shape
+`agent-dotfiles#315`'s contract describes for the store it does bind:
 
 - **Enumerable, separate from full content:** exactly five views, named
   and one-lined above, without reading a single row of corpus content
