@@ -11,6 +11,12 @@ belongs to a human or an AI-assisted follow-up, never to this script. See
 docs/okf-adoption-280.md for the design this implements and why the split
 is the deliverable.
 
+Also reports `agent/index.md` size against the cap `docs/memory.md` already
+declares (200 lines / 25 KB), at the review (80%) and decide (100%)
+thresholds agent-dotfiles#281's council verdict set as the trigger for
+whether the vault needs a scoping/disclosure scheme -- a proximity report,
+not a scope classifier; it never assigns a fact to a scope.
+
 All checks are deterministic string/date/hash operations -- no model calls.
 
 Usage:
@@ -56,6 +62,17 @@ LEGACY_CITATIONS_RE = re.compile(r"^#{1,6}\s*Citations\s*$", re.MULTILINE)
 
 RECOMMENDED_FIELDS = ("title", "description")
 OKF_TRUST_FIELDS = ("generated", "verified", "status", "stale_after", "sources")
+
+# docs/memory.md's own declared cap on agent/index.md (the only file read at
+# session start). agent-dotfiles#281's council verdict ("build the detector,
+# not the scheme") set these as the reconsideration triggers for whether the
+# vault needs a scoping/disclosure scheme at all -- review at 80% of either
+# cap, decide at the hard cap itself. This is a proximity report, not a
+# scope classifier: it never assigns a fact to a scope, per #280/#281's own
+# tool-boundary rule (detect and report, never rewrite meaning).
+INDEX_LINE_CAP = 200
+INDEX_BYTE_CAP = 25 * 1024  # 25 KB
+INDEX_REVIEW_FRACTION = 0.8
 
 
 def mini_yaml(text: str) -> dict[str, object]:
@@ -103,6 +120,7 @@ class Report:
     vault: Path
     fact_count: int = 0
     index_lines: int = 0
+    index_bytes: int = 0
     findings: list[Finding] = field(default_factory=list)
     field_counts: dict[str, int] = field(default_factory=dict)
     unlinked_fact_count: int = 0
@@ -388,6 +406,32 @@ def check_index(vault: Path, facts: list[Concept], report: Report) -> None:
         return
     index_text = index_path.read_text(encoding="utf-8")
     report.index_lines = len(index_text.splitlines())
+    report.index_bytes = len(index_text.encode("utf-8"))
+    line_fraction = report.index_lines / INDEX_LINE_CAP
+    byte_fraction = report.index_bytes / INDEX_BYTE_CAP
+    worst_fraction = max(line_fraction, byte_fraction)
+    if report.index_lines >= INDEX_LINE_CAP or report.index_bytes >= INDEX_BYTE_CAP:
+        report.add(
+            "warn",
+            "index-cap",
+            f"index.md at or past its declared cap ({report.index_lines}/{INDEX_LINE_CAP} lines, "
+            f"{report.index_bytes}/{INDEX_BYTE_CAP} bytes) -- agent-dotfiles#281's decide trigger",
+        )
+    elif worst_fraction >= INDEX_REVIEW_FRACTION:
+        report.add(
+            "warn",
+            "index-cap",
+            f"index.md at {round(worst_fraction * 100, 1)}% of its declared cap "
+            f"({report.index_lines}/{INDEX_LINE_CAP} lines, {report.index_bytes}/{INDEX_BYTE_CAP} bytes) "
+            "-- agent-dotfiles#281's review trigger (80%)",
+        )
+    else:
+        report.add(
+            "info",
+            "index-cap",
+            f"index.md at {round(worst_fraction * 100, 1)}% of its declared cap "
+            f"({report.index_lines}/{INDEX_LINE_CAP} lines, {report.index_bytes}/{INDEX_BYTE_CAP} bytes)",
+        )
     index_concept = read_concept(index_path)
     if index_concept.frontmatter:
         declared = index_concept.frontmatter.get("okf_version")
@@ -442,7 +486,7 @@ def build_report(vault: Path, today: date, stale_days: int) -> Report:
 def render_text(report: Report) -> str:
     lines = [
         f"OKF v0.2 read-only lint -- {report.vault}",
-        f"facts: {report.fact_count}   index lines: {report.index_lines}",
+        f"facts: {report.fact_count}   index lines: {report.index_lines}   index bytes: {report.index_bytes}",
         "",
     ]
     for level in ("error", "warn", "info"):
@@ -463,6 +507,7 @@ def render_json(report: Report) -> str:
             "vault": str(report.vault),
             "fact_count": report.fact_count,
             "index_lines": report.index_lines,
+            "index_bytes": report.index_bytes,
             "field_counts": report.field_counts,
             "findings": [f.__dict__ for f in report.findings],
         },
