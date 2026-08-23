@@ -116,7 +116,7 @@ prior total (446 open + everything already closed before this pass).
 
 ## Obsolete (7), each with what superseded it
 
-1. `minio=open_question` → MinIO Stage 3 (Hill90 PR #655): moved into
+1. `minio=open_question` → MinIO Stage 3 (jonhill90/Hill90#655): moved into
    platform scope with its own AppRole policies; the open question is
    answered.
 2. `baseline=16_by_name_0_unhealthy` → superseded by the corrected baseline
@@ -142,7 +142,7 @@ These 44 are the ones with no such evidence — genuinely unresolved. Ranked
 by what looks most load-bearing to sequence next, hard-weight first:
 
 1. **`resource_discipline=cap_concurrent_processes+sweep_stale_worktrees+check_load_before_dispatch+check_self_before_blaming_tooling`**
-   — issue #500 (open) already investigated this exact directive and found
+   — jonhill90/agent-supervisor#500 (open) already investigated this exact directive and found
    the resource-discipline half "still unbuilt." Directly actionable.
 2. **`escalation=only_when_unanswerable_from_repo`** — no hook or doc
    enforces this; the 2026-08-19 council audit found the opposite pattern in
