@@ -1122,22 +1122,6 @@ class Sync:
             lines.append(f"[mcp_servers.{name}]")
             if "url" in spec:
                 lines.append(f'url = "{spec["url"]}"')
-            # A stdio server (agent-dotfiles#198's supervisor server is the
-            # first one declared here) is `command` plus `args`, not a url.
-            # Without this branch the loop emitted a bare
-            # `[mcp_servers.<name>]` table with nothing in it -- a
-            # syntactically valid config declaring a server Codex cannot
-            # launch, which is worse than not projecting it at all. The
-            # rendered shape is what `codex mcp add` itself writes, checked
-            # against a real `codex mcp add -- python3 <path>` run into a
-            # throwaway CODEX_HOME, not inferred from the docs. `json.dumps`
-            # does the quoting: TOML basic strings and arrays accept JSON's
-            # escaping, and hand-rolled f-string quotes are how a path with a
-            # quote or a backslash in it would silently corrupt the file.
-            if "command" in spec:
-                lines.append(f"command = {json.dumps(spec['command'])}")
-                if spec.get("args"):
-                    lines.append(f"args = {json.dumps(list(spec['args']))}")
             auth = spec.get("headers", {}).get("Authorization", "")
             match = re.fullmatch(r"Bearer \$\{(\w+)\}", auth)
             if match:
