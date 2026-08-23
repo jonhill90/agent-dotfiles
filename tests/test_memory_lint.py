@@ -184,6 +184,50 @@ class MemoryLintTest(unittest.TestCase):
         report = ml.build_report(self.vault, date(2026, 1, 1), 90)
         self.assertTrue(any("okf_version" in f.message and "0.2" in f.message for f in report.findings))
 
+    # -- index cap proximity (agent-dotfiles#281's council-verdict triggers) -
+
+    def test_index_well_under_cap_is_info(self) -> None:
+        self.write_index("# Facts\n\n- one line\n")
+        report = ml.build_report(self.vault, date(2026, 1, 1), 90)
+        cap_findings = [f for f in report.findings if f.check == "index-cap"]
+        self.assertEqual(len(cap_findings), 1)
+        self.assertEqual(cap_findings[0].level, "info")
+        self.assertEqual(report.index_lines, 3)
+        self.assertEqual(report.index_bytes, len("# Facts\n\n- one line\n".encode("utf-8")))
+
+    def test_index_at_review_fraction_is_warn(self) -> None:
+        # 160/200 lines = exactly 80%, the review trigger agent-dotfiles#281's
+        # council verdict set.
+        self.write_index("x\n" * 160)
+        report = ml.build_report(self.vault, date(2026, 1, 1), 90)
+        cap_findings = [f for f in report.findings if f.check == "index-cap"]
+        self.assertEqual(cap_findings[0].level, "warn")
+        self.assertIn("review trigger", cap_findings[0].message)
+
+    def test_index_at_hard_line_cap_is_the_decide_trigger(self) -> None:
+        self.write_index("x\n" * 200)
+        report = ml.build_report(self.vault, date(2026, 1, 1), 90)
+        cap_findings = [f for f in report.findings if f.check == "index-cap"]
+        self.assertEqual(cap_findings[0].level, "warn")
+        self.assertIn("decide trigger", cap_findings[0].message)
+
+    def test_index_at_hard_byte_cap_is_the_decide_trigger_even_under_line_cap(self) -> None:
+        # One very long line: well under 200 lines, but past the 25 KB cap.
+        self.write_index("x" * (25 * 1024 + 1) + "\n")
+        report = ml.build_report(self.vault, date(2026, 1, 1), 90)
+        cap_findings = [f for f in report.findings if f.check == "index-cap"]
+        self.assertEqual(cap_findings[0].level, "warn")
+        self.assertIn("decide trigger", cap_findings[0].message)
+
+    def test_index_cap_check_never_touches_disk(self) -> None:
+        # Same guarantee test_never_writes_to_the_vault makes generally --
+        # asserted narrowly here because this check is new.
+        self.write_index("# Facts\n\n- one line\n")
+        before = (self.agent / "index.md").stat().st_mtime
+        ml.build_report(self.vault, date(2026, 1, 1), 90)
+        after = (self.agent / "index.md").stat().st_mtime
+        self.assertEqual(before, after)
+
     # -- strict mode (agent-dotfiles#300 guard) -----------------------------
 
     def test_unlinked_fact_is_not_an_error_by_default(self) -> None:
