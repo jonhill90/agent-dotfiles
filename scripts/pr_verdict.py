@@ -219,8 +219,22 @@ def _parse_verdict_comment(body: str) -> str | None:
 # comment, because the author cannot post a comment on their own PR to
 # state it any differently from writing it into the description at open
 # time.
-_REVIEW_LANE_LINE_RE = re.compile(r"(?im)^\s*Review-Lane:\s*(.*)$")
-_AUTHOR_LANE_LINE_RE = re.compile(r"(?im)^\s*Author-Lane:\s*(.*)$")
+#
+# The whitespace after the colon is restricted to `[ \t]*`, never `\s*` --
+# `\s*` matches a newline, so a BLANK trailer value (`Review-Lane:` with
+# nothing after it) let the pattern's greedy post-colon whitespace consume
+# the line break and its capture group swallow the NEXT line's text
+# instead of matching an empty string. That garbage capture (e.g.
+# "Reviewed-SHA: abc123") is non-empty, so `_parse_trailer` returned it as
+# a real lane id -- one that never equals a real `Author-Lane:` value --
+# which silently defeated the same-lane self-review check below. Anchoring
+# to `[ \t]*` keeps the match on the trailer's own line; `(.*)$` still
+# can't cross a line boundary on its own (no `re.DOTALL`), so this was the
+# only gap. Same bug shape found and fixed the same way in
+# `jonhill90/skills#260` (ported verbatim here) and reported for
+# `jonhill90/agent-tui`'s Go port in `jonhill90/agent-tui#112`.
+_REVIEW_LANE_LINE_RE = re.compile(r"(?im)^[ \t]*Review-Lane:[ \t]*(.*)$")
+_AUTHOR_LANE_LINE_RE = re.compile(r"(?im)^[ \t]*Author-Lane:[ \t]*(.*)$")
 _REVIEWED_SHA_RE = re.compile(r"(?im)^\s*Reviewed-SHA:\s*([A-Za-z0-9]+)\s*$")
 
 
