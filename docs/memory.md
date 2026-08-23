@@ -37,7 +37,10 @@ LLM wiki and the permissive bundle conventions of Google OKF. The vault's
 `agent/index.md` declares `okf_version: "0.1"` today; `docs/okf-adoption-280.md`
 carries the OKF v0.2 gap report, the additive migration design (no vault
 writes in that pass), and `scripts/memory_lint.py`, the read-only linter
-built for it (#280). Personal note-taxonomy systems are intentionally
+built for it (#280). `docs/memory-per-agent-map-contract.md` generalizes
+`index.md`'s own map-before-search shape into a backend-agnostic
+requirement for per-agent knowledge (#281's four-store boundary) — it
+picks no backend and touches nothing here. Personal note-taxonomy systems are intentionally
 excluded: agent memory and Jon's knowledge vault are separate systems.
 
 ## Behavior
