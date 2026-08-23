@@ -43,7 +43,7 @@ handled idempotently by `mine_prompts.py`'s own hashed-id logic — expected
 overlap, not a bug). `--drop-noise` mechanically excluded 94 as
 agent/system-authored **before any model saw them** — 79 dispatch-brief
 templates, 15 skill-router boilerplate, matched on the same structural
-markers this corpus has used since #313, never on topic. The remaining 200
+markers this corpus has used since `agent-supervisor#313`, never on topic. The remaining 200
 were judged by 5 parallel agents (40 each) against the skill's own rules,
 then loaded by one serial agent to avoid the twelve-concurrent-writers
 contention the skill's own doc warns about.
