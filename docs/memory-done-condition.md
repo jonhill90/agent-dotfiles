@@ -103,13 +103,48 @@ are not conflated:
    verification cannot be checked from frontmatter today; every fact reads
    as equally current regardless of age, which is the drift failure mode
    the OKF v0.2 adoption work was started to fix and has not yet applied.
-3. **10/112 internal links are broken**, undermining the one relationship
-   mechanism (`[[wikilink]]`) the vault has, and 2/69 facts are missing a
-   `description`. Both are small and mechanical, not structural — but they
-   are measured defects, not assumptions.
+3. ~~**10/112 internal links are broken**~~ — addressed, see the 2026-08-23
+   update below. 2/69 facts are still missing a `description`; unchanged by
+   this pass, out of its scope.
 
 Everything else asked for by "progressive disclosure done properly"
 (session-start load, reachability, OKF conformance floor) already measures
 as true today. The gate is not blocked on the storage question (out of
 scope here) — it is blocked on prerequisite 2: no loop yet drives memory,
 so nothing keeps it solid over time even where it is solid right now.
+
+## Update 2026-08-23 — prerequisite 1's link-integrity gap addressed
+
+The measurement above (10/112, taken earlier the same day) was re-derived,
+not assumed, then acted on: `python3 scripts/memory_lint.py --json` against
+the live vault now reports **9/111 internal links resolve to a missing
+fact**.
+
+Each of the original 10 was investigated individually — checked against
+every existing fact slug in the vault (`ls agent/facts/`) for a typo or
+rename before deciding — per `memory-conventions.md`'s own convention that a
+`[[name]]` with no matching file is not automatically an error:
+
+| # | Source → target | Category | Disposition |
+|---|---|---|---|
+| 1 | `a-conflicted-pr-branch-runs-no-ci-at-all` → `[[name]]` (literal, in `memory-needs-its-own-loop`) | **Neither** — linter false positive: example syntax inside backticks illustrating the `[[name]]` convention itself, not an intended link | Escaped (`` \[\[name\]\] ``) so the pattern no longer parses as a wikilink. Total link count drops 112→111 for this reason, not a deletion. |
+| 2 | `hill90-app-public-cleanup-precondition` → `hill90-app-repo-visibility-history-finding` | Deliberate forward reference — no existing fact is a match | Left as-is; catalogued |
+| 3 | `hill90-app-public-cleanup-precondition` → `hill90-app-is-a-tenant` | Deliberate forward reference — no existing fact is a match | Left as-is; catalogued |
+| 4 | `hill90-one-keycloak` → `hill90-app-is-a-tenant` (same target as #3) | Deliberate forward reference | Left as-is; catalogued |
+| 5 | `hill90-one-keycloak` → `hill90-silent-config-failures` | Deliberate forward reference — no existing fact is a match | Left as-is; catalogued |
+| 6 | `intent-as-a-constraint-solve` → `decide-by-variant` | Deliberate forward reference — names a Claude Code skill and Jon's own standing instruction, neither yet written as a vault fact | Left as-is; catalogued |
+| 7 | `intent-as-a-constraint-solve` → `memory-design` | Deliberate forward reference — the `weight`/`status`/`stale_after` field design isn't in `memory-conventions.md` yet | Left as-is; catalogued |
+| 8 | `transcripts-are-a-lossy-record-of-intent` → `memory-failure-mode-is-staleness-not-retrieval` | Deliberate forward reference — no existing fact is a match | Left as-is; catalogued |
+| 9 | `verify-against-parent-not-just-green` → `positive-control-fixture` | Deliberate forward reference — sibling concept to the existing `green-ci-is-not-evidence` fact, not yet written on its own | Left as-is; catalogued |
+
+No fact was deleted to make a link resolve, and no fact was invented to fill
+a forward reference — writing those nine facts is real judgement work,
+explicitly out of this pass's scope. The nine are now recorded in a new
+vault file, `agent/pending-links.md` (outside `agent/facts/`, same tier as
+`index.md`/`log.md`), so a later run of `memory_lint.py`'s link-integrity
+check does not re-discover and re-litigate the same nine gaps — each stays
+correctly flagged until its target fact is actually written.
+
+This does not touch the storage-backend question (agent-tui#116, still
+reserved to Jon) and does not change prerequisite 2's blocking status —
+`memory-needs-its-own-loop` remains the real gate.
