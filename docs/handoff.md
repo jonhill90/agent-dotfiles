@@ -205,12 +205,12 @@ is actually for.
 **Corrected 2026-08-23:** this table previously said "6 issues, none
 blocking" and listed #5 as an open milestone. `gh issue list --repo
 jonhill90/agent-dotfiles --state open` currently returns 14 open issues:
-#1, #2, #3, #4, #6, #16, #44, #52, #57, #139, #266, #272, #281, #302 — and
-#5 is closed (2026-08-11), not open. Notably #302 ("An unclaimed git stash
+#1, #2, #3, #4, #6, #16, #44, #52, #57, #139, #266, #272, #281, agent-dotfiles#302 — and
+#5 is closed (2026-08-11), not open. Notably agent-dotfiles#302 ("An unclaimed git stash
 in the shared agent-dotfiles checkout blocks EVERY new lane in this
 repo") reads as actively blocking, unlike the rest of this list. The table
 below is not re-derived in full here (that needs its own pass reading each
-issue); treat the "none blocking" framing as stale and re-check #302
+issue); treat the "none blocking" framing as stale and re-check agent-dotfiles#302
 specifically before relying on it.
 
 | # | State | Honest read |
@@ -218,7 +218,7 @@ specifically before relying on it.
 | jonhill90/skills#96 | closed 2026-08-03 | `name-only` is real — one of four `skillOverrides` values — and unbuilt. It optimises ~490 tokens while ~1,758 sit untouched behind `disableBundledSkills`. |
 | #6 | parked | Rejected design for managing foreign skills. At least one of its five rejection arguments is undercut by this repo's own later finding that `npx skills use` does not install. Revisit trigger: a foreign skill actually landing. |
 | jonhill90/skills#52–jonhill90/skills#55 | parked | Memory-design questions behind explicit triggers. Leave them. |
-| #302 | open, not triaged here | Titled as actively blocking every new lane in the shared checkout — needs its own read, not covered by this handoff. |
+| agent-dotfiles#302 | open, not triaged here | Titled as actively blocking every new lane in the shared checkout — needs its own read, not covered by this handoff. |
 
 **#5 and #6 were `jonhill90/skills#95` and `#97` until 2026-08-09**, when they
 were transferred here. GitHub redirects the old numbers, so
