@@ -70,6 +70,12 @@ OKF_TRUST_FIELDS = ("generated", "verified", "status", "stale_after", "sources")
 # cap, decide at the hard cap itself. This is a proximity report, not a
 # scope classifier: it never assigns a fact to a scope, per #280/#281's own
 # tool-boundary rule (detect and report, never rewrite meaning).
+#
+# This check is also the mechanical proof, cited rather than re-derived, that
+# agent/index.md already satisfies the shared vault's own half of the
+# map-before-search contract docs/memory-per-agent-map-contract.md states as
+# a requirement for whatever per-agent knowledge backend Jon eventually
+# picks -- that document does not duplicate this check, it points at it.
 INDEX_LINE_CAP = 200
 INDEX_BYTE_CAP = 25 * 1024  # 25 KB
 INDEX_REVIEW_FRACTION = 0.8
