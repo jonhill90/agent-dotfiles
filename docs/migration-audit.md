@@ -1,5 +1,15 @@
 # Migration Source Audit
 
+**Historical.** Superseded as the live decision ledger by
+`docs/provenance-manifest.md` (that file's own opening line names this one
+as its predecessor). Kept, not deleted: this records a decision that was
+actually carried out — the skill identities named below are their
+pre-rename names from that migration (e.g. `gh-cli` → `github-cli`,
+`using-tmux` → `tmux`, `closing-the-loop` → `close-the-loop` in the
+current roster), a fact about that point in time, not a claim about
+today's names. Truth-pass checked 2026-08-23: nothing below asserts a
+current state that the tree contradicts.
+
 This audit records how overlapping personal skills were selected during the
 `vibes` to `skills` refactor. Hill90 was refreshed from `origin/main` before the
 comparison; its latest commit was `169dd57` on 2026-04-26.
