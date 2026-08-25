@@ -15,7 +15,7 @@ Six stores, three navigable today:
 
 | Store | Holds | Entry point |
 |---|---|---|
-| vault | Durable facts about Jon — preferences, decisions, project state | [`agent/index.md`](/Users/jon/Library/Mobile%20Documents/iCloud~md~obsidian/Documents/Agent%20Memory/agent/index.md) in the Obsidian vault at `$AGENT_MEMORY_VAULT` |
+| vault | Durable facts about Jon — preferences, decisions, project state | `agent/index.md` in the Obsidian vault at `$AGENT_MEMORY_VAULT` |
 | corpus | Jon's own prompts (3,700+) and live hard constraints (900+), judged and queryable | `~/.local/state/agent-dotfiles-supervisor/ledger.sqlite3` — 5 SQL views: `unacknowledged`, `live_parameters`, `conflicts`, `open_questions`, `possibility_count` |
 | agent-tui | TUI product docs — PRD, spec, research, an OKF-bundled pilot map (agent-tui#136) | [`docs/index.md`](https://github.com/jonhill90/agent-tui/blob/main/docs/index.md) |
 | agent-supervisor | This repo's own docs and code layout | not yet mapped — an internal-map replication pilot is separately in flight (estate:2); until it lands, search `CLAUDE.md` and `scripts/supervisor/` directly |
