@@ -675,10 +675,33 @@ def validate_skill_source_pins(root: Path) -> list[Finding]:
 
 def validate_privacy(root: Path) -> list[Finding]:
     """Flag tracked markdown containing terms from the untracked
-    .privacy-denylist (one term per line; the terms never enter git)."""
+    .privacy-denylist (one term per line; the terms never enter git).
+
+    The denylist is gitignored by design (#325) — its terms must never be
+    committed to this public repo. That means it cannot ship as a tracked
+    fixture, so every environment that runs this check (a laptop, CI) has
+    to materialize the file itself:
+      - locally: create .privacy-denylist at the repo root, one term per
+        line, '#'-prefixed lines are comments.
+      - in CI: .github/workflows/validate.yml writes it from the
+        PRIVACY_DENYLIST repository secret before this script runs.
+    A missing file is therefore treated as "this check could not run",
+    never as "checked, found nothing" — silently returning no findings
+    here is exactly the failure this function exists to not have (#325).
+    """
     denylist_file = root / ".privacy-denylist"
     if not denylist_file.is_file():
-        return []
+        raise ValueError(
+            f".privacy-denylist not found at {denylist_file} — the privacy "
+            "guard cannot run without it. Locally: create the file (one "
+            "denylisted term per line; it is gitignored and must stay "
+            "untracked). In CI: it is materialized from the "
+            "PRIVACY_DENYLIST repository secret — see "
+            ".github/workflows/validate.yml. A missing denylist is a hard "
+            "failure, not a clean run, because a check that silently skips "
+            "is indistinguishable from a check that looked and found "
+            "nothing (#325)."
+        )
     terms = [
         line.strip()
         for line in denylist_file.read_text(encoding="utf-8").splitlines()

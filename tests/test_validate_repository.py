@@ -133,13 +133,21 @@ class PrivacyDenylistTests(unittest.TestCase):
             # the term itself must not appear in the finding message
             self.assertNotIn("AcmeCorp", findings[0].message)
 
-    def test_no_denylist_file_means_no_findings(self) -> None:
+    def test_missing_denylist_raises_instead_of_returning_no_findings(self) -> None:
+        # #325: a missing .privacy-denylist must be a hard failure, not a
+        # silent "no findings" — that is the exact shape that let CI stay
+        # green while the check could never fire (the file is gitignored
+        # and no CI checkout ever has it).
         import tempfile
         from pathlib import Path
         import validate_repository as vr
 
         with tempfile.TemporaryDirectory() as td:
-            self.assertEqual(vr.validate_privacy(Path(td)), [])
+            root = Path(td)
+            with self.assertRaises(ValueError) as ctx:
+                vr.validate_privacy(root)
+            self.assertIn(".privacy-denylist", str(ctx.exception))
+            self.assertIn(str(root), str(ctx.exception))
 
     def test_broken_symlink_is_skipped(self) -> None:
         import tempfile
@@ -151,6 +159,80 @@ class PrivacyDenylistTests(unittest.TestCase):
             (root / ".privacy-denylist").write_text("term\n")
             (root / "gone.md").symlink_to(root / "missing-target.md")
             self.assertEqual(vr.validate_privacy(root), [])
+
+
+class PrivacyDenylistWiringTests(unittest.TestCase):
+    """Exercises validate_repository.main() the way CI actually invokes it
+    (`python scripts/validate_repository.py`, no target) rather than
+    calling validate_privacy() against a hand-written fixture. #325's bug
+    was in the wiring — the matcher itself was always correct — so the
+    regression test has to run the same entrypoint CI runs.
+
+    This necessarily runs against the real repo root, since main() derives
+    root from its own module __file__ rather than accepting one. Any real
+    .privacy-denylist a developer has locally is moved aside and restored
+    afterward, never read or logged, so this cannot leak or lose it.
+    """
+
+    def setUp(self) -> None:
+        self.repo_root = Path(__file__).resolve().parents[1]
+        self.denylist_path = self.repo_root / ".privacy-denylist"
+        self.backup_path = self.repo_root / ".privacy-denylist.wiring-test-backup"
+        self.assertFalse(
+            self.backup_path.exists(),
+            "stale backup from a previous interrupted run — remove it by hand",
+        )
+        if self.denylist_path.exists():
+            self.denylist_path.rename(self.backup_path)
+
+    def tearDown(self) -> None:
+        if self.denylist_path.exists():
+            self.denylist_path.unlink()
+        if self.backup_path.exists():
+            self.backup_path.rename(self.denylist_path)
+
+    def run_main(self) -> tuple[int, str]:
+        import contextlib
+        import io
+
+        buffer = io.StringIO()
+        with mock.patch.object(sys, "argv", ["validate_repository.py"]):
+            with contextlib.redirect_stdout(buffer):
+                exit_code = validator.main()
+        return exit_code, buffer.getvalue()
+
+    def test_missing_denylist_fails_ci_loudly(self) -> None:
+        self.assertFalse(self.denylist_path.exists())
+        exit_code, output = self.run_main()
+        self.assertEqual(exit_code, 2)
+        self.assertIn("ERROR", output)
+        self.assertIn(".privacy-denylist", output)
+
+    def test_present_denylist_with_no_match_does_not_block_on_privacy(self) -> None:
+        # A denylist term unlikely to appear anywhere in this repo's
+        # tracked markdown — proves presence-with-no-match does not by
+        # itself fail the run (other validators may still find things,
+        # but not this one).
+        self.denylist_path.write_text(
+            "zzz-wiring-test-sentinel-term-not-present-anywhere\n"
+        )
+        import validate_repository as vr
+
+        findings = vr.validate_privacy(self.repo_root)
+        self.assertEqual(findings, [])
+
+    def test_present_denylist_with_match_still_refuses(self) -> None:
+        # README.md exists and is tracked; a term guaranteed to appear in
+        # it proves presence-with-a-match still refuses.
+        self.denylist_path.write_text("agent-dotfiles\n")
+        import validate_repository as vr
+
+        findings = vr.validate_privacy(self.repo_root)
+        self.assertTrue(
+            any("README.md" in str(f.path) for f in findings),
+            "expected a finding against README.md, got: "
+            f"{[str(f.path) for f in findings]}",
+        )
 
 
 class DestructiveTmuxVerbTests(unittest.TestCase):
