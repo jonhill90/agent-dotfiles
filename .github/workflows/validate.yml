@@ -27,9 +27,11 @@ jobs:
       # fails loudly (its own hard-fail-on-missing, not a silent skip)
       # instead of running the privacy check blind.
       - name: Materialize privacy denylist from secret
-        if: ${{ secrets.PRIVACY_DENYLIST != '' }}
         env:
           PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
-        run: printf '%s\n' "$PRIVACY_DENYLIST" > .privacy-denylist
+        run: |
+          if [ -n "$PRIVACY_DENYLIST" ]; then
+            printf '%s\n' "$PRIVACY_DENYLIST" > .privacy-denylist
+          fi
       - run: python scripts/validate_repository.py
       - run: python -m unittest discover -s tests -v
