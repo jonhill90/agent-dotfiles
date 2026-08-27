@@ -20,5 +20,18 @@ jobs:
           cache: pip
           cache-dependency-path: tests/requirements-dev.txt
       - run: python -m pip install -r tests/requirements-dev.txt
+      # .privacy-denylist is gitignored (#325) so no checkout ever has it;
+      # materialize it from the PRIVACY_DENYLIST repository secret so the
+      # terms it holds still never touch git. If the secret is unset this
+      # step deliberately leaves the file absent, so validate_repository.py
+      # fails loudly (its own hard-fail-on-missing, not a silent skip)
+      # instead of running the privacy check blind.
+      - name: Materialize privacy denylist from secret
+        env:
+          PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
+        run: |
+          if [ -n "$PRIVACY_DENYLIST" ]; then
+            printf '%s\n' "$PRIVACY_DENYLIST" > .privacy-denylist
+          fi
       - run: python scripts/validate_repository.py
       - run: python -m unittest discover -s tests -v

@@ -106,7 +106,10 @@ agent-dotfiles/
     sync.py                # the wrapper (Python 3 stdlib only)
     validate_repository.py # token-budget checks + a private-term scan
                            # (.privacy-denylist). NOT a secret scanner:
-                           # no credential detection exists, here or in CI
+                           # no credential detection exists, here or in CI.
+                           # A missing denylist is a hard CI failure, not a
+                           # silent pass (#325) — CI materializes it from
+                           # the PRIVACY_DENYLIST repository secret
   tests/                   # one verification tree (layout rev. 2026-07-18)
     test_*.py              # unittest suite (wrapper + validators)
     requirements-dev.txt   # dev/CI-only dependencies

@@ -251,6 +251,7 @@ private repository jonhill90/agent-evals, evidence unavailable publicly.
 |---|---|
 | Docs vs noise | `docs/` holds living documents only; `tests/evals/` is the permanent test suite; research prose is scaffolding — distilled into topical living docs and deleted at each spec iteration's exit (git/PRs are the archive, manifest cites SHAs) |
 | Privacy guard | Employer names and sensitive terms live only in an untracked local `.privacy-denylist`; validation errors on any tracked markdown containing them |
+| Privacy guard, CI (2026-08-25, #325) | The denylist's gitignored-ness meant no CI checkout ever had it, so the check silently returned no findings instead of running; a missing denylist is now a hard CI failure (not `[]`), and CI materializes the file from the `PRIVACY_DENYLIST` repository secret so the terms still never enter git |
 
 ### Work tracking (2026-07-26)
 
