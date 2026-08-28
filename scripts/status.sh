@@ -45,28 +45,41 @@ host_guard_tripped() {
   return 1
 }
 
-# reap_orphans -- kills every `yes` process whose PPID is genuinely 1 (a
-# real orphan: its own parent already exited and nothing reparented it
-# except the kernel's own init), and prints one line naming how many it
-# reaped and how many are still alive afterward. Prints NOTHING when there
-# are no orphans -- silence is the no-op path, not a "checked, found none"
-# line, so a caller scraping this output for real reaps never has to filter
-# out a false positive.
+# reap_orphans -- kills every `yes` or `carapace` process whose PPID is
+# genuinely 1 (a real orphan: its own parent already exited and nothing
+# reparented it except the kernel's own init), and prints one line naming
+# how many it reaped and how many are still alive afterward. Prints NOTHING
+# when there are no orphans -- silence is the no-op path, not a "checked,
+# found none" line, so a caller scraping this output for real reaps never
+# has to filter out a false positive.
 #
-# ONLY PPID 1 is killed. A `yes` whose parent is alive belongs to a test
-# still running and is not ours to touch -- reaping that would corrupt a
-# live measurement, which is the more expensive of the two mistakes
+# ONLY PPID 1 is killed. A `yes`/`carapace` whose parent is alive belongs to
+# a test (or a live interactive shell) still running and is not ours to
+# touch -- reaping that would corrupt a live measurement or kill a working
+# completion helper, which is the more expensive of the two mistakes
 # (agent-supervisor's own "never a fabricated success" shape, inverted:
 # here the expensive failure is destroying real evidence, not inventing it).
+#
+# `carapace` added for #337: `source <(carapace _carapace)` in
+# ~/.dotfiles/zsh/.zshrc runs inside every agent Bash-tool shell snapshot
+# (21 of 35 snapshots measured referencing it). When that shell is torn
+# down non-gracefully -- exactly how the Bash tool ends each ephemeral
+# snapshot shell -- the helper is reparented to pid 1 and spins at ~150%
+# CPU instead of exiting; three such orphans were measured combined at
+# ~450% CPU, the single largest consumer on the host at the time. This
+# sweep is the recurring backstop (status.sh already runs every ~3 minutes,
+# same as the `yes` case); the actual prevention -- guarding that zshrc
+# line so it never sources under an agent shell in the first place -- lives
+# in the separate `jonhill90/dotfiles` repo, outside this repo's scope.
 reap_orphans() {
   local orphans n left
-  orphans=$(ps -Ao pid,ppid,comm | awk '$3=="yes" && $2==1 {print $1}')
+  orphans=$(ps -Ao pid,ppid,comm | awk '($3=="yes" || $3=="carapace") && $2==1 {print $1}')
   if [ -n "$orphans" ]; then
     n=$(printf '%s\n' "$orphans" | wc -l | tr -d ' ')
     echo "$orphans" | xargs kill 2>/dev/null
     sleep 1
-    left=$(ps -Ao pid,ppid,comm | awk '$3=="yes" && $2==1' | wc -l | tr -d ' ')
-    echo "reaped: $n orphaned load generator(s), $left still alive"
+    left=$(ps -Ao pid,ppid,comm | awk '($3=="yes" || $3=="carapace") && $2==1' | wc -l | tr -d ' ')
+    echo "reaped: $n orphaned load generator(s)/helper(s), $left still alive"
   fi
 }
 

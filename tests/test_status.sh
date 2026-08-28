@@ -159,11 +159,78 @@ else
 fi
 kill "$live_child_pid" 2>/dev/null
 
-# --- No-orphan path stays silent: no side effect, no output.
-# Confirm no stray PPID-1 `yes` remains from the sections above before
-# asserting silence.
+# ---------------------------------------------------------------------------
+# reap_orphans -- carapace helpers (#337: `source <(carapace _carapace)` in
+# ~/.dotfiles/zsh/.zshrc runs in every agent Bash-tool shell snapshot; when
+# that shell is torn down non-gracefully the helper is reparented to pid 1
+# and spins indefinitely at ~150% CPU instead of exiting).
+#
+# The real `carapace _carapace` invocation exits in well under 100ms on this
+# host (measured directly: a backgrounded `carapace _carapace &` is already
+# gone by the time a 0.1s-later `ps` samples it), so it cannot be raced into
+# an observable orphan the way `yes` can above -- there is no window to catch
+# it in. `exec -a carapace sleep 30` is used instead, purely to get a real
+# process whose `ps -Ao comm` reads "carapace" (via argv[0], which macOS's
+# `ps comm` reports here) and whose PPID becomes 1 -- reap_orphans matches
+# on that name+PPID pair regardless of which binary produced it, so this is
+# a faithful test of its actual matching logic, not a stand-in for
+# carapace's own (separate, upstream) behavior. A copied/renamed real binary
+# was tried first and rejected: macOS silently SIGKILLs a binary copied to
+# a new path (broken code signature), which would have made this section
+# fail for a reason unrelated to reap_orphans.
+# ---------------------------------------------------------------------------
+
+bash -c 'exec -a carapace sleep 30 >/dev/null 2>&1 & echo $!' > /tmp/status_test_carapace_orphan_pid.$$
+carapace_orphan_pid=$(cat /tmp/status_test_carapace_orphan_pid.$$)
+rm -f /tmp/status_test_carapace_orphan_pid.$$
+cleanup_pids+=("$carapace_orphan_pid")
+
+sleep 0.5
+carapace_orphan_ppid=$(ps -o ppid= -p "$carapace_orphan_pid" 2>/dev/null | tr -d ' ')
+
+if [ "$carapace_orphan_ppid" = "1" ]; then
+  ok "constructed a real orphaned carapace helper (pid $carapace_orphan_pid, confirmed ppid=1 via ps)"
+
+  reap_output=$(reap_orphans)
+  sleep 0.2
+  carapace_still_alive=$(kill -0 "$carapace_orphan_pid" 2>/dev/null && echo yes || echo no)
+
+  if [ "$carapace_still_alive" = "no" ]; then
+    ok "reap_orphans killed the orphaned carapace helper (pid $carapace_orphan_pid)"
+  else
+    bad "reap_orphans killed the orphaned carapace helper" "pid $carapace_orphan_pid is still alive after reap_orphans ran; output was:
+$reap_output"
+  fi
+else
+  bad "constructed a real PPID-1 orphaned carapace helper" "COULD NOT MEASURE: this environment reaped/reparented pid $carapace_orphan_pid before it could be observed with ppid=1 (observed ppid='$carapace_orphan_ppid'). The kill-path assertion above is skipped rather than faked -- see PR body."
+fi
+
+# Safety property for carapace too: a live-parented carapace-named process
+# must survive untouched, same as the live-parented `yes` above.
+exec -a carapace sleep 30 >/dev/null 2>&1 &
+carapace_live_pid=$!
+cleanup_pids+=("$carapace_live_pid")
 sleep 0.3
-remaining=$(ps -Ao pid,ppid,comm | awk '$3=="yes" && $2==1' | wc -l | tr -d ' ')
+carapace_live_ppid=$(ps -o ppid= -p "$carapace_live_pid" 2>/dev/null | tr -d ' ')
+
+if [ "$carapace_live_ppid" = "$$" ]; then
+  reap_orphans >/dev/null
+  sleep 0.2
+  if kill -0 "$carapace_live_pid" 2>/dev/null; then
+    ok "reap_orphans left a live-parented carapace helper (pid $carapace_live_pid) untouched"
+  else
+    bad "reap_orphans left a live-parented carapace helper untouched" "pid $carapace_live_pid was killed even though its parent ($$, this test script) was alive"
+  fi
+else
+  bad "set up a live-parented carapace helper to test the safety property" "expected ppid=$$, observed ppid='$carapace_live_ppid'"
+fi
+kill "$carapace_live_pid" 2>/dev/null
+
+# --- No-orphan path stays silent: no side effect, no output.
+# Confirm no stray PPID-1 `yes` or `carapace` remains from the sections
+# above before asserting silence.
+sleep 0.3
+remaining=$(ps -Ao pid,ppid,comm | awk '($3=="yes" || $3=="carapace") && $2==1' | wc -l | tr -d ' ')
 if [ "$remaining" = "0" ]; then
   silent_output=$(reap_orphans)
   if [ -z "$silent_output" ]; then
@@ -172,7 +239,7 @@ if [ "$remaining" = "0" ]; then
     bad "reap_orphans is silent when there are no orphans" "expected no output, got: $silent_output"
   fi
 else
-  bad "no-orphan silent-path precondition" "COULD NOT MEASURE: $remaining stray PPID-1 yes process(es) remained from earlier in this suite, so the silent path was not actually exercised on an empty set"
+  bad "no-orphan silent-path precondition" "COULD NOT MEASURE: $remaining stray PPID-1 yes/carapace process(es) remained from earlier in this suite, so the silent path was not actually exercised on an empty set"
 fi
 
 # ---------------------------------------------------------------------------
