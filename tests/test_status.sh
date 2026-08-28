@@ -198,7 +198,35 @@ write_fake uptime 'echo "10:00  up 1 day,  load averages: 0.50 0.40 0.30"'
 write_fake sysctl 'case "$2" in hw.ncpu) echo 8;; vm.swapusage) echo "used = 0.00M";; *) echo 0;; esac'
 write_fake gh 'exit 1'   # no PRs reachable -> "(none open)"
 write_fake tmux 'exit 1' # no estate session -> every pane "GONE" (action=1)
-write_fake ps '/bin/ps "$@"' # real ps, just proxied so PATH-first fakes don't shadow real process listing needed by reap_orphans/procs count
+write_fake ps '
+# Argument-aware: status.sh calls ps in two shapes (line 118 "-eo comm" for
+# the claude process count, lines 63/68 "-Ao pid,ppid,comm" for the orphan
+# sweep, called twice from inside main via reap_orphans). A fake handling
+# only the count shape would silently leave the orphan sweep reading this
+# real, unfaked-estate host during the exit-code assertions below -- fake
+# both shapes coherently instead of proxying to /bin/ps for either.
+case "$1" in
+  -eo)
+    # Claude process count. Below the guard threshold (20) by default so
+    # the quiet-host exit-0/exit-1 assertions exercise their own path
+    # instead of tripping the guard on this host'\''s real ~19+ agents.
+    # FAKE_STATUS_PROCS overrides this for the guard-trip-via-procs check.
+    n="${FAKE_STATUS_PROCS:-5}"
+    i=0
+    while [ "$i" -lt "$n" ]; do echo claude; i=$((i+1)); done
+    ;;
+  -Ao)
+    # Orphan sweep. No fake "yes"/ppid=1 rows -- the orphan-sweep behavior
+    # itself is already exercised directly against a real ps earlier in
+    # this suite (before FAKE_BIN exists); this shape only needs to stay
+    # empty here so status.sh'\''s internal reap_orphans call finds nothing
+    # to kill and stays silent during the exit-code assertions.
+    ;;
+  *)
+    /bin/ps "$@"
+    ;;
+esac
+'
 
 run_status() {
   # STATUS_SH_TEST_PATH_PREFIX beats status.sh's own hardcoded
@@ -233,6 +261,19 @@ rc=$(run_status)
 out=$(cat /tmp/status_test_out.$$)
 if [ "$rc" = "3" ]; then ok "exit 3 (HOST GUARD TRIPPED) asserted against a saturated host"
 else bad "exit 3 (HOST GUARD TRIPPED)" "expected rc=3, got rc=$rc; output:
+$out"; fi
+
+# Guard-trip via the process-count path specifically, now that ps is faked
+# too: a quiet load (the previous fake still holds if this regresses to the
+# real host's own ps) with FAKE_STATUS_PROCS >= 20 must still return rc=3.
+# Without this, a fake ps that always reports a low count would make the
+# suite blind to a genuinely tripped guard -- worse than the failure this
+# change fixes.
+write_fake uptime 'echo "10:00  up 1 day,  load averages: 0.50 0.40 0.30"'
+rc=$(FAKE_STATUS_PROCS=25 run_status)
+out=$(cat /tmp/status_test_out.$$)
+if [ "$rc" = "3" ]; then ok "exit 3 (HOST GUARD TRIPPED) asserted via faked procs>=20 on an otherwise quiet host"
+else bad "exit 3 (HOST GUARD TRIPPED) via faked procs>=20" "expected rc=3, got rc=$rc; output:
 $out"; fi
 
 rm -f /tmp/status_test_out.$$
