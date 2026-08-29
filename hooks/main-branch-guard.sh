@@ -13,10 +13,10 @@ RULE="main-branch-guard (agent-dotfiles#276)"
 hook_require_parsed "$RULE"
 
 # Only in scope for an actual commit invocation.
-echo "$HOOK_COMMAND" | grep -qE '(^|[;&|]|\s)git\s+(-C\s+\S+\s+)?commit\b' || exit 0
+echo "$HOOK_COMMAND_PREFIX" | grep -qE '(^|[;&|]|\s)git\s+(-C\s+\S+\s+)?commit\b' || exit 0
 
 # --dry-run never writes a commit; nothing to guard.
-echo "$HOOK_COMMAND" | grep -qE '\-\-dry-run\b' && exit 0
+echo "$HOOK_COMMAND_PREFIX" | grep -qE '\-\-dry-run\b' && exit 0
 
 # Determine the branch this commit would land on. Prefer the working
 # directory tool_input may have run in (cwd from the hook payload) so a

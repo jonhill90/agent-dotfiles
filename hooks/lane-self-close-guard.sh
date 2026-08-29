@@ -20,10 +20,10 @@ hook_require_parsed "$RULE"
 # REST form `gh api .../issues/<N> -X PATCH -f state=closed` (also matches
 # -f "state=closed" with a leading space).
 CLOSE_NUM=""
-if echo "$HOOK_COMMAND" | grep -qE '(^|[;&|]|\s)gh\s+issue\s+close\b'; then
-  CLOSE_NUM="$(echo "$HOOK_COMMAND" | grep -oE 'gh\s+issue\s+close\s+[^ ]+' | grep -oE '[0-9]+' | head -1)"
-elif echo "$HOOK_COMMAND" | grep -qE 'gh\s+api\b.*/issues/[0-9]+' && echo "$HOOK_COMMAND" | grep -qE 'state=closed'; then
-  CLOSE_NUM="$(echo "$HOOK_COMMAND" | grep -oE '/issues/[0-9]+' | grep -oE '[0-9]+' | head -1)"
+if echo "$HOOK_COMMAND_PREFIX" | grep -qE '(^|[;&|]|\s)gh\s+issue\s+close\b'; then
+  CLOSE_NUM="$(echo "$HOOK_COMMAND_PREFIX" | grep -oE 'gh\s+issue\s+close\s+[^ ]+' | grep -oE '[0-9]+' | head -1)"
+elif echo "$HOOK_COMMAND_PREFIX" | grep -qE 'gh\s+api\b.*/issues/[0-9]+' && echo "$HOOK_COMMAND_PREFIX" | grep -qE 'state=closed'; then
+  CLOSE_NUM="$(echo "$HOOK_COMMAND_PREFIX" | grep -oE '/issues/[0-9]+' | grep -oE '[0-9]+' | head -1)"
 fi
 
 [ -n "$CLOSE_NUM" ] || exit 0

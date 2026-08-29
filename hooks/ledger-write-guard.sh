@@ -25,21 +25,21 @@ hook_require_parsed "$RULE"
 
 # Only in scope for a command that mentions the live ledger at all.
 LIVE_LEDGER_RE='(agent-dotfiles-supervisor|\.local/state/[^/[:space:]]*supervisor[^/[:space:]]*)/ledger\.sqlite3'
-echo "$HOOK_COMMAND" | grep -qE "$LIVE_LEDGER_RE" || exit 0
+echo "$HOOK_COMMAND_PREFIX" | grep -qE "$LIVE_LEDGER_RE" || exit 0
 
 # Read-only forms are fine and exactly what a diagnostic dispatch needs:
 #   sqlite3 -readonly ...ledger.sqlite3 ...
 #   sqlite3 "file:...ledger.sqlite3?mode=ro" ...
 #   python3 ...sqlite3.connect("file:...?mode=ro", uri=True)
-if echo "$HOOK_COMMAND" | grep -qE '\-readonly\b'; then
+if echo "$HOOK_COMMAND_PREFIX" | grep -qE '\-readonly\b'; then
   exit 0
 fi
-if echo "$HOOK_COMMAND" | grep -qE '\?mode=ro\b'; then
+if echo "$HOOK_COMMAND_PREFIX" | grep -qE '\?mode=ro\b'; then
   exit 0
 fi
 # cli.py / core.py are the ledger's own writers and already enforce its
 # invariants -- routing a write through them is not an ad hoc open.
-if echo "$HOOK_COMMAND" | grep -qE '\b(cli|core)\.py\b'; then
+if echo "$HOOK_COMMAND_PREFIX" | grep -qE '\b(cli|core)\.py\b'; then
   exit 0
 fi
 

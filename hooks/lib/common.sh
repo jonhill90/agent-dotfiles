@@ -18,6 +18,7 @@ set -u
 HOOK_STDIN="$(cat)"
 HOOK_TOOL_NAME=""
 HOOK_COMMAND=""
+HOOK_COMMAND_PREFIX=""
 HOOK_PARSE_OK=0
 
 # python3 is already a hard dependency of this repo (install.sh step 4/5,
@@ -42,8 +43,27 @@ print(cmd)
   HOOK_STATUS_LINE="$(printf '%s\n' "$HOOK_PARSED" | sed -n '1p')"
   if [ "$HOOK_STATUS_LINE" = "OK" ]; then
     HOOK_PARSE_OK=1
+    # shellcheck disable=SC2034 # consumed by guard scripts after sourcing
     HOOK_TOOL_NAME="$(printf '%s\n' "$HOOK_PARSED" | sed -n '2p')"
     HOOK_COMMAND="$(printf '%s\n' "$HOOK_PARSED" | sed -n '3,$p')"
+    # Match only the command prefix before its first unescaped quote or
+    # backtick. Guarding the raw Bash payload makes prose in a quoted commit
+    # message, issue body, or heredoc look like an invocation (#341). Every
+    # guard below uses this shared surface so the rule is consistent.
+    # shellcheck disable=SC2034 # consumed by guard scripts after sourcing
+    HOOK_COMMAND_PREFIX="$(printf '%s' "$HOOK_COMMAND" | python3 -c '
+import sys
+s = sys.stdin.read()
+i = 0
+while i < len(s):
+    if s[i] == "\\":
+        i += 2
+        continue
+    if s[i] in ("\x27", "\"", "`"):
+        break
+    i += 1
+sys.stdout.write(s[:i])
+' 2>/dev/null)"
   fi
 fi
 

@@ -88,6 +88,13 @@ class TmuxDestructiveVerbGuardTests(unittest.TestCase):
         result = run_hook(self.SCRIPT, "ls -la")
         self.assertEqual(result.returncode, 0)
 
+    def test_evidence_quoting_a_destructive_verb_is_allowed(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            'gh issue close 99 -c "the review found a tmux kill-server example"',
+        )
+        self.assertEqual(result.returncode, 0)
+
 
 class TmuxProtectedTargetGuardTests(unittest.TestCase):
     SCRIPT = "tmux-protected-target-guard.sh"
@@ -111,6 +118,13 @@ class TmuxProtectedTargetGuardTests(unittest.TestCase):
 
     def test_targeting_a_lane_window_is_allowed(self) -> None:
         result = run_hook(self.SCRIPT, "tmux send-keys -t lane-42:1 'hi' Enter")
+        self.assertEqual(result.returncode, 0)
+
+    def test_evidence_naming_a_protected_target_is_allowed(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            "cat <<'EOF'\ntmux list-panes -t Hill90\nEOF\ngh issue create --body-file evidence.md",
+        )
         self.assertEqual(result.returncode, 0)
 
 
@@ -151,6 +165,14 @@ class MainBranchGuardTests(unittest.TestCase):
         result = run_hook(self.SCRIPT, "git status", cwd=str(self.repo))
         self.assertEqual(result.returncode, 0)
 
+    def test_evidence_quoting_a_commit_is_allowed(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            "cat <<'EOF'\ngit commit -m example\nEOF\ngh issue create --body-file evidence.md",
+            cwd=str(self.repo),
+        )
+        self.assertEqual(result.returncode, 0)
+
 
 class GhBodyGuardTests(unittest.TestCase):
     SCRIPT = "gh-body-guard.sh"
@@ -180,6 +202,13 @@ class GhBodyGuardTests(unittest.TestCase):
         # keeps this legitimate call from being a false positive.
         result = run_hook(
             self.SCRIPT, "gh pr create --title x --body-file file.md"
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_evidence_quoting_a_bad_gh_api_flag_is_allowed(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            'printf "%s" "echo evidence; gh api --body-file evidence.md"',
         )
         self.assertEqual(result.returncode, 0)
 
@@ -228,6 +257,14 @@ class LaneSelfCloseGuardTests(unittest.TestCase):
         result = run_hook(self.SCRIPT, "gh issue close 276", cwd=str(self.repo))
         self.assertEqual(result.returncode, 0)
 
+    def test_evidence_quoting_an_issue_close_is_allowed(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            'printf "%s" "echo evidence; gh issue close 276"',
+            cwd=str(self.repo),
+        )
+        self.assertEqual(result.returncode, 0)
+
 
 class LedgerWriteGuardTests(unittest.TestCase):
     SCRIPT = "ledger-write-guard.sh"
@@ -255,6 +292,13 @@ class LedgerWriteGuardTests(unittest.TestCase):
         result = run_hook(
             self.SCRIPT,
             f'python3 scripts/supervisor/cli.py claim --lane t:1 --ledger {self.LIVE_LEDGER}',
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_evidence_quoting_a_live_ledger_path_is_allowed(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            f'gh issue comment 99 --body "sqlite3 {self.LIVE_LEDGER}"',
         )
         self.assertEqual(result.returncode, 0)
 

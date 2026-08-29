@@ -22,24 +22,25 @@ source "$SCRIPT_DIR/lib/common.sh"
 RULE="tmux-protected-target-guard (agent-dotfiles#276)"
 hook_require_parsed "$RULE"
 
-case "$HOOK_COMMAND" in
-  *tmux*) : ;;
-  *) exit 0 ;;
-esac
-
 # Session/window identifiers that must never appear as a tmux target or
 # argument, regardless of verb -- reading a protected pane is also not the
 # job of an agent's tmux command (use the supervisor's own read surface).
 PROTECTED_RE='agent-supervisor:1|=Hill90|\bHill90\b|hill90-app|hill90-docs'
 
-if echo "$HOOK_COMMAND" | grep -qE "$PROTECTED_RE"; then
-  hook_block "$RULE" \
-    "this tmux command names a protected target (agent-supervisor:1, the Hill90 session, hill90-app or hill90-docs). These are the operator's own panes/sessions, not lane-owned ones -- an agent must never address them directly."
-fi
+case "$HOOK_COMMAND_PREFIX" in
+  *tmux*)
+    if echo "$HOOK_COMMAND_PREFIX" | grep -qE "$PROTECTED_RE"; then
+      hook_block "$RULE" \
+        "this tmux command names a protected target (agent-supervisor:1, the Hill90 session, hill90-app or hill90-docs). These are the operator's own panes/sessions, not lane-owned ones -- an agent must never address them directly."
+    fi
+    ;;
+esac
 
-# ~/.tmux.conf: block any command that writes to, sources, or otherwise
-# operates on the real config file. Reading it (cat, less) is not in scope
-# -- the danger is mutation or a live 'source-file' reload, not inspection.
+# This sub-rule cannot use HOOK_COMMAND_PREFIX: an ordinary direct write
+# commonly has a quoted payload before its redirection (for example,
+# `echo 'set -g mouse on' >> ~/.tmux.conf`). Matching that prefix would
+# silently allow a real mutation. Keep its narrow, write-shaped raw match;
+# protected tmux-target detection above uses the shared prefix.
 if echo "$HOOK_COMMAND" | grep -qE '\.tmux\.conf'; then
   if echo "$HOOK_COMMAND" | grep -qE '(>>?[^&]*\.tmux\.conf|tee\b.*\.tmux\.conf|source-file\b.*\.tmux\.conf|sed\s+-i.*\.tmux\.conf|\bmv\b.*\.tmux\.conf|\bcp\b.*\.tmux\.conf)'; then
     hook_block "$RULE" \
