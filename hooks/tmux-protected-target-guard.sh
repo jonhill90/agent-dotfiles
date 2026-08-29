@@ -22,30 +22,9 @@ source "$SCRIPT_DIR/lib/common.sh"
 RULE="tmux-protected-target-guard (agent-dotfiles#276)"
 hook_require_parsed "$RULE"
 
-# Session/window identifiers that must never appear as a tmux target or
-# argument, regardless of verb -- reading a protected pane is also not the
-# job of an agent's tmux command (use the supervisor's own read surface).
-PROTECTED_RE='agent-supervisor:1|=Hill90|\bHill90\b|hill90-app|hill90-docs'
-
-case "$HOOK_COMMAND_PREFIX" in
-  *tmux*)
-    if echo "$HOOK_COMMAND_PREFIX" | grep -qE "$PROTECTED_RE"; then
-      hook_block "$RULE" \
-        "this tmux command names a protected target (agent-supervisor:1, the Hill90 session, hill90-app or hill90-docs). These are the operator's own panes/sessions, not lane-owned ones -- an agent must never address them directly."
-    fi
-    ;;
-esac
-
-# This sub-rule cannot use HOOK_COMMAND_PREFIX: an ordinary direct write
-# commonly has a quoted payload before its redirection (for example,
-# `echo 'set -g mouse on' >> ~/.tmux.conf`). Matching that prefix would
-# silently allow a real mutation. Keep its narrow, write-shaped raw match;
-# protected tmux-target detection above uses the shared prefix.
-if echo "$HOOK_COMMAND" | grep -qE '\.tmux\.conf'; then
-  if echo "$HOOK_COMMAND" | grep -qE '(>>?[^&]*\.tmux\.conf|tee\b.*\.tmux\.conf|source-file\b.*\.tmux\.conf|sed\s+-i.*\.tmux\.conf|\bmv\b.*\.tmux\.conf|\bcp\b.*\.tmux\.conf)'; then
-    hook_block "$RULE" \
-      "this command writes to, replaces, or reloads ~/.tmux.conf, the operator's real tmux config. Experiment on the operator's disposable remote sandbox instead (NOTEBOOK-jon-directives.md standing rule 11: 'never touch his tmux config')."
-  fi
+if hook_command_violates "$RULE" protected; then
+  hook_block "$RULE" \
+    "this command addresses a protected tmux target or writes, replaces, or reloads ~/.tmux.conf. These are operator-owned resources, not lane-owned ones."
 fi
 
 exit 0

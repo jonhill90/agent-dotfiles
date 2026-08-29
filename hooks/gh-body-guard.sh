@@ -26,18 +26,9 @@ RULE="gh-body-guard (agent-dotfiles#276)"
 hook_require_parsed "$RULE"
 
 # Only in scope for gh api calls.
-echo "$HOOK_COMMAND_PREFIX" | grep -qE '(^|[;&|]|\s)gh\s+api\b' || exit 0
-
-if echo "$HOOK_COMMAND_PREFIX" | grep -qE '\-\-body-file\b'; then
+if hook_command_violates "$RULE" gh-body; then
   hook_block "$RULE" \
     "'gh api' has no --body-file flag -- it belongs to 'gh issue comment'/'gh pr create', not 'gh api'. Use -f body=\"\$(cat file)\" instead."
-fi
-
-# -f body=@... or -F body=@... where the field name is body specifically
-# (other -F fields legitimately read files, e.g. uploading an asset).
-if echo "$HOOK_COMMAND_PREFIX" | grep -qE '\-f\s+body=@'; then
-  hook_block "$RULE" \
-    "'-f body=@file' sends the literal string \"@file\" as the body -- -f never reads a file, only -F does. Use -f body=\"\$(cat file)\" instead."
 fi
 
 exit 0

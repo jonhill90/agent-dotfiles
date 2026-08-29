@@ -88,6 +88,56 @@ class TmuxDestructiveVerbGuardTests(unittest.TestCase):
         result = run_hook(self.SCRIPT, "ls -la")
         self.assertEqual(result.returncode, 0)
 
+    def test_assignment_before_destructive_tmux_is_blocked(self) -> None:
+        result = run_hook(self.SCRIPT, 'X="a" tmux kill-server')
+        self.assertEqual(result.returncode, 2)
+
+    def test_env_assignment_before_destructive_tmux_is_blocked(self) -> None:
+        result = run_hook(self.SCRIPT, "env VAR='x' tmux kill-server")
+        self.assertEqual(result.returncode, 2)
+
+    def test_backtick_substitution_before_destructive_tmux_is_blocked(self) -> None:
+        result = run_hook(self.SCRIPT, "echo `printf note`; tmux kill-server")
+        self.assertEqual(result.returncode, 2)
+
+    def test_quoted_heredoc_before_destructive_tmux_is_blocked(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            "cat <<'EOF'\nproof: tmux kill-server\nEOF\ntmux kill-server",
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_and_separator_before_destructive_tmux_is_blocked(self) -> None:
+        result = run_hook(self.SCRIPT, "echo note && tmux kill-server")
+        self.assertEqual(result.returncode, 2)
+
+    def test_subshell_before_destructive_tmux_is_blocked(self) -> None:
+        result = run_hook(self.SCRIPT, "(tmux kill-server)")
+        self.assertEqual(result.returncode, 2)
+
+    def test_unquoted_heredoc_substitution_is_blocked(self) -> None:
+        result = run_hook(self.SCRIPT, "cat <<EOF\n$(tmux kill-server)\nEOF")
+        self.assertEqual(result.returncode, 2)
+
+    def test_double_quoted_substitution_is_blocked(self) -> None:
+        result = run_hook(self.SCRIPT, 'echo "$(tmux kill-server)"')
+        self.assertEqual(result.returncode, 2)
+
+    def test_shell_wrapper_is_blocked(self) -> None:
+        result = run_hook(self.SCRIPT, 'bash -c "tmux kill-server"')
+        self.assertEqual(result.returncode, 2)
+
+    def test_control_keyword_does_not_hide_destructive_tmux(self) -> None:
+        result = run_hook(self.SCRIPT, "if true; then tmux kill-server; fi")
+        self.assertEqual(result.returncode, 2)
+
+    def test_misordered_isolation_tokens_are_blocked(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            "tmux kill-server TMUX_TMPDIR=/tmp env -u TMUX",
+        )
+        self.assertEqual(result.returncode, 2)
+
     def test_evidence_quoting_a_destructive_verb_is_allowed(self) -> None:
         result = run_hook(
             self.SCRIPT,
@@ -119,6 +169,27 @@ class TmuxProtectedTargetGuardTests(unittest.TestCase):
     def test_targeting_a_lane_window_is_allowed(self) -> None:
         result = run_hook(self.SCRIPT, "tmux send-keys -t lane-42:1 'hi' Enter")
         self.assertEqual(result.returncode, 0)
+
+    def test_quoted_prefix_does_not_hide_protected_target(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            'echo "note"; tmux send-keys -t agent-supervisor:1 hi',
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_tmux_conf_in_quoted_issue_body_is_allowed(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            'gh issue comment 99 --body "proof: echo x >> ~/.tmux.conf"',
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_variable_expanded_protected_target_is_blocked(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            'target=Hill90; tmux kill-session -t "$target"',
+        )
+        self.assertEqual(result.returncode, 2)
 
     def test_evidence_naming_a_protected_target_is_allowed(self) -> None:
         result = run_hook(
@@ -164,6 +235,14 @@ class MainBranchGuardTests(unittest.TestCase):
     def test_unrelated_git_command_is_allowed(self) -> None:
         result = run_hook(self.SCRIPT, "git status", cwd=str(self.repo))
         self.assertEqual(result.returncode, 0)
+
+    def test_quoted_prefix_does_not_hide_commit_on_main(self) -> None:
+        result = run_hook(self.SCRIPT, 'echo "note"; git commit -m x', cwd=str(self.repo))
+        self.assertEqual(result.returncode, 2)
+
+    def test_shell_wrapper_does_not_hide_commit_on_main(self) -> None:
+        result = run_hook(self.SCRIPT, 'bash -c "git commit -m bypass"', cwd=str(self.repo))
+        self.assertEqual(result.returncode, 2)
 
     def test_evidence_quoting_a_commit_is_allowed(self) -> None:
         result = run_hook(
@@ -257,6 +336,14 @@ class LaneSelfCloseGuardTests(unittest.TestCase):
         result = run_hook(self.SCRIPT, "gh issue close 276", cwd=str(self.repo))
         self.assertEqual(result.returncode, 0)
 
+    def test_quoted_prefix_does_not_hide_self_close(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            'echo "note"; gh issue close 276',
+            cwd=str(self.repo),
+        )
+        self.assertEqual(result.returncode, 2)
+
     def test_evidence_quoting_an_issue_close_is_allowed(self) -> None:
         result = run_hook(
             self.SCRIPT,
@@ -294,6 +381,20 @@ class LedgerWriteGuardTests(unittest.TestCase):
             f'python3 scripts/supervisor/cli.py claim --lane t:1 --ledger {self.LIVE_LEDGER}',
         )
         self.assertEqual(result.returncode, 0)
+
+    def test_quoted_prefix_does_not_hide_live_ledger_write(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            f'echo "note"; sqlite3 {self.LIVE_LEDGER} "insert into tasks values (1)"',
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_variable_expanded_live_ledger_write_is_blocked(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            f'db="{self.LIVE_LEDGER}"; sqlite3 "$db" "DELETE FROM tasks"',
+        )
+        self.assertEqual(result.returncode, 2)
 
     def test_evidence_quoting_a_live_ledger_path_is_allowed(self) -> None:
         result = run_hook(
