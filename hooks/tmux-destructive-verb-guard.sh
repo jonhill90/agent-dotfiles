@@ -25,16 +25,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 RULE="tmux-destructive-verb-guard (agent-dotfiles#276 / agent-supervisor#247)"
 hook_require_parsed "$RULE"
 
-# Only Bash commands that actually mention tmux are in scope.
-case "$HOOK_COMMAND" in
-  *tmux*) : ;;
-  *) exit 0 ;;
-esac
-
-# Destructive verbs. respawn-pane / respawn-window both match respawn-*.
-DESTRUCTIVE_RE='kill-server|kill-session|kill-window|respawn-pane|respawn-window'
-
-echo "$HOOK_COMMAND" | grep -qE "$DESTRUCTIVE_RE" || exit 0
+hook_command_violates "$RULE" destructive || exit 0
 
 # From here on the command names a destructive verb. It is allowed ONLY if
 # BOTH halves of the isolation idiom are present in the same command:
@@ -43,14 +34,5 @@ echo "$HOOK_COMMAND" | grep -qE "$DESTRUCTIVE_RE" || exit 0
 # Fail closed: if we cannot confirm both, refuse. Guessing "probably fine"
 # is exactly the class of error agent-dotfiles#228/#230/#235 recorded.
 
-if ! echo "$HOOK_COMMAND" | grep -qE 'TMUX_TMPDIR='; then
-  hook_block "$RULE" \
-    "a destructive tmux verb (kill-server/kill-session/kill-window/respawn-*) with no TMUX_TMPDIR scoping. This targets the operator's real server. Required form: TMUX_TMPDIR=\$(mktemp -d) env -u TMUX tmux <verb> ... -- see agent-supervisor#247 (a bare 'tmux kill-server' destroyed the live estate three times, including sessions unrelated to the lane that ran it)."
-fi
-
-if ! echo "$HOOK_COMMAND" | grep -qE '(^|[;&|]|\s)env\s+-u\s+TMUX\b'; then
-  hook_block "$RULE" \
-    "TMUX_TMPDIR is set but TMUX is not unset in the same command (missing 'env -u TMUX'), so tmux can still resolve the operator's inherited server. Required form: TMUX_TMPDIR=\$(mktemp -d) env -u TMUX tmux <verb> ... -- see agent-supervisor#247."
-fi
-
-exit 0
+hook_block "$RULE" \
+  "a destructive tmux verb (kill-server/kill-session/kill-window/respawn-*) is not isolated with both TMUX_TMPDIR and 'env -u TMUX' in the same command. This can target the operator's real server."

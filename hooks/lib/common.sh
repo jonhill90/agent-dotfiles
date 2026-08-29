@@ -42,6 +42,7 @@ print(cmd)
   HOOK_STATUS_LINE="$(printf '%s\n' "$HOOK_PARSED" | sed -n '1p')"
   if [ "$HOOK_STATUS_LINE" = "OK" ]; then
     HOOK_PARSE_OK=1
+    # shellcheck disable=SC2034 # consumed by guard scripts after sourcing
     HOOK_TOOL_NAME="$(printf '%s\n' "$HOOK_PARSED" | sed -n '2p')"
     HOOK_COMMAND="$(printf '%s\n' "$HOOK_PARSED" | sed -n '3,$p')"
   fi
@@ -55,6 +56,22 @@ hook_block() {
   local reason="$2"
   printf 'BLOCKED by %s\n\n%s\n' "$rule" "$reason" >&2
   exit 2
+}
+
+# hook_command_violates RULE PARSER_RULE
+# A parser error blocks: a security hook must never treat grammar it cannot
+# identify as harmless prose.  The helper returns 10 only for a real match.
+hook_command_violates() {
+  local rule="$1"
+  local parser_rule="$2"
+  local helper="${SCRIPT_DIR}/lib/command_guard.py"
+  python3 "$helper" "$parser_rule" <<<"$HOOK_COMMAND" >/dev/null 2>&1
+  local status=$?
+  case "$status" in
+    0) return 1 ;;
+    10) return 0 ;;
+    *) hook_block "$rule" "could not identify executable commands in this Bash payload well enough to apply the guard -- refusing rather than guessing." ;;
+  esac
 }
 
 # hook_require_parsed RULE
