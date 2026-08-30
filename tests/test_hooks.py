@@ -17,6 +17,7 @@ import unittest
 from pathlib import Path
 
 HOOKS_DIR = Path(__file__).resolve().parents[1] / "hooks"
+CLAUDE_SETTINGS_FRAGMENT = Path(__file__).resolve().parents[1] / "settings" / "claude" / "settings.json"
 
 
 def run_hook(script: str, command: str, cwd: str | None = None) -> subprocess.CompletedProcess:
@@ -401,6 +402,109 @@ class LedgerWriteGuardTests(unittest.TestCase):
             self.SCRIPT,
             f'gh issue comment 99 --body "sqlite3 {self.LIVE_LEDGER}"',
         )
+        self.assertEqual(result.returncode, 0)
+
+
+class KeychainWriteGuardTests(unittest.TestCase):
+    SCRIPT = "keychain-write-guard.sh"
+
+    def test_guard_is_declared_in_the_claude_settings_fragment(self) -> None:
+        settings = json.loads(CLAUDE_SETTINGS_FRAGMENT.read_text())
+        hooks = settings["hooks"]["PreToolUse"][0]["hooks"]
+        self.assertIn(
+            {"type": "command", "command": "hooks/keychain-write-guard.sh"},
+            hooks,
+        )
+
+    def test_real_probe_shape_is_blocked(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            "security add-generic-password -s estate-probe-write-1427 -a probe -w secret",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("credential-store-read-only", result.stderr)
+
+    def test_executed_write_after_a_command_separator_is_blocked(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            "echo checking; security add-generic-password -s service -a account -w secret",
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_generic_password_write_verbs_are_blocked_with_any_flags(self) -> None:
+        for command in (
+            "security add-generic-password -a account -s service -A -U -w secret",
+            "security delete-generic-password -a account -s service",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(run_hook(self.SCRIPT, command).returncode, 2)
+
+    def test_other_confirmed_keychain_mutators_are_blocked(self) -> None:
+        for command in (
+            "security set-keychain-settings -l login.keychain-db",
+            "security add-internet-password -a account -s example.test -w secret",
+            "security set-generic-password-partition-list -a account -s service -S apple:",
+            "security delete-internet-password -a account -s example.test",
+            "security set-key-partition-list -S apple:",
+            "security default-keychain -s login.keychain-db",
+            "security list-keychains -s login.keychain-db",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(run_hook(self.SCRIPT, command).returncode, 2)
+
+    def test_plain_text_mention_in_issue_comment_is_allowed(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            'gh issue comment 665 --body "The keychain guard must refuse security add-generic-password -U -A, but this comment only describes the bug."',
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_plain_text_mention_in_commit_message_is_allowed(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            'git commit -m "Document why security delete-generic-password is forbidden"',
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_leading_global_flag_does_not_bypass_the_guard(self) -> None:
+        # security's own man page is `security [-hilqv] [-p prompt] [command]
+        # ...` -- a single leading global flag must not slip the subcommand
+        # past position-0 detection (agent-dotfiles#344).
+        for command in (
+            "security -v add-generic-password -s estate-probe-write-1427 -a probe -w probevalue",
+            "security -h add-generic-password -s estate-probe-write-1427 -a probe -w probevalue",
+            "security -i add-generic-password -s estate-probe-write-1427 -a probe -w probevalue",
+            "security -l add-generic-password -s estate-probe-write-1427 -a probe -w probevalue",
+            "security -q add-generic-password -s estate-probe-write-1427 -a probe -w probevalue",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(run_hook(self.SCRIPT, command).returncode, 2)
+
+    def test_leading_dash_p_prompt_argument_does_not_bypass_the_guard(self) -> None:
+        # `-p prompt` takes an argument -- a naive "skip anything starting
+        # with -" would consume `prompt` and then misread the following
+        # token as the subcommand instead of skipping both.
+        result = run_hook(
+            self.SCRIPT,
+            "security -p prompt add-generic-password -s estate-probe-write-1427 -a probe -w probevalue",
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_read_only_keychain_commands_are_allowed(self) -> None:
+        for command in (
+            "security find-generic-password -w -s service -a account",
+            "security show-keychain-info login.keychain-db",
+            "security list-keychains",
+            "security default-keychain",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(run_hook(self.SCRIPT, command).returncode, 0)
+
+    def test_read_only_keychain_command_with_leading_global_flag_is_allowed(self) -> None:
+        # A leading global flag must not falsely trip the guard on a
+        # legitimate read either -- the fix must skip the flag, not treat
+        # its presence as evidence of a write.
+        result = run_hook(self.SCRIPT, "security -v find-generic-password -s service -a account")
         self.assertEqual(result.returncode, 0)
 
 

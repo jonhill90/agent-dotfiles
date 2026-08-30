@@ -31,6 +31,33 @@ LIVE_LEDGER = re.compile(
 )
 DESTRUCTIVE = {"kill-server", "kill-session", "kill-window", "respawn-pane", "respawn-window"}
 PROTECTED = re.compile(r"agent-supervisor:1|(?:^|[^\w])=?Hill90(?:$|[^\w])|hill90-app|hill90-docs")
+KEYCHAIN_WRITE_COMMANDS = {
+    "create-keychain",
+    "delete-keychain",
+    "lock-keychain",
+    "unlock-keychain",
+    "set-keychain-settings",
+    "set-keychain-password",
+    "create-keypair",
+    "add-generic-password",
+    "add-internet-password",
+    "add-certificates",
+    "delete-generic-password",
+    "set-generic-password-partition-list",
+    "delete-internet-password",
+    "set-internet-password-partition-list",
+    "set-key-partition-list",
+    "delete-certificate",
+    "delete-identity",
+    "set-identity-preference",
+    "create-db",
+    "import",
+    "install-mds",
+    "add-trusted-cert",
+    "remove-trusted-cert",
+    "trust-settings-import",
+    "create-filevaultmaster-keychain",
+}
 
 
 def dequote_delimiter(value: str) -> str:
@@ -246,6 +273,31 @@ def executable(words: list[Word]) -> tuple[str, list[Word]]:
     return words[index].text, words[index + 1 :]
 
 
+SECURITY_GLOBAL_FLAGS = {"-h", "-i", "-l", "-q", "-v"}
+SECURITY_GLOBAL_FLAGS_WITH_ARG = {"-p"}
+
+
+def security_subcommand_index(values: list[str]) -> int:
+    """Skip `security`'s own leading global options to find the subcommand.
+
+    `security`'s man page is `security [-hilqv] [-p prompt] [command] ...` --
+    global flags legitimately precede the subcommand, so position 0 cannot be
+    assumed to hold it. `-p` takes an argument (the prompt text) and must be
+    consumed along with it, the same way `executable()` above consumes `env`'s
+    own flags.
+    """
+    index = 0
+    while index < len(values):
+        token = values[index]
+        if token in SECURITY_GLOBAL_FLAGS:
+            index += 1
+        elif token in SECURITY_GLOBAL_FLAGS_WITH_ARG:
+            index += 2
+        else:
+            break
+    return index
+
+
 def violates(rule: str, parsed: list[list[Word]]) -> bool:
     for words in parsed:
         program, args = executable(words)
@@ -294,6 +346,27 @@ def violates(rule: str, parsed: list[list[Word]]) -> bool:
             if program in {"sqlite3", "python", "python3"} and (any(LIVE_LEDGER.search(value) for value in values) or any("$" in value for value in values)):
                 if "-readonly" not in values and not any("?mode=ro" in value for value in values) and not any(value.endswith(("cli.py", "core.py")) for value in values):
                     return True
+        elif rule == "keychain" and program == "security" and values:
+            sub_values = values[security_subcommand_index(values):]
+            if not sub_values:
+                continue
+            subcommand = sub_values[0]
+            if subcommand in KEYCHAIN_WRITE_COMMANDS:
+                return True
+            # These commands are getters without -s, but `security help`
+            # confirms that -s changes the selected keychain/search list.
+            if subcommand in {"list-keychains", "default-keychain", "login-keychain"} and "-s" in sub_values:
+                return True
+            # These subcommands report state by default and write only when
+            # their documented mutating mode is explicitly requested.
+            if subcommand == "user-trust-settings-enable" and any(value in {"-d", "-e"} for value in sub_values):
+                return True
+            if subcommand == "smartcards" and any(value in {"-d", "-e"} for value in sub_values):
+                return True
+            if subcommand == "filevault" and len(sub_values) >= 3 and sub_values[0:2] == ["filevault", "skip-sc-enforcement"] and sub_values[2] in {"set", "reset"}:
+                return True
+            if subcommand == "authorizationdb" and len(sub_values) >= 2 and sub_values[1] in {"remove", "write", "reset"}:
+                return True
     return False
 
 
