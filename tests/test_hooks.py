@@ -466,6 +466,30 @@ class KeychainWriteGuardTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0)
 
+    def test_leading_global_flag_does_not_bypass_the_guard(self) -> None:
+        # security's own man page is `security [-hilqv] [-p prompt] [command]
+        # ...` -- a single leading global flag must not slip the subcommand
+        # past position-0 detection (agent-dotfiles#344).
+        for command in (
+            "security -v add-generic-password -s estate-probe-write-1427 -a probe -w probevalue",
+            "security -h add-generic-password -s estate-probe-write-1427 -a probe -w probevalue",
+            "security -i add-generic-password -s estate-probe-write-1427 -a probe -w probevalue",
+            "security -l add-generic-password -s estate-probe-write-1427 -a probe -w probevalue",
+            "security -q add-generic-password -s estate-probe-write-1427 -a probe -w probevalue",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(run_hook(self.SCRIPT, command).returncode, 2)
+
+    def test_leading_dash_p_prompt_argument_does_not_bypass_the_guard(self) -> None:
+        # `-p prompt` takes an argument -- a naive "skip anything starting
+        # with -" would consume `prompt` and then misread the following
+        # token as the subcommand instead of skipping both.
+        result = run_hook(
+            self.SCRIPT,
+            "security -p prompt add-generic-password -s estate-probe-write-1427 -a probe -w probevalue",
+        )
+        self.assertEqual(result.returncode, 2)
+
     def test_read_only_keychain_commands_are_allowed(self) -> None:
         for command in (
             "security find-generic-password -w -s service -a account",
@@ -475,6 +499,13 @@ class KeychainWriteGuardTests(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertEqual(run_hook(self.SCRIPT, command).returncode, 0)
+
+    def test_read_only_keychain_command_with_leading_global_flag_is_allowed(self) -> None:
+        # A leading global flag must not falsely trip the guard on a
+        # legitimate read either -- the fix must skip the flag, not treat
+        # its presence as evidence of a write.
+        result = run_hook(self.SCRIPT, "security -v find-generic-password -s service -a account")
+        self.assertEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":

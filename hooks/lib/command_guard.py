@@ -273,6 +273,31 @@ def executable(words: list[Word]) -> tuple[str, list[Word]]:
     return words[index].text, words[index + 1 :]
 
 
+SECURITY_GLOBAL_FLAGS = {"-h", "-i", "-l", "-q", "-v"}
+SECURITY_GLOBAL_FLAGS_WITH_ARG = {"-p"}
+
+
+def security_subcommand_index(values: list[str]) -> int:
+    """Skip `security`'s own leading global options to find the subcommand.
+
+    `security`'s man page is `security [-hilqv] [-p prompt] [command] ...` --
+    global flags legitimately precede the subcommand, so position 0 cannot be
+    assumed to hold it. `-p` takes an argument (the prompt text) and must be
+    consumed along with it, the same way `executable()` above consumes `env`'s
+    own flags.
+    """
+    index = 0
+    while index < len(values):
+        token = values[index]
+        if token in SECURITY_GLOBAL_FLAGS:
+            index += 1
+        elif token in SECURITY_GLOBAL_FLAGS_WITH_ARG:
+            index += 2
+        else:
+            break
+    return index
+
+
 def violates(rule: str, parsed: list[list[Word]]) -> bool:
     for words in parsed:
         program, args = executable(words)
@@ -322,22 +347,25 @@ def violates(rule: str, parsed: list[list[Word]]) -> bool:
                 if "-readonly" not in values and not any("?mode=ro" in value for value in values) and not any(value.endswith(("cli.py", "core.py")) for value in values):
                     return True
         elif rule == "keychain" and program == "security" and values:
-            subcommand = values[0]
+            sub_values = values[security_subcommand_index(values):]
+            if not sub_values:
+                continue
+            subcommand = sub_values[0]
             if subcommand in KEYCHAIN_WRITE_COMMANDS:
                 return True
             # These commands are getters without -s, but `security help`
             # confirms that -s changes the selected keychain/search list.
-            if subcommand in {"list-keychains", "default-keychain", "login-keychain"} and "-s" in values:
+            if subcommand in {"list-keychains", "default-keychain", "login-keychain"} and "-s" in sub_values:
                 return True
             # These subcommands report state by default and write only when
             # their documented mutating mode is explicitly requested.
-            if subcommand == "user-trust-settings-enable" and any(value in {"-d", "-e"} for value in values):
+            if subcommand == "user-trust-settings-enable" and any(value in {"-d", "-e"} for value in sub_values):
                 return True
-            if subcommand == "smartcards" and any(value in {"-d", "-e"} for value in values):
+            if subcommand == "smartcards" and any(value in {"-d", "-e"} for value in sub_values):
                 return True
-            if subcommand == "filevault" and len(values) >= 3 and values[0:2] == ["filevault", "skip-sc-enforcement"] and values[2] in {"set", "reset"}:
+            if subcommand == "filevault" and len(sub_values) >= 3 and sub_values[0:2] == ["filevault", "skip-sc-enforcement"] and sub_values[2] in {"set", "reset"}:
                 return True
-            if subcommand == "authorizationdb" and len(values) >= 2 and values[1] in {"remove", "write", "reset"}:
+            if subcommand == "authorizationdb" and len(sub_values) >= 2 and sub_values[1] in {"remove", "write", "reset"}:
                 return True
     return False
 
