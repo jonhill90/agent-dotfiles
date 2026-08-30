@@ -31,6 +31,33 @@ LIVE_LEDGER = re.compile(
 )
 DESTRUCTIVE = {"kill-server", "kill-session", "kill-window", "respawn-pane", "respawn-window"}
 PROTECTED = re.compile(r"agent-supervisor:1|(?:^|[^\w])=?Hill90(?:$|[^\w])|hill90-app|hill90-docs")
+KEYCHAIN_WRITE_COMMANDS = {
+    "create-keychain",
+    "delete-keychain",
+    "lock-keychain",
+    "unlock-keychain",
+    "set-keychain-settings",
+    "set-keychain-password",
+    "create-keypair",
+    "add-generic-password",
+    "add-internet-password",
+    "add-certificates",
+    "delete-generic-password",
+    "set-generic-password-partition-list",
+    "delete-internet-password",
+    "set-internet-password-partition-list",
+    "set-key-partition-list",
+    "delete-certificate",
+    "delete-identity",
+    "set-identity-preference",
+    "create-db",
+    "import",
+    "install-mds",
+    "add-trusted-cert",
+    "remove-trusted-cert",
+    "trust-settings-import",
+    "create-filevaultmaster-keychain",
+}
 
 
 def dequote_delimiter(value: str) -> str:
@@ -294,6 +321,24 @@ def violates(rule: str, parsed: list[list[Word]]) -> bool:
             if program in {"sqlite3", "python", "python3"} and (any(LIVE_LEDGER.search(value) for value in values) or any("$" in value for value in values)):
                 if "-readonly" not in values and not any("?mode=ro" in value for value in values) and not any(value.endswith(("cli.py", "core.py")) for value in values):
                     return True
+        elif rule == "keychain" and program == "security" and values:
+            subcommand = values[0]
+            if subcommand in KEYCHAIN_WRITE_COMMANDS:
+                return True
+            # These commands are getters without -s, but `security help`
+            # confirms that -s changes the selected keychain/search list.
+            if subcommand in {"list-keychains", "default-keychain", "login-keychain"} and "-s" in values:
+                return True
+            # These subcommands report state by default and write only when
+            # their documented mutating mode is explicitly requested.
+            if subcommand == "user-trust-settings-enable" and any(value in {"-d", "-e"} for value in values):
+                return True
+            if subcommand == "smartcards" and any(value in {"-d", "-e"} for value in values):
+                return True
+            if subcommand == "filevault" and len(values) >= 3 and values[0:2] == ["filevault", "skip-sc-enforcement"] and values[2] in {"set", "reset"}:
+                return True
+            if subcommand == "authorizationdb" and len(values) >= 2 and values[1] in {"remove", "write", "reset"}:
+                return True
     return False
 
 

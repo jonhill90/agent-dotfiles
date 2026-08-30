@@ -14,7 +14,8 @@
           { "type": "command", "command": "hooks/main-branch-guard.sh" },
           { "type": "command", "command": "hooks/gh-body-guard.sh" },
           { "type": "command", "command": "hooks/lane-self-close-guard.sh" },
-          { "type": "command", "command": "hooks/ledger-write-guard.sh" }
+          { "type": "command", "command": "hooks/ledger-write-guard.sh" },
+          { "type": "command", "command": "hooks/keychain-write-guard.sh" }
         ]
       }
     ]

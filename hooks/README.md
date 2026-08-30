@@ -1,7 +1,7 @@
 # hooks/
 
-Canonical, harness-agnostic guard scripts (SPEC §3.3). Each of the six guard
-scripts below (rows 1-6 in the table) is a Claude Code `PreToolUse` hook: it
+Canonical, harness-agnostic guard scripts (SPEC §3.3). Each of the seven guard
+scripts below (rows 1-7 in the table) is a Claude Code `PreToolUse` hook: it
 reads the attempted tool call as JSON on stdin and decides with an exit code
 — `0` allows, `2` blocks and feeds stderr back to the model as the reason. No
 model judgment is involved in the decision itself; the model only reads the
@@ -46,20 +46,21 @@ prose home of several of these — see "What did not move" below).
 | 4 | Post `gh api` bodies with `-f body="$(cat file)"`, never `--body-file`/`-f body=@file` | yes — flag/pattern match | **hook**: `gh-body-guard.sh` |
 | 5 | A lane never closes its own issue | yes, when the branch encodes an issue number (`<type>/<N>-slug`) | **hook**: `lane-self-close-guard.sh` (out of scope, not blocked, when the branch names no issue) |
 | 6 | Never open the live ledger for write | yes — path match plus a `-readonly`/`?mode=ro` allowance | **hook**: `ledger-write-guard.sh` |
-| 7 | RULE A / RULE B / RULE B2 (AI is for reasoning; council before shipping an idea; cheap check before the council) | no — these ARE the judgment calls | **prose**, unchanged (`PHASES.md` §STANDING RULES) |
-| 8 | Telegram is a narrow channel, not a log (RULE C) | no — "is this update worth sending" is a judgment call | **prose**, unchanged |
-| 9 | QA gate / "Jon QAs look and feel, agents QA function" / picker-not-prose for design questions | no — deciding what is "lookable" or "a defensible variant" is judgment | **prose**, unchanged |
-| 10 | Research before building; cite sources | no — assessing whether a claim is grounded is judgment | **prose**, unchanged |
-| 11 | Stand-down must be one message, sent once | partially — "one message" is countable, but recognising a stand-down and composing it is judgment | **prose**, unchanged (no clean hookable predicate: nothing marks a message as "the stand-down") |
-| 12 | Reviewer independence / one fix pass per PR / codex-out exception | no — "is this lane a contributor" and "has this been argued enough" are judgment, and the codex-out exception is itself time-boxed prose | **prose**, unchanged |
-| 13 | Never modify real user accounts; test with `testuser01` only | yes in principle (string match on account name), **not built** — no source command pattern for "modifies a user account" was found to match against; scope it if/when one recurs | **deferred**, not hooked |
+| 7 | Never write the macOS Keychain credential store | yes — parsed `security` command plus a documented mutator list | **hook**: `keychain-write-guard.sh` (agent-estate#665) |
+| 8 | RULE A / RULE B / RULE B2 (AI is for reasoning; council before shipping an idea; cheap check before the council) | no — these ARE the judgment calls | **prose**, unchanged (`PHASES.md` §STANDING RULES) |
+| 9 | Telegram is a narrow channel, not a log (RULE C) | no — "is this update worth sending" is a judgment call | **prose**, unchanged |
+| 10 | QA gate / "Jon QAs look and feel, agents QA function" / picker-not-prose for design questions | no — deciding what is "lookable" or "a defensible variant" is judgment | **prose**, unchanged |
+| 11 | Research before building; cite sources | no — assessing whether a claim is grounded is judgment | **prose**, unchanged |
+| 12 | Stand-down must be one message, sent once | partially — "one message" is countable, but recognising a stand-down and composing it is judgment | **prose**, unchanged (no clean hookable predicate: nothing marks a message as "the stand-down") |
+| 13 | Reviewer independence / one fix pass per PR / codex-out exception | no — "is this lane a contributor" and "has this been argued enough" are judgment, and the codex-out exception is itself time-boxed prose | **prose**, unchanged |
+| 14 | Never modify real user accounts; test with `testuser01` only | yes in principle (string match on account name), **not built** — no source command pattern for "modifies a user account" was found to match against; scope it if/when one recurs | **deferred**, not hooked |
 
 Rows 1–6 are the brief's own table, verified against source rather than
 taken on faith — row 2's tmux invariant and row 3's branch convention are
 both quoted verbatim from `agent-supervisor/AGENTS.md`; rows 4–6 have no
 single canonical sentence anywhere and were reconstructed from the brief's
 own wording plus `gh api`'s documented `-f`/`-F` semantics (row 4) and
-`agent-supervisor/AGENTS.md` invariant 1 (row 6). Rows 7–13 were the rest of
+`agent-supervisor/AGENTS.md` invariant 1 (row 6). Rows 8–14 were the rest of
 `PHASES.md` and `NOTEBOOK-jon-directives.md`'s "Standing rules" sections,
 read start to end — nothing else in either document reduces to a
 deterministic check.
@@ -78,7 +79,7 @@ repo trim the now-duplicated sentences.
 
 Rows 1, 4, 5 and 6 have no prose counterpart in `agent-supervisor/AGENTS.md`
 at all — they existed only as the brief's own table and this issue's
-research, so there is nothing to cut. Rows 7–13 stay in `PHASES.md` because
+research, so there is nothing to cut. Rows 8–14 stay in `PHASES.md` because
 they are judgment calls, per the brief's own line: "the point is not to
 hook everything — it is to stop spending model attention on checks a `case`
 statement decides better."

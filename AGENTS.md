@@ -342,6 +342,14 @@ Do:
 - keep generic improvements upstream here;
 - document compatibility assumptions.
 
+**Credential store — read-only, no exceptions.** The macOS Keychain must
+never be written, including to fix a read failure, reset a broken item, or
+probe it. A `security add-generic-password -U -A` against a live credential
+once destroyed its ACL and locked every agent out for a full day
+(agent-estate#665). Treat a failed read as a report; use only read-only
+lookups such as `security find-generic-password` and
+`security show-keychain-info`.
+
 Do not:
 
 - copy employer-owned content into this repository;
