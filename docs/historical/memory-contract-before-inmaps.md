@@ -9,7 +9,7 @@ Superseded by [Memory](../canonical/memory.md) on 2026-09-06. Preserved as histo
 
 ### 3.6 Memory (tooling only)
 
-Per [memory.md](memory.md): **Obsidian vault as
+Per [memory.md](../canonical/memory.md): **Obsidian vault as
 the store, direct file operations as the access path (V6 override —
 official Obsidian CLI powers the `obsidian` skill separately), a
 memory-conventions skill +
@@ -23,7 +23,7 @@ instruction block as the contract.** Content is never synced by this repo.
   the employer boundary applies to memory data, and the current default
   vault on this Mac is employer-hosted (V6 machine-state finding).
 - **Schema inside the vault** (v2, 2026-07-12 — an OKF v0.1-conformant
-  bundle; lineage and rationale in [memory.md](memory.md)):
+  bundle; lineage and rationale in [memory.md](../canonical/memory.md)):
   - `agent/index.md` — the only file loaded at session start; hard cap
     200 lines / 25KB (matches CC's native memory budget). One line per
     memory: `- [title](facts/<slug>.md) — hook` (the hook is the
@@ -264,7 +264,7 @@ needs a settings change on the owner's machine.
 | Static thickness | thinnest (native plan mode, verification, memory) | thickest (overlay carries the loop) | no overlay yet (baseline-first) | no overlay yet (baseline-first) |
 
 Codex/Copilot mechanics verified hands-on 2026-07-18 (macOS; see
-[harness-engineering.md](harness-engineering.md)). Their behavioral eval
+[harness-engineering.md](../canonical/harness-engineering.md)). Their behavioral eval
 columns are required before their breakage blocks release.
 
 ## 6. Static Context Token Budget
@@ -550,7 +550,7 @@ It is to spend runs where the inference is actually load-bearing.
    and removes that membership the instant the still-open gate (evidence)
    returns a failure. The five components rostered under this exception
    are recorded, with this exact status, in
-   [`docs/provenance-manifest.md`](provenance-manifest.md).
+   [`docs/provenance-manifest.md`](../canonical/provenance-manifest.md).
 
    The retired path is the one `safe-deletion` and `failing-test-first`
    used on 2026-07-18: into the roster at a weaker bar, carrying a
