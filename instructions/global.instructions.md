@@ -69,7 +69,12 @@ verify → complete.
 ## Memory
 
 - Shared durable memory lives at `$AGENT_MEMORY_VAULT`, separate from Second Brain.
-- Read `Start Here.md`, then the capped `agent/index.md`; load scoped notes on demand.
+- Read `Start Here.md` for routing, then the capped bundle-root `index.md`
+  (the `okf_version` carrier, OKF section 12 — not a browsing index); load
+  scoped notes on demand. Notes live in `01 - Notes` under earned letter
+  subdirs (registry: `99 - Meta/note-subdirs.md`, e.g. `01f - Facts`,
+  `01p - Parameters`); hubs are in `02 - MOCs`; meta in `99 - Meta`; sources
+  in `05 - Sources`.
 - Use the reviewed knowledge tool for writes: draft in `00 - Inbox`, accepted
   knowledge in `01 - Notes/<12-digit-id>.md`; never hand-write ordinary memory.
 - Preserve stable IDs and provenance. Superseded notes remain deprecated with

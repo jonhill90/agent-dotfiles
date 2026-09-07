@@ -18,29 +18,40 @@ repo as cited.
 ## Contract
 
 `AGENT_MEMORY_VAULT` points to a personal vault on each machine. It must not
-resolve under employer-managed storage. The shared bundle is:
+resolve under employer-managed storage. `agent/` — the pre-INMAPS bundle
+shape this section used to describe — no longer exists (retired in full,
+agent-estate#1275); the current shared bundle is:
 
 ```text
 $AGENT_MEMORY_VAULT/
-  agent/
-    index.md
-    log.md
-    facts/<semantic-kebab-slug>.md
+  index.md       # bundle-root okf_version carrier, capped, read at session start
+  Start Here.md  # human entry point / routing
+  00 - Inbox/    # drafts awaiting review
+  01 - Notes/    # accepted atomic notes, permanent 12-digit IDs, under
+                 # earned letter subdirs (registry: 99 - Meta/note-subdirs.md)
+  02 - MOCs/     # generated hubs
+  05 - Sources/  # source records
+  99 - Meta/     # tag vocabulary, the append-only log, tooling
 ```
 
-- `index.md` is the only memory file read at session start. It contains one
-  link and description per fact and is capped at 200 lines / 25 KB.
-- `log.md` is append-only history grouped under `## YYYY-MM-DD`, newest first.
-- Each fact owns one concept and is updated in place rather than duplicated.
+- The bundle-root `index.md` is the only memory file read at session start —
+  and, per OKF section 12, the sole legal `okf_version` carrier; it is not a
+  browsing index. It contains one link and description per note and is
+  capped (see the vault's own `99 - Meta/index-contract.md` for the current
+  limit).
+- `99 - Meta/log.md` is append-only history grouped under `## YYYY-MM-DD`,
+  newest first.
+- Each note owns one concept and is superseded (deprecated with a
+  replacement pointer) rather than duplicated in place.
 - Frontmatter requires `type: user|feedback|project|reference`; title,
   description, UTC `created`/`updated`, source, and tags are recommended.
-- Consumption is permissive. Malformed or stale facts are lint findings, not
+- Consumption is permissive. Malformed or stale notes are lint findings, not
   reasons to make the rest of the vault unreadable — `scripts/memory_lint.py`
   is that linter: read-only, no model call, detect-and-report only (#280).
 
 The format follows the progressive-disclosure operating model of Karpathy's
 LLM wiki and the permissive bundle conventions of Google OKF. The vault's
-`agent/index.md` declares `okf_version: "0.1"` today; `docs/okf-adoption-280.md`
+bundle-root `index.md` declares `okf_version: "0.1"` today; `docs/okf-adoption-280.md`
 carries the OKF v0.2 gap report, the additive migration design (no vault
 writes in that pass), and `scripts/memory_lint.py`, the read-only linter
 built for it (#280). `docs/memory-per-agent-map-contract.md` generalizes
@@ -68,10 +79,12 @@ for commands. This repository installs conventions; it never syncs vault content
 
 ## Behavior
 
-At session start, read `Start Here.md`, then the capped `agent/index.md`. Before answering from durable
-history, actually read the index in that session. A durable user preference,
-decision, or fact is not saved until its fact file exists and the index is
-updated. Session-only state stays in the harness's native memory.
+At session start, read `Start Here.md` for routing, then the capped
+bundle-root `index.md`. Before answering from durable history, actually
+read the index in that session. A durable user preference, decision, or
+fact is not saved until its note exists in `01 - Notes` and, if it earns
+index space, the index is updated. Session-only state stays in the
+harness's native memory.
 
 The `memory-conventions` skill is the normative operating procedure. E12
 demonstrates write-back and cross-harness recall in
