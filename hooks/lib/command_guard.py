@@ -29,6 +29,21 @@ ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*\Z")
 LIVE_LEDGER = re.compile(
     r"(?:agent-dotfiles-supervisor|\.local/state/[^/\s]*supervisor[^/\s]*)/ledger\.sqlite3"
 )
+# LIVE_CORPUS is Jon's own corpus database (agent-estate's internal/corpus,
+# ~5,400 prompts and ~2,600 hard rows) -- a second, separate durable record
+# this same guard has protected under the name ledger.sqlite3 since it moved
+# out of ~/.local/state on 2026-08-30. agent-estate#P6 renamed the real file
+# to corpus.sqlite3, with ledger.sqlite3 kept only as a compat symlink -- both
+# names must stay guarded, since either can still open the live file. This
+# regex was carried by an EARLIER, divergent, never-merged local revision of
+# ledger-write-guard.sh (commit a3f6e09, "match the ledger path as an open,
+# not as a mention") that this file's own #277 rewrite into command_guard.py
+# did not incorporate -- so corpus protection had already silently lapsed
+# here before this rename, independent of it. Restoring it, not just
+# repointing it, is what this change actually does for LIVE_CORPUS.
+LIVE_CORPUS = re.compile(
+    r"(?:~|/Users/[^/\s]+)/corpus/(?:ledger|corpus)\.sqlite3"
+)
 DESTRUCTIVE = {"kill-server", "kill-session", "kill-window", "respawn-pane", "respawn-window"}
 PROTECTED = re.compile(r"agent-supervisor:1|(?:^|[^\w])=?Hill90(?:$|[^\w])|hill90-app|hill90-docs")
 KEYCHAIN_WRITE_COMMANDS = {
@@ -343,7 +358,7 @@ def violates(rule: str, parsed: list[list[Word]]) -> bool:
                 if any(f"/issues/{own_issue}" in value for value in values) and "state=closed" in values:
                     return True
         elif rule == "ledger":
-            if program in {"sqlite3", "python", "python3"} and (any(LIVE_LEDGER.search(value) for value in values) or any("$" in value for value in values)):
+            if program in {"sqlite3", "python", "python3"} and (any(LIVE_LEDGER.search(value) or LIVE_CORPUS.search(value) for value in values) or any("$" in value for value in values)):
                 if "-readonly" not in values and not any("?mode=ro" in value for value in values) and not any(value.endswith(("cli.py", "core.py")) for value in values):
                     return True
         elif rule == "keychain" and program == "security" and values:

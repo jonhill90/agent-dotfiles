@@ -404,6 +404,46 @@ class LedgerWriteGuardTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0)
 
+    # LIVE_CORPUS coverage (agent-estate#P6): a second, separate durable
+    # record this same guard protects. Corpus protection had already
+    # silently lapsed in this file's own #277 rewrite (never carried over
+    # from the earlier, never-merged a3f6e09 revision) -- these are the
+    # first tests to exist for it at all, covering both the real filename
+    # and the compat symlink #P6 renamed the old one into.
+    LIVE_CORPUS_REAL = "~/corpus/corpus.sqlite3"
+    LIVE_CORPUS_SYMLINK = "~/corpus/ledger.sqlite3"
+
+    def test_ad_hoc_write_to_the_live_corpus_real_name_is_blocked(self) -> None:
+        result = run_hook(
+            self.SCRIPT, f'sqlite3 {self.LIVE_CORPUS_REAL} "insert into items values (1)"'
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_ad_hoc_write_to_the_live_corpus_symlink_name_is_blocked(self) -> None:
+        result = run_hook(
+            self.SCRIPT, f'sqlite3 {self.LIVE_CORPUS_SYMLINK} "insert into items values (1)"'
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_readonly_open_of_the_live_corpus_is_allowed(self) -> None:
+        result = run_hook(
+            self.SCRIPT, f'sqlite3 -readonly {self.LIVE_CORPUS_REAL} "select * from items"'
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_mode_ro_uri_open_of_the_live_corpus_is_allowed(self) -> None:
+        result = run_hook(
+            self.SCRIPT,
+            f'sqlite3 "file:{self.LIVE_CORPUS_REAL}?mode=ro&immutable=1" "select * from items"',
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_a_test_fixture_corpus_copy_is_allowed(self) -> None:
+        result = run_hook(
+            self.SCRIPT, 'sqlite3 /tmp/test-fixture/corpus.sqlite3 "insert into items values (1)"'
+        )
+        self.assertEqual(result.returncode, 0)
+
 
 class KeychainWriteGuardTests(unittest.TestCase):
     SCRIPT = "keychain-write-guard.sh"
