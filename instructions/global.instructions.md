@@ -68,23 +68,12 @@ verify → complete.
 
 ## Memory
 
-- Durable memory lives in the Obsidian vault at `$AGENT_MEMORY_VAULT`.
-- At session start, read `agent/index.md` only (the index is capped;
-  facts load on demand).
-- Before answering anything about the user's preferences, prior
-  decisions, or history, actually read `agent/index.md` first. Never
-  claim the vault is empty or that something is "not on record"
-  without having read the index in this session.
-- When the user states a durable preference or decision, persist it:
-  one fact per note under `agent/facts/`, frontmatter
-  (`type: user|feedback|project|reference`, `created:` absolute date,
-  `source:`), then add one index line. Update or delete stale facts
-  rather than duplicating them.
-- A "remember this" request is NOT complete until the file exists
-  under `$AGENT_MEMORY_VAULT/agent/facts/` and the index has its line.
-  Harness-native memory (e.g. Claude Code auto-memory) is
-  project-local and does not count — write the vault file first, the
-  native copy second if at all. Verify the vault write before
-  confirming to the user.
-- Session-scoped notes stay in the harness's native memory, not the
-  vault.
+- Shared durable memory lives at `$AGENT_MEMORY_VAULT`, separate from Second Brain.
+- Read `Start Here.md`, then the capped `agent/index.md`; load scoped notes on demand.
+- Use the reviewed knowledge tool for writes: draft in `00 - Inbox`, accepted
+  knowledge in `01 - Notes/<12-digit-id>.md`; never hand-write ordinary memory.
+- Preserve stable IDs and provenance. Superseded notes remain deprecated with
+  a replacement pointer; they must not remain active in retrieval.
+- Follow the vault's INMAPS rules and current canonical memory guide. Missing
+  metadata is unknown, never invented. A write is complete only after verification.
+- Session-scoped notes remain in the harness's native memory.
