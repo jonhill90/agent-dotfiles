@@ -34,4 +34,5 @@ jobs:
             printf '%s\n' "$PRIVACY_DENYLIST" > .privacy-denylist
           fi
       - run: python scripts/validate_repository.py
+      - run: python scripts/docs_lint.py
       - run: python -m unittest discover -s tests -v
