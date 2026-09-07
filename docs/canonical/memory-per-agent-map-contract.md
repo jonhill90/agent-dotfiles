@@ -64,7 +64,7 @@ Per store:
 
 | Store | Who sees its map, and when | Mechanism |
 |---|---|---|
-| **Shared vault** | Every agent, every session, unconditionally. | `agent/index.md` — already built, already the one file read at session start (`docs/memory.md`'s own Behavior section), already mechanically verified complete and accurate (below). |
+| **Shared vault** | Every agent, every session, unconditionally. | the bundle-root `index.md` — already built, already the one file read at session start (`docs/memory.md`'s own Behavior section), already mechanically verified complete and accurate (below). |
 | **Per-agent knowledge** | The owning agent only, on its own schedule (not necessarily session-start — the boundary comment frames this as agent/lane-scoped, and a lane's own knowledge is naturally consulted when that lane is working, not by every other agent by default). | **Not built.** Backend reserved to Jon. What's specified here is the one property any backend must satisfy — see below. |
 | **Corpus ledger** | No agent browses it directly for answers. It is a derivation source, not a consumption surface, by the boundary decision's own wording — judged items promote out of it into the vault or per-agent knowledge, which is where an agent actually reads from. | No map-before-search requirement applies here at all; there is nothing to disclose progressively because there is no direct consumption path to disclose it *to*. Naming this explicitly so "scope which agent sees what" is not misread as implying the ledger needs a consumption-facing index it was deliberately never given one. |
 | **RAG** | Deferred. Not built, not scheduled. When it exists, it sits behind a router that tries a curated answer (vault or per-agent knowledge) first — its own map-analog (an embeddings index) is a different mechanism entirely and is explicitly out of scope for this document. | N/A yet. |
@@ -85,21 +85,22 @@ choice without making it:
 1. **A lightweight, enumerable inventory exists, separate from full
    content.** For every item in an agent's own knowledge store, at minimum
    an identifier and a one-line description must be retrievable without
-   reading the full item — the same shape `agent/index.md` already has for
+   reading the full item — the same shape `index.md` already has for
    the shared vault (one link, one description, per fact).
 2. **The inventory is loadable before search, not only as a search
    result.** An agent must be able to ask "what do I already know" and get
    an answer cheap enough to consult routinely, the same way session start
-   already reads `agent/index.md` in full before any fact file is opened.
+   already reads `index.md` in full before any fact file is opened.
    A backend that can only answer "what's relevant to this specific query"
    (pure similarity search with no enumeration path) does not satisfy this
    — it can only be searched, never browsed, which is exactly the
    asymmetry the four-store boundary comment flagged as a real, uneven
    cost across candidates.
 3. **The inventory stays bounded and does not itself require search to
-   consult.** `agent/index.md` enforces this today via a declared cap
-   (200 lines / 25 KB, `docs/memory.md`) with review/decide thresholds
-   already wired into `scripts/memory_lint.py`. A per-agent backend does
+   consult.** `index.md` enforces this today via a declared cap (see
+   `docs/memory.md` and the vault's own `99 - Meta/index-contract.md` for
+   the current limit) with review/decide thresholds already wired into
+   `scripts/memory_lint.py`. A per-agent backend does
    not have to use the same numbers, but its own inventory needs some
    bound and some detection for approaching it — the identical shape,
    applied to a different store, not a new invention.

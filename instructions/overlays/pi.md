@@ -37,6 +37,6 @@ stated here (SPEC §3.2, §5).
 
 ## Memory bootstrap
 
-- Pi has no native memory. At session start, read the vault index
-  (`$AGENT_MEMORY_VAULT/agent/index.md`) before the first substantive
+- Pi has no native memory. At session start, read the bundle-root vault
+  index (`$AGENT_MEMORY_VAULT/index.md`) before the first substantive
   reply; it is the only session-persistent context available.

@@ -145,9 +145,10 @@ anyway" below).
   open." It is a derivation source and a search target for a *specific
   prompt or decision*, not somewhere an agent reads standing context
   from at session start.
-- **The vault** (`$AGENT_MEMORY_VAULT/agent/index.md` — size:
-  `wc -l "$AGENT_MEMORY_VAULT/agent/index.md"`; fact count:
-  `ls "$AGENT_MEMORY_VAULT/agent/facts" | wc -l`) is the *distilled,
+- **The vault** (bundle-root `$AGENT_MEMORY_VAULT/index.md` — size:
+  `wc -l "$AGENT_MEMORY_VAULT/index.md"`; note count:
+  `ls "$AGENT_MEMORY_VAULT/01 - Notes/01f - Facts" | wc -l` — `agent/`
+  retired in full, agent-estate#1275) is the *distilled,
   durable* record — a fact promoted out of the corpus once it's been
   judged worth keeping standing. Read this at session start; do not
   read the corpus at session start. Both numbers move the moment a
