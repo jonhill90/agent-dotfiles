@@ -24,7 +24,7 @@ transcript or calls a model again to answer a query against it. Tooling
 and schema: `jonhill90/agent-supervisor`
 (`scripts/supervisor/{mine_prompts.py,itemize_prompts.py,cli.py,core.py}`).
 
-**Where it lives:** `~/.local/state/agent-dotfiles-supervisor/ledger.sqlite3`
+**Where it lives:** `~/corpus/ledger.sqlite3`
 — not tracked in any git repo, not this repository's own state. The
 same file also holds this estate's *operational* tables (`lanes`,
 `tasks`, `sessions`, `pr_verdicts`, `events`, and others) — those are a
@@ -52,7 +52,7 @@ this one (its `question`-kind rows).
 
 ```
 python3 scripts/supervisor/cli.py prompts unacknowledged
-sqlite3 ~/.local/state/agent-dotfiles-supervisor/ledger.sqlite3 "select * from unacknowledged;"
+sqlite3 ~/corpus/ledger.sqlite3 "select * from unacknowledged;"
 ```
 
 Reach for this when: triaging backlog, or checking whether something
@@ -68,7 +68,7 @@ this view exists so a question doesn't sit silently inside the broader
 
 ```
 python3 scripts/supervisor/cli.py prompts open_questions
-sqlite3 ~/.local/state/agent-dotfiles-supervisor/ledger.sqlite3 "select * from open_questions;"
+sqlite3 ~/corpus/ledger.sqlite3 "select * from open_questions;"
 ```
 
 Reach for this when: about to ask Jon something — check here first
@@ -83,7 +83,7 @@ Use `possibility_count` below when only the `hard` subset matters.
 
 ```
 python3 scripts/supervisor/cli.py prompts live_parameters
-sqlite3 ~/.local/state/agent-dotfiles-supervisor/ledger.sqlite3 "select * from live_parameters;"
+sqlite3 ~/corpus/ledger.sqlite3 "select * from live_parameters;"
 ```
 
 Reach for this when: checking whether a design choice already has a
@@ -103,7 +103,7 @@ pass's job, not a query's.
 
 ```
 python3 scripts/supervisor/cli.py prompts conflicts
-sqlite3 ~/.local/state/agent-dotfiles-supervisor/ledger.sqlite3 "select * from conflicts;"
+sqlite3 ~/corpus/ledger.sqlite3 "select * from conflicts;"
 ```
 
 Reach for this when: two stated positions seem to disagree and there's
@@ -118,7 +118,7 @@ always returns exactly one row, never a list to page through.
 
 ```
 python3 scripts/supervisor/cli.py prompts possibility_count
-sqlite3 ~/.local/state/agent-dotfiles-supervisor/ledger.sqlite3 "select count from possibility_count;"
+sqlite3 ~/corpus/ledger.sqlite3 "select count from possibility_count;"
 ```
 
 Reach for this when: a single number is genuinely what's needed (e.g.
