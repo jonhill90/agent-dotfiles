@@ -349,45 +349,63 @@ def security_subcommand_index(values: list[str]) -> int:
 #   -F, --field key=value       typed parameter -- a leading @ reads the
 #                               file (@- reads stdin). The form that works.
 #
-# Both take the value as the next token, as --long=value, or attached to the
-# short flag (-fkey=value). --body-file is not a gh api flag in any spelling;
-# it belongs to gh pr create / gh issue comment (agent-dotfiles#276 row 4).
+# gh parses flags with pflag, so a value reaches a flag four ways: the next
+# token (-f x, --raw-field x), --long=value, attached to the short flag (-fx),
+# or attached with an = (-f=x, which pflag strips). Short flags also group:
+# -if=x is -i (a boolean) followed by -f with the value x. A short flag that
+# takes a value swallows the rest of its group. --body-file is not a gh api
+# flag in any spelling; it belongs to gh pr create / gh issue comment
+# (agent-dotfiles#276 row 4).
 #
 # agent-dotfiles#356 measured the first version of this rule both ways: an
 # exact-token test for "--body-file" missed the --body-file=x spelling, and
 # flagging every body=@ token regardless of its flag blocked the legitimate
 # -F body=@file. Reading the flag that owns each value fixes both without
 # loosening either: every -f spelling of body=@ blocks, and so does a bare
-# body=@ token no flag owns, which gh api could only ever reject.
-GH_API_RAW_FIELD = {"-f", "--raw-field"}
-GH_API_TYPED_FIELD = {"-F", "--field"}
+# body=@ token no flag owns, which gh api could only ever reject. The -f=x
+# and -if=x spellings were a false allow in this rule's first draft, found
+# by an adversarial review that ran pflag itself; both block now.
+GH_API_LONG_FIELD_FLAGS = {"raw-field", "field"}
+# gh api's short flags that take a value (gh api --help): -X method,
+# -H header, -f raw field, -F typed field, -p preview, -q jq, -t template.
+GH_API_SHORT_WITH_VALUE = set("XHfFpqt")
 
 
 def gh_api_body_misuse(values: list[str]) -> bool:
     """True when a `gh api` argument list misuses its body field."""
-    if any(value == "--body-file" or value.startswith("--body-file=") for value in values):
-        return True
     index = 0
     while index < len(values):
         value = values[index]
-        field = None
-        if value in GH_API_RAW_FIELD:
-            field = values[index + 1] if index + 1 < len(values) else ""
-            index += 2
-        elif value.startswith("--raw-field="):
-            field = value[len("--raw-field="):]
-            index += 1
-        elif value.startswith("-f") and not value.startswith("--"):
-            field = value[len("-f"):]
-            index += 1
-        elif value in GH_API_TYPED_FIELD:
-            # gh reads the file for a typed field: consume its value so the
-            # body=@file token is never re-read as a bare one below.
-            index += 2
-        else:
-            field = value if value.startswith("body=@") else None
-            index += 1
-        if field is not None and field.startswith("body=@"):
+        index += 1
+        if value == "--body-file" or value.startswith("--body-file="):
+            return True
+        if value.startswith("--"):
+            name, has_eq, rest = value[2:].partition("=")
+            if name not in GH_API_LONG_FIELD_FLAGS:
+                continue
+            if not has_eq:
+                # Consume the value either way: a typed field's body=@file
+                # must never be re-read as a bare token below.
+                rest = values[index] if index < len(values) else ""
+                index += 1
+            if name == "raw-field" and rest.startswith("body=@"):
+                return True
+            continue
+        if value.startswith("-") and len(value) > 1:
+            for position, letter in enumerate(value[1:], start=2):
+                if letter not in GH_API_SHORT_WITH_VALUE:
+                    continue  # a boolean short flag such as -i; keep walking
+                rest = value[position:]
+                if rest.startswith("="):
+                    rest = rest[1:]
+                elif rest == "":
+                    rest = values[index] if index < len(values) else ""
+                    index += 1
+                if letter == "f" and rest.startswith("body=@"):
+                    return True
+                break  # the value swallowed the rest of the group
+            continue
+        if value.startswith("body=@"):
             return True
     return False
 

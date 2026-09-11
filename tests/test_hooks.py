@@ -478,10 +478,16 @@ class GhBodyGuardTests(unittest.TestCase):
         # The -f body=@file footgun in the other spellings gh accepts for
         # the same flag. The quoted form is the one the deployed regex
         # missed (#356); the long and attached forms both versions missed.
+        # -f=x and -if=x are pflag's shorthand spellings: it strips the =
+        # and groups -i (boolean) before -f. Both reached gh as a raw
+        # body=@file and were a false allow in this fix's first draft.
         for command in (
             "gh api repos/o/r/issues/1/comments --raw-field body=@file.md",
             "gh api repos/o/r/issues/1/comments --raw-field=body=@file.md",
             "gh api repos/o/r/issues/1/comments -fbody=@file.md",
+            "gh api repos/o/r/issues/1/comments -f=body=@file.md",
+            "gh api repos/o/r/issues/1/comments -if=body=@file.md",
+            "gh api repos/o/r/issues/1/comments -if body=@file.md",
             'gh api repos/o/r/issues/1/comments -f "body=@file.md"',
         ):
             with self.subTest(command=command):
@@ -493,6 +499,8 @@ class GhBodyGuardTests(unittest.TestCase):
         # Flagging any body=@ token regardless of its flag blocked it.
         for command in (
             "gh api repos/o/r/issues/1/comments -F body=@file.md",
+            "gh api repos/o/r/issues/1/comments -F=body=@file.md",
+            "gh api repos/o/r/issues/1/comments -iF body=@file.md",
             "gh api repos/o/r/issues/1/comments --field body=@file.md",
             "gh api repos/o/r/issues/1/comments --field=body=@file.md",
         ):

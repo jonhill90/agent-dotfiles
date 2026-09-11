@@ -23,8 +23,9 @@
 # reads the parsed command -- lib/command_guard.py's `gh-body` -- so a flag
 # that is only NAMED, inside a quoted -f body="..." string, a heredoc, or a
 # shell comment, is an argument or nothing, never a use. Each -f/--raw-field
-# spelling of body=@ blocks, including -fbody=@x and --raw-field=body=@x, and
-# so does --body-file in either its spaced or its --body-file=x form.
+# spelling of body=@ blocks, including -fbody=@x, -f=body=@x, -if=body=@x
+# and --raw-field=body=@x, and so does --body-file in either its spaced or
+# its --body-file=x form.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
