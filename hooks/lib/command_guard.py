@@ -98,15 +98,26 @@ def strip_heredoc_bodies(source: str) -> str:
             found = False
             while index < len(lines):
                 body = lines[index]
-                # A quoted delimiter disables expansions; an unquoted one does
-                # not. Keep the latter conservatively so its $(...) and
-                # backticks cannot hide an executable command.
-                kept.append(("\n" if body.endswith("\n") else "") if is_quoted else body)
                 index += 1
                 candidate = body.rstrip("\n")
                 if candidate.lstrip("\t") == delimiter:
+                    kept.append(body)
                     found = True
                     break
+                # A quoted delimiter disables expansions: the body is text,
+                # drop it. An unquoted delimiter still expands $(...) and
+                # backticks, so keep the body -- but as the ARGUMENT of a
+                # no-op, inside double quotes, never as command lines
+                # (agent-dotfiles#353, third defect: a heredoc quoting
+                # `git commit` as evidence used to parse as a commit). The
+                # tokenizer walks double-quoted text for expansions only, so
+                # a substitution inside the body is still found and the
+                # prose around it is not mistaken for a command.
+                if is_quoted:
+                    kept.append("\n" if body.endswith("\n") else "")
+                else:
+                    escaped = candidate.replace("\\", "\\\\").replace('"', '\\"')
+                    kept.append(': "' + escaped + '"' + ("\n" if body.endswith("\n") else ""))
             if not found:
                 raise ParseError("unterminated heredoc")
     return "".join(kept)
@@ -385,11 +396,301 @@ def violates(rule: str, parsed: list[list[Word]]) -> bool:
     return False
 
 
+# --- commit target resolution (agent-dotfiles#353) ------------------------
+#
+# main-branch-guard used to read the branch from the hook payload's cwd --
+# the session's directory -- never from where the write would land. A
+# session in a worktree could commit to a checkout on main (false allow),
+# and a session on main could not commit to its own feature worktree
+# (false block). Every lane in the estate works in a worktree, so every
+# lane was the shape that disarmed the guard.
+#
+# commit_targets() resolves, for every `git commit` in the payload, the
+# directory the commit lands in, from the COMMAND: git's own -C options
+# (applied in order, each relative to the last), a preceding `cd` in the
+# same shell scope, and otherwise the session cwd (returned as "" for the
+# hook to substitute). Scopes matter: a `cd` inside a subshell, a command
+# substitution or a pipeline segment runs in a child process and never
+# moves the enclosing shell, so it is tracked per scope and inherited
+# downward, never leaked upward.
+#
+# Where the target cannot be resolved from the text, the entry is returned
+# UNRESOLVED with a reason and the hook fails closed. Named limits, all
+# refused rather than guessed: a cd or -C whose path carries an expansion
+# ($VAR, $(...), backticks), `cd -`, `cd ~user`, globs, pushd/popd, more
+# than one cd argument, git's --git-dir/--work-tree, and a `||` after a cd
+# (if the cd fails the commit runs somewhere else). A `cd` followed by `;`
+# is accepted only because the hook checks the directory exists; if it does
+# not, cd would fail and the hook refuses.
+
+
+@dataclass
+class Entry:
+    scope: int
+    sep: str  # separator before this command within its scope
+    in_pipe: bool
+    words: list[Word]
+
+
+class _Scopes:
+    def __init__(self) -> None:
+        self.next = 0
+        self.parent: dict[int, int] = {}
+
+    def new(self, parent: int) -> int:
+        scope = self.next
+        self.next += 1
+        self.parent[scope] = parent
+        return scope
+
+
+def _expansion_entries(source: str, scope: int, scopes: _Scopes, out: list[Entry]) -> None:
+    """Like expansion_commands, but records scoped entries for $(...) and backticks."""
+    i = 0
+    while i < len(source):
+        if source[i] == "\\":
+            i += 2
+        elif source.startswith("$(", i):
+            part, i = substitution(source, i)
+            _entries(part, scopes.new(scope), scopes, out)
+        elif source[i] == "`":
+            part, i = quoted(source, i, "`")
+            _entries(part, scopes.new(scope), scopes, out)
+        else:
+            i += 1
+
+
+def _entries(source: str, scope: int, scopes: _Scopes, out: list[Entry]) -> None:
+    """The same tokenizer as commands(), recording each command's scope,
+    the separator before it, and whether it sits in a pipeline."""
+    source = strip_heredoc_bodies(source)
+    current: list[Word] = []
+    text: list[str] = []
+    was_quoted = False
+    pending_sep = ""
+    in_pipe = False
+    last_index = -1
+
+    def finish_word() -> None:
+        nonlocal text, was_quoted
+        if text or was_quoted:
+            current.append(Word("".join(text), was_quoted))
+        text = []
+        was_quoted = False
+
+    def finish_command() -> None:
+        nonlocal pending_sep, in_pipe, last_index
+        finish_word()
+        if current:
+            out.append(Entry(scope, pending_sep, in_pipe, current.copy()))
+            last_index = len(out) - 1
+            current.clear()
+            pending_sep = ""
+            in_pipe = False
+
+    i = 0
+    while i < len(source):
+        char = source[i]
+        if char in " \t\r":
+            finish_word()
+            i += 1
+        elif char == "\\":
+            if i + 1 >= len(source):
+                raise ParseError("trailing escape")
+            text.append(source[i + 1])
+            i += 2
+        elif char in "'\"":
+            part, i = quoted(source, i, char)
+            if char == '"':
+                _expansion_entries(part, scope, scopes, out)
+            text.append(part)
+            was_quoted = True
+        elif char == "`":
+            part, i = quoted(source, i, "`")
+            _entries(part, scopes.new(scope), scopes, out)
+            text.append("$substitution")
+        elif source.startswith("$(", i):
+            part, i = substitution(source, i)
+            _entries(part, scopes.new(scope), scopes, out)
+            text.append("$substitution")
+        elif char == "(":
+            finish_command()
+            part, i = subshell(source, i)
+            _entries(part, scopes.new(scope), scopes, out)
+        elif char == "\n" or char == ";":
+            finish_command()
+            pending_sep = char
+            i += 1
+        elif char in "|&":
+            finish_command()
+            if source.startswith("&&", i):
+                pending_sep, i = "&&", i + 2
+            elif source.startswith("||", i):
+                pending_sep, i = "||", i + 2
+            elif source.startswith("|&", i):
+                pending_sep, i = "|", i + 2
+            elif char == "|":
+                pending_sep, i = "|", i + 1
+            else:
+                pending_sep, i = "&", i + 1
+            if pending_sep == "|":
+                # both sides of a pipe run in subshells
+                in_pipe = True
+                if last_index >= 0 and out[last_index].scope == scope:
+                    out[last_index].in_pipe = True
+        elif char in "<>":
+            finish_word()
+            end = i + 1
+            if end < len(source) and source[end] == char:
+                end += 1
+            current.append(Word(source[i:end]))
+            i = end
+        else:
+            text.append(char)
+            i += 1
+    finish_command()
+
+
+@dataclass
+class _CwdState:
+    cwd: str = ""  # "" means the session cwd, substituted by the hook
+    unresolved: str | None = None
+    cd_seen: bool = False
+
+    def copy(self) -> "_CwdState":
+        return _CwdState(self.cwd, self.unresolved, self.cd_seen)
+
+
+def _join(base: str, path: str) -> str:
+    if path.startswith("/") or path == "~" or path.startswith("~/"):
+        return path
+    if base == "":
+        return path
+    return base.rstrip("/") + "/" + path
+
+
+def _literal_path(value: str) -> str | None:
+    """A reason the path is not a plain literal, or None if it is."""
+    if value == "" or value == "-":
+        return f"cd target {value!r} is not a literal path"
+    if "$" in value or "`" in value:
+        return f"cd/-C target {value!r} carries an expansion"
+    if value.startswith("~") and value != "~" and not value.startswith("~/"):
+        return f"cd/-C target {value!r} names another user's home"
+    if any(c in value for c in "*?["):
+        return f"cd/-C target {value!r} is a glob"
+    return None
+
+
+def _git_globals(values: list[str]) -> tuple[str, list[str], str | None]:
+    """Return (subcommand, -C paths in order, reason unresolved)."""
+    i = 0
+    cpaths: list[str] = []
+    while i < len(values):
+        v = values[i]
+        if v == "-C":
+            if i + 1 >= len(values):
+                return "", cpaths, "git -C without a path"
+            cpaths.append(values[i + 1])
+            i += 2
+        elif v.startswith("-C") and len(v) > 2:
+            cpaths.append(v[2:])
+            i += 1
+        elif v in {"-c", "--namespace", "--super-prefix", "--exec-path", "--config-env"}:
+            i += 2
+        elif v.startswith("--git-dir") or v.startswith("--work-tree"):
+            return "", cpaths, f"git {v.split('=')[0]} is not resolved by this guard"
+        elif v.startswith("-"):
+            i += 1
+        else:
+            return v, cpaths, None
+    return "", cpaths, None
+
+
+def commit_targets(source: str, initial: _CwdState | None = None) -> list[tuple[str | None, str | None]]:
+    """Every `git commit` in source as (target_dir, None) or (None, reason)."""
+    scopes = _Scopes()
+    root = scopes.new(-1)
+    entries: list[Entry] = []
+    _entries(source, root, scopes, entries)
+    states: dict[int, _CwdState] = {root: (initial or _CwdState()).copy()}
+    results: list[tuple[str | None, str | None]] = []
+
+    def state_for(scope: int) -> _CwdState:
+        if scope not in states:
+            parent = scopes.parent[scope]
+            states[scope] = state_for(parent).copy() if parent >= 0 else _CwdState()
+        return states[scope]
+
+    for entry in entries:
+        st = state_for(entry.scope)
+        if entry.sep == "||" and st.cd_seen and st.unresolved is None:
+            st.unresolved = "a `||` after a cd leaves the working directory ambiguous"
+        program, args = executable(entry.words)
+        values = [word.text for word in args]
+        if program in {"bash", "sh", "zsh"} and "-c" in values:
+            script_index = values.index("-c") + 1
+            if script_index < len(values):
+                results.extend(commit_targets(values[script_index], st))
+            continue
+        if program == "eval":
+            results.extend(commit_targets(" ".join(values), st))
+            continue
+        if program == "cd":
+            if entry.in_pipe:
+                continue
+            st.cd_seen = True
+            targets = [v for v in values if v != "--" and not v.startswith("-")]
+            if len(targets) > 1:
+                st.unresolved = "cd with more than one argument"
+            elif not targets:
+                st.cwd = "~"
+            else:
+                reason = _literal_path(targets[0])
+                if reason:
+                    st.unresolved = reason
+                else:
+                    st.cwd = _join(st.cwd, targets[0])
+            continue
+        if program in {"pushd", "popd"} and not entry.in_pipe:
+            st.cd_seen = True
+            st.unresolved = f"{program} is not tracked by this guard"
+            continue
+        if program == "git":
+            sub, cpaths, bad = _git_globals(values)
+            if sub != "commit" or "--dry-run" in values:
+                continue
+            if st.unresolved:
+                results.append((None, st.unresolved))
+                continue
+            if bad:
+                results.append((None, bad))
+                continue
+            target = st.cwd
+            problem = None
+            for c in cpaths:
+                problem = _literal_path(c)
+                if problem:
+                    break
+                target = _join(target, c)
+            results.append((None, problem) if problem else (target, None))
+    return results
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         return 2
     try:
-        parsed = commands(sys.stdin.read())
+        source = sys.stdin.read()
+        if sys.argv[1] == "main-targets":
+            targets = commit_targets(source)
+            for target, reason in targets:
+                if reason is not None:
+                    print("UNRESOLVED\t" + reason)
+                else:
+                    print("TARGET\t" + (target or "."))
+            return 10 if targets else 0
+        parsed = commands(source)
         return 10 if violates(sys.argv[1], parsed) else 0
     except ParseError:
         return 2

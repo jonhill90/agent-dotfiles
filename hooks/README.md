@@ -42,7 +42,7 @@ prose home of several of these — see "What did not move" below).
 |---|---|---|---|
 | 1 | Destructive tmux verb must run on an isolated socket (`TMUX_TMPDIR` + `env -u TMUX`) | yes — pattern match on the command | **hook**: `tmux-destructive-verb-guard.sh` |
 | 2 | Never target `agent-supervisor:1`, the `Hill90` session family, or write `~/.tmux.conf` | yes — string/path match | **hook**: `tmux-protected-target-guard.sh` (the brief's third clause, "another lane", is NOT covered — see the script's own header) |
-| 3 | Never commit to `main` | yes — branch check before commit | **hook**: `main-branch-guard.sh` |
+| 3 | Never commit to `main` | yes — branch check on every directory the commit would land in, resolved from the command (`git -C`, a preceding `cd`, else the session cwd); unresolvable targets refuse (agent-dotfiles#353) | **hook**: `main-branch-guard.sh` |
 | 4 | Post `gh api` bodies with `-f body="$(cat file)"`, never `--body-file`/`-f body=@file` | yes — flag/pattern match | **hook**: `gh-body-guard.sh` |
 | 5 | A lane never closes its own issue | yes, when the branch encodes an issue number (`<type>/<N>-slug`) | **hook**: `lane-self-close-guard.sh` (out of scope, not blocked, when the branch names no issue) |
 | 6 | Never open the live ledger for write | yes — path match plus a `-readonly`/`?mode=ro` allowance | **hook**: `ledger-write-guard.sh` |
