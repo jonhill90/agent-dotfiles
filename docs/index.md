@@ -19,9 +19,12 @@ This index routes to canonical truth; historical studies are evidence, not curre
 
 ## Historical / superseded
 
+- [fail-closed-on-unidentifiable-commands-354](historical/fail-closed-on-unidentifiable-commands-354.md)
 - [handoff](historical/handoff.md)
 - [hierarchy-naming-57](historical/hierarchy-naming-57.md)
+- [hook-drift-detection-not-deployment-356](historical/hook-drift-detection-not-deployment-356.md)
 - [loop-signals](historical/loop-signals.md)
+- [main-branch-guard-target-resolution-354](historical/main-branch-guard-target-resolution-354.md)
 - [migration-audit](historical/migration-audit.md)
 - [okf-0.2-study-2026-08-23](historical/okf-0.2-study-2026-08-23.md)
 - [okf-adoption-280](historical/okf-adoption-280.md)
