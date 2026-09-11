@@ -1,8 +1,9 @@
 # build-4 — triage the #313 refresh delta, not the whole backlog (2026-08-23)
 
 > **Correction (2026-09-11, agent-estate#1397/#1397-followup):** the ledger
-> path and tooling repo named just below were correct when this pass ran and
-> have since drifted. `~/.local/state/agent-dotfiles-supervisor/ledger.sqlite3`
+> path and tooling repo named just below are the path and tooling recorded
+> by this pass, and have since drifted.
+> `~/.local/state/agent-dotfiles-supervisor/ledger.sqlite3`
 > is now a stale, largely-abandoned side-store (agent-estate#942) — re-measured
 > read-only today: 51 `live_parameters` there vs. 1,359 in the live corpus,
 > `~/corpus/ledger.sqlite3` (mapped in `docs/corpus/index.md`, which already
