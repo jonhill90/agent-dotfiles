@@ -571,8 +571,8 @@ def _join(base: str, path: str) -> str:
 
 def _literal_path(value: str) -> str | None:
     """A reason the path is not a plain literal, or None if it is."""
-    if value == "" or value == "-":
-        return f"cd target {value!r} is not a literal path"
+    if value == "":
+        return "cd/-C target is empty"
     if "$" in value or "`" in value:
         return f"cd/-C target {value!r} carries an expansion"
     if value.startswith("~") and value != "~" and not value.startswith("~/"):
@@ -640,11 +640,26 @@ def commit_targets(source: str, initial: _CwdState | None = None) -> list[tuple[
             if entry.in_pipe:
                 continue
             st.cd_seen = True
-            targets = [v for v in values if v != "--" and not v.startswith("-")]
+            # cd's own grammar: options (-L, -P, -e, -@) precede the target;
+            # `--` ends options; a bare `-` is NOT an option, it is the
+            # target $OLDPWD (agent-dotfiles#354: stripping it as a flag made
+            # `cd -` resolve like bare `cd`, to $HOME). After `--` every token
+            # is a literal path, so `cd -- -` names a directory called "-".
+            targets: list[str] = []
+            literal = False
+            for v in values:
+                if literal:
+                    targets.append(v)
+                elif v == "--":
+                    literal = True
+                elif v == "-" or not v.startswith("-"):
+                    targets.append(v)
             if len(targets) > 1:
                 st.unresolved = "cd with more than one argument"
             elif not targets:
                 st.cwd = "~"
+            elif targets[0] == "-" and not literal:
+                st.unresolved = "cd - targets $OLDPWD, which the command text cannot show"
             else:
                 reason = _literal_path(targets[0])
                 if reason:
@@ -658,13 +673,18 @@ def commit_targets(source: str, initial: _CwdState | None = None) -> list[tuple[
             continue
         if program == "git":
             sub, cpaths, bad = _git_globals(values)
+            # agent-dotfiles#354: a --git-dir/--work-tree invocation ends
+            # option parsing before the subcommand is seen, so `bad` must be
+            # reported BEFORE the subcommand test -- otherwise the commit is
+            # dropped from the target list and, beside a resolvable commit in
+            # the same command, the hook's fallback never fires.
+            if bad and "commit" in values and "--dry-run" not in values:
+                results.append((None, bad))
+                continue
             if sub != "commit" or "--dry-run" in values:
                 continue
             if st.unresolved:
                 results.append((None, st.unresolved))
-                continue
-            if bad:
-                results.append((None, bad))
                 continue
             target = st.cwd
             problem = None

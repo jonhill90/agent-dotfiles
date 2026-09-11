@@ -11,6 +11,7 @@ fail-closed behaviour (an unparseable hook payload must never resolve to
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -345,6 +346,47 @@ class MainBranchGuardTargetTests(unittest.TestCase):
                 result = run_hook(self.SCRIPT, command, cwd=str(self.worktree))
                 self.assertEqual(result.returncode, 2, result.stderr)
                 self.assertIn("resolve", result.stderr)
+
+    # Review on agent-dotfiles#354: `cd -` was NAMED as refused and was not --
+    # `-` was stripped as a flag, so it resolved like bare `cd` (to $HOME). Its
+    # real target is $OLDPWD, unknowable from the text. HOME is pointed at
+    # the feature worktree so an accidental $HOME resolution would be allowed;
+    # only a genuine refusal exits 2.
+    def test_cd_dash_is_unresolvable_even_when_home_is_a_feature_branch(self) -> None:
+        env = dict(os.environ)
+        env["HOME"] = str(self.worktree)
+        payload = {"tool_name": "Bash", "tool_input": {"command": "cd - && git commit -m x"}, "cwd": str(self.worktree)}
+        result = subprocess.run(["bash", str(HOOKS_DIR / self.SCRIPT)], input=json.dumps(payload), capture_output=True, text=True, env=env)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("resolve", result.stderr)
+
+    # `cd -- -` names a directory literally called "-"; it must be treated as
+    # a path (here, a missing one, so refused for that reason), never as
+    # bare `cd`.
+    def test_cd_double_dash_dash_is_a_literal_path(self) -> None:
+        env = dict(os.environ)
+        env["HOME"] = str(self.worktree)
+        payload = {"tool_name": "Bash", "tool_input": {"command": "cd -- - && git commit -m x"}, "cwd": str(self.worktree)}
+        result = subprocess.run(["bash", str(HOOKS_DIR / self.SCRIPT)], input=json.dumps(payload), capture_output=True, text=True, env=env)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("does not exist", result.stderr)
+
+    # Review on agent-dotfiles#354, audit of the other named limits:
+    # --git-dir/--work-tree was refused only because the resolver returned no
+    # target at all and the hook's fallback fired. Paired with a resolvable
+    # commit in the same command, the fallback does not fire and the
+    # --git-dir commit was silently dropped -- a false allow.
+    def test_git_dir_commit_is_refused_by_name_even_beside_a_resolvable_commit(self) -> None:
+        command = (
+            f"git --git-dir={self.main_checkout}/.git --work-tree={self.main_checkout} commit -m x"
+            f" && git -C {self.worktree} commit -m y"
+        )
+        result = run_hook(self.SCRIPT, command, cwd=str(self.worktree))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("git-dir", result.stderr)
+        alone = run_hook(self.SCRIPT, f"git --work-tree {self.main_checkout} commit -m x", cwd=str(self.worktree))
+        self.assertEqual(alone.returncode, 2, alone.stderr)
+        self.assertIn("work-tree", alone.stderr)
 
     def test_cd_to_a_missing_directory_fails_closed(self) -> None:
         # `cd missing; git commit` would fail the cd and commit in the

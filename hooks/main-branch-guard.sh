@@ -13,10 +13,26 @@
 # rule resolves every `git commit` in the payload to a directory from the
 # command text -- git's own -C options, a preceding `cd` in the same shell
 # scope, else the session cwd -- and reports UNRESOLVED, with the reason,
-# for anything it cannot resolve without guessing (an expanded path, a
-# `cd -`, pushd/popd, a `||` after a cd, git --git-dir/--work-tree). Every
-# target is checked; one on main, one unreadable, or one unresolved refuses
-# the whole call. Fail closed is the only safe answer for a write.
+# for anything it cannot resolve without guessing. Every target is checked;
+# one on main, one unreadable, or one unresolved refuses the whole call.
+# Fail closed is the only safe answer for a write.
+#
+# Named limits, each refused and each pinned by a test in
+# tests/test_hooks.py::MainBranchGuardTargetTests (agent-dotfiles#354 found
+# one of these named but not enforced, and audited the rest): a cd or -C
+# path carrying $VAR, $(...) or backticks; `cd -` ($OLDPWD is not in the
+# text); `cd ~user`; a glob; more than one cd argument; pushd/popd; git
+# --git-dir/--work-tree, on its own or beside a resolvable commit; a `||`
+# after a cd; a cd to a directory that does not exist; a commit the scope
+# check sees but the resolver cannot place.
+#
+# Not enforced, and not claimed: a git ALIAS for commit (`git ci`) is
+# invisible to both the scope check and the resolver, because expanding it
+# needs git's config, a second source of truth this guard does not read;
+# a `cd` inside an if/for/while body is treated as sequential in the
+# enclosing scope (conservative: it only ever adds a target or a refusal);
+# shell functions defined in the payload and called later are not expanded
+# (their bodies are read as plain commands where they appear).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
