@@ -705,6 +705,185 @@ class LedgerWriteGuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
 
 
+class ExecutableResolutionTests(unittest.TestCase):
+    """agent-dotfiles#360: executable() compared the program token literally
+    and unwrapped only env/command/exec/nohup bare, so `/usr/bin/git commit`
+    and `sudo git commit` reached main through the live guard, and the same
+    shape reached every rule. Each closed form below was run against
+    origin/main's hooks first and failed there (the PR carries both runs);
+    each guard's own block/allow split is re-checked through the same
+    resolver so a fix for one hook cannot silently move another."""
+
+    MAIN = "main-branch-guard.sh"
+    KEYCHAIN = "keychain-write-guard.sh"
+    TMUX = "tmux-destructive-verb-guard.sh"
+    GH_BODY = "gh-body-guard.sh"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self._tmp.name)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.repo), "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-q", "--allow-empty", "-m", "init"],
+            check=True,
+        )
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def main_guard(self, command: str) -> int:
+        return run_hook(self.MAIN, command, cwd=str(self.repo)).returncode
+
+    def test_path_spellings_of_git_commit_on_main_are_blocked(self) -> None:
+        # The program is its basename: a path only ever makes a rule apply,
+        # never exempts it.
+        for command in (
+            "/usr/bin/git commit -m x",
+            "./git commit -m x",
+            "~/bin/git commit -m x",
+            "/opt/homebrew/bin/git -C . commit -m x",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.main_guard(command), 2)
+
+    def test_sudo_spellings_of_git_commit_on_main_are_blocked(self) -> None:
+        # sudo's own option grammar is consumed: a value-taking option
+        # (-u, --user) in its spaced, attached, grouped and = forms, a bare
+        # --, VAR=value before the command, a path or a second prefix after.
+        for command in (
+            "sudo git commit -m x",
+            "sudo -u root git commit -m x",
+            "sudo -Eu root git commit -m x",
+            "sudo -uroot git commit -m x",
+            "sudo --user=root git commit -m x",
+            "sudo --user root -E git commit -m x",
+            "sudo -E -u root -- git commit -m x",
+            "sudo -n -D /tmp git commit -m x",
+            "sudo VAR=1 git commit -m x",
+            "sudo /usr/bin/git commit -m x",
+            "sudo sudo git commit -m x",
+            "sudo -s git commit -m x",
+            "sudo env -i git commit -m x",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.main_guard(command), 2)
+
+    def test_other_prefix_programs_consume_their_own_options(self) -> None:
+        # env -C takes a value; command -p and exec -a used to leave the
+        # option itself as the program, so the rule never saw git.
+        for command in (
+            "env -C /tmp git commit -m x",
+            "env -i -u HOME git commit -m x",
+            "command -p git commit -m x",
+            "exec -a x git commit -m x",
+            "nohup git commit -m x",
+            "/bin/bash -c 'git commit -m x'",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.main_guard(command), 2)
+
+    def test_redirection_before_the_command_name_does_not_hide_it(self) -> None:
+        # bash accepts a redirection anywhere in a simple command, including
+        # before the name; the operator used to be read as the program.
+        for command in (
+            ">/tmp/log git commit -m x",
+            "2>/dev/null git commit -m x",
+            "</dev/null sudo -u root git commit -m x",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.main_guard(command), 2)
+
+    def test_program_named_by_an_expansion_is_refused_with_its_own_reason(self) -> None:
+        # Not resolved, refused: the text cannot say what $(which git) or
+        # "$GIT" runs. The reason names the shape so the fix is obvious.
+        for command in (
+            "$(which git) commit -m x",
+            '"$GIT" commit -m x',
+            "$HOME/bin/git status",
+            "`which git` status",
+        ):
+            with self.subTest(command=command):
+                result = run_hook(self.MAIN, command, cwd=str(self.repo))
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("named by an expansion", result.stderr)
+
+    def test_unmodelled_prefix_grammar_is_refused(self) -> None:
+        # env -S re-splits its string into a command line; sudo has no -Z.
+        # Neither is guessed at.
+        for command in (
+            "env -S 'git commit -m x'",
+            "sudo -Z git commit -m x",
+            "sudo --nonsense git commit -m x",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.main_guard(command), 2)
+
+    def test_already_caught_alias_bypass_idioms_stay_caught(self) -> None:
+        # Pins, not fixes: the tokenizer already dequoted these.
+        for command in ("\\git commit -m x", '"git" commit -m x'):
+            with self.subTest(command=command):
+                self.assertEqual(self.main_guard(command), 2)
+
+    def test_prefixed_commands_that_do_not_commit_stay_allowed(self) -> None:
+        for command in (
+            "sudo git status",
+            "sudo -u root ls -la",
+            "sudo -k",
+            "sudo --version",
+            "/usr/bin/git status",
+            "/usr/bin/git commit --dry-run -m x",
+            "env -C /tmp git status",
+            "sudo -u root env FOO=1 git log -1",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.main_guard(command), 0)
+
+    def test_commit_target_is_resolved_through_sudo_and_paths(self) -> None:
+        # main-targets shares executable(): a prefixed commit still names
+        # the directory it lands in, so a feature worktree stays allowed.
+        subprocess.run(["git", "-C", str(self.repo), "checkout", "-q", "-b", "feat/x"], check=True)
+        for command in ("sudo git commit -m x", "/usr/bin/git commit -m x", "sudo -u root git -C . commit -m x"):
+            with self.subTest(command=command):
+                self.assertEqual(self.main_guard(command), 0)
+
+    def test_keychain_write_through_sudo_or_a_path_is_blocked(self) -> None:
+        # Described, not exercised: only the guard script reads the payload.
+        for command in (
+            "sudo security add-generic-password -s service -a account -w secret",
+            "sudo -u root security add-generic-password -s service -a account -w secret",
+            "/usr/bin/security add-generic-password -s service -a account -w secret",
+        ):
+            with self.subTest(command=command):
+                result = run_hook(self.KEYCHAIN, command)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("credential-store-read-only", result.stderr)
+
+    def test_keychain_read_through_a_path_stays_allowed(self) -> None:
+        result = run_hook(self.KEYCHAIN, "/usr/bin/security find-generic-password -s service -a account")
+        self.assertEqual(result.returncode, 0)
+
+    def test_tmux_destructive_verb_through_a_path_or_sudo_is_blocked(self) -> None:
+        for command in ("/usr/bin/tmux kill-server", "sudo tmux kill-server"):
+            with self.subTest(command=command):
+                self.assertEqual(run_hook(self.TMUX, command).returncode, 2)
+
+    def test_tmux_isolation_prefix_is_read_positionally(self) -> None:
+        # The scoping check reads what precedes the program token, so a
+        # path spelling keeps the isolation idiom intact rather than
+        # crashing on a literal "tmux" lookup.
+        allowed = run_hook(self.TMUX, "TMUX_TMPDIR=$(mktemp -d) env -u TMUX /usr/bin/tmux kill-server")
+        self.assertEqual(allowed.returncode, 0)
+        blocked = run_hook(self.TMUX, "/usr/bin/tmux kill-server TMUX_TMPDIR=/tmp env -u TMUX")
+        self.assertEqual(blocked.returncode, 2)
+
+    def test_gh_body_grammar_holds_through_a_path_or_sudo(self) -> None:
+        blocked = run_hook(self.GH_BODY, "/usr/bin/gh api repos/o/r/issues/1/comments -f body=@file.md")
+        self.assertEqual(blocked.returncode, 2)
+        allowed = run_hook(self.GH_BODY, "sudo gh api repos/o/r/issues/1/comments -F body=@file.md")
+        self.assertEqual(allowed.returncode, 0)
+
+
 class KeychainWriteGuardTests(unittest.TestCase):
     SCRIPT = "keychain-write-guard.sh"
 
