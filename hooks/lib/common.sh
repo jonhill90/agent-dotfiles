@@ -60,7 +60,9 @@ hook_block() {
 
 # hook_command_violates RULE PARSER_RULE
 # A parser error blocks: a security hook must never treat grammar it cannot
-# identify as harmless prose.  The helper returns 10 only for a real match.
+# identify as harmless prose.  The helper returns 10 only for a real match,
+# 3 when a program is named by an expansion the text cannot resolve
+# (agent-dotfiles#360), and 2 for any other grammar it cannot identify.
 hook_command_violates() {
   local rule="$1"
   local parser_rule="$2"
@@ -70,6 +72,7 @@ hook_command_violates() {
   case "$status" in
     0) return 1 ;;
     10) return 0 ;;
+    3) hook_block "$rule" "a program in this Bash payload is named by an expansion (\$(which ...), \"\$VAR\", \$HOME/bin/...), so the text cannot say what would run -- refusing rather than guessing (agent-dotfiles#360). Name the program literally." ;;
     *) hook_block "$rule" "could not identify executable commands in this Bash payload well enough to apply the guard -- refusing rather than guessing." ;;
   esac
 }

@@ -294,27 +294,163 @@ def commands(source: str) -> list[list[Word]]:
     return result
 
 
+# --- which program a command runs (agent-dotfiles#360) ---------------------
+#
+# executable() used to compare the program token literally and unwrap a
+# short list of prefixes (env with its flags; command/exec/nohup bare). Two
+# bypasses followed, confirmed against the live guard: `/usr/bin/git commit`
+# and `sudo git commit` both landed on main, because neither token is "git".
+# The same shape reached every rule built on this function.
+#
+# Two decisions, stated because each has a direction:
+#
+# 1. The program is its BASENAME. `/usr/bin/git`, `./git`, `~/bin/git` and
+#    `git` are all read as git. Resolution only ever makes a rule apply to
+#    MORE commands -- a lookalike at another path is treated as the real
+#    thing and refused, never trusted -- and no rule in this file grants
+#    trust by program name, so a familiar basename at a strange path buys
+#    nothing. What is NOT resolved: a program named through an expansion
+#    (`$(which git)`, `"$GIT"`, `$HOME/bin/git`) cannot be placed from the
+#    text and is refused outright (UnplaceableProgram, exit 3), consistent
+#    with how -C/cd targets carrying an expansion are refused. A different
+#    basename that happens to be the guarded binary (`git-real`, a symlink,
+#    `python3.12` for python3) is not resolved: named limit, not claimed.
+#
+# 2. A prefix program is unwrapped only through its OWN option grammar,
+#    read from its man page or `help` on this machine. A naive "skip the
+#    first token if it is sudo" is its own bypass: `sudo -u nobody git
+#    commit` would read `-u` as the program. Each grammar below says which
+#    options take a value (consumed, attached or as the next token, in a
+#    getopt group like -Eu root) and which do not; an option outside the
+#    grammar, or one this file does not model (env -S re-splits a string
+#    into a command), is a ParseError, and the hook refuses. Prefixes chain
+#    (`sudo env git`), so unwrapping loops until a real program is found.
+
+class UnplaceableProgram(ParseError):
+    """The program token is an expansion; the text cannot say what runs."""
+
+
+SHELL_KEYWORDS = {"if", "then", "do", "else", "elif", "fi", "done", "{", "}"}
+
+
+@dataclass(frozen=True)
+class PrefixGrammar:
+    short_with_value: frozenset  # getopt letters that take a value
+    short_plain: frozenset       # getopt letters that take none
+    long_with_value: frozenset   # --name value / --name=value
+    long_plain: frozenset        # --name (an attached =value is tolerated)
+    long_refused: frozenset = frozenset()  # modelled as "cannot place"
+    assignments_allowed: bool = False       # VAR=value before the command
+
+
+# sudo(8) 1.9.17 on this machine: getopt string a:BbC:c:D:Eeg:Hh::iKkLlNnPp:
+# R:r:SsT:t:U:u:Vv. -h takes a host only when attached (-hhost); the spaced
+# form is --help, so it is read as plain (an over-read that can only refuse).
+SUDO = PrefixGrammar(
+    short_with_value=frozenset("aCcDgpRrTtUu"),
+    short_plain=frozenset("ABbEeHhiKkLlNnPSsVv"),
+    long_with_value=frozenset({
+        "auth-type", "close-from", "login-class", "chdir", "group", "host", "prompt",
+        "chroot", "role", "command-timeout", "type", "other-user", "user",
+    }),
+    long_plain=frozenset({
+        "askpass", "bell", "background", "preserve-env", "edit", "set-home", "help",
+        "login", "remove-timestamp", "reset-timestamp", "list", "no-update",
+        "non-interactive", "preserve-groups", "stdin", "shell", "version", "validate",
+    }),
+    assignments_allowed=True,
+)
+
+# env(1) on macOS: env [-0iv] [-C altwd] [-P altpath] [-S string] [-u name]
+# [name=value ...] utility. GNU spellings that agents also type are read
+# too. -S/--split-string re-parses a string as the command line: not
+# modelled, refused.
+ENV = PrefixGrammar(
+    short_with_value=frozenset("CLPUua"),
+    short_plain=frozenset("0iv"),
+    long_with_value=frozenset({"unset", "chdir", "argv0"}),
+    long_plain=frozenset({"ignore-environment", "null", "debug", "default-signal", "ignore-signal", "block-signal"}),
+    long_refused=frozenset({"split-string"}),
+    assignments_allowed=True,
+)
+
+# bash builtins: command [-pVv] name, exec [-cl] [-a name] command.
+COMMAND = PrefixGrammar(frozenset(), frozenset("pVv"), frozenset(), frozenset())
+EXEC = PrefixGrammar(frozenset("a"), frozenset("cl"), frozenset(), frozenset())
+NOHUP = PrefixGrammar(frozenset(), frozenset(), frozenset(), frozenset({"help", "version"}))
+
+PREFIX_GRAMMARS = {"sudo": SUDO, "env": ENV, "command": COMMAND, "exec": EXEC, "nohup": NOHUP}
+
+
+def skip_prefix_options(words: list[Word], index: int, grammar: PrefixGrammar, name: str) -> int:
+    """Index of the first token after `name`'s own options (and, where the
+    program accepts them, VAR=value assignments); ParseError on grammar the
+    table does not know."""
+    while index < len(words):
+        token = words[index].text
+        if token == "--":
+            return index + 1
+        if token.startswith("--") and len(token) > 2:
+            option, has_value, _ = token[2:].partition("=")
+            if option in grammar.long_refused:
+                raise ParseError(f"{name} --{option} is not modelled by this guard")
+            if option in grammar.long_with_value:
+                index += 1 if has_value else 2
+            elif option in grammar.long_plain:
+                index += 1
+            else:
+                raise ParseError(f"unknown {name} option {token!r}")
+            continue
+        if token.startswith("-") and len(token) > 1:
+            index += 1
+            for position, letter in enumerate(token[1:], start=2):
+                if letter in grammar.short_with_value:
+                    if position >= len(token):
+                        index += 1  # the value is the next token
+                    break  # an attached value swallowed the rest of the group
+                if letter not in grammar.short_plain:
+                    raise ParseError(f"unknown {name} option -{letter}")
+            continue
+        if grammar.assignments_allowed and ASSIGNMENT.fullmatch(token):
+            index += 1
+            continue
+        return index
+    return index
+
+
+def program_name(word: Word) -> str:
+    """The basename a word names as a program; refuses an expansion."""
+    text = word.text
+    if "$" in text or "`" in text:
+        raise UnplaceableProgram(f"program {text!r} is named by an expansion")
+    return text.rsplit("/", 1)[-1]
+
+
+REDIRECTS = {"<", ">", "<<", ">>"}
+
+
 def executable(words: list[Word]) -> tuple[str, list[Word]]:
     index = 0
-    while index < len(words) and ASSIGNMENT.fullmatch(words[index].text):
-        index += 1
-    if index < len(words) and words[index].text == "env":
-        index += 1
-        while index < len(words):
-            token = words[index].text
-            if ASSIGNMENT.fullmatch(token):
-                index += 1
-            elif token.startswith("-"):
-                index += 2 if token in {"-u", "--unset"} else 1
-            else:
-                break
-    while index < len(words) and words[index].text in {
-        "command", "exec", "nohup", "if", "then", "do", "else", "elif", "fi", "done", "{", "}",
-    }:
-        index += 1
-    if index >= len(words):
-        return "", []
-    return words[index].text, words[index + 1 :]
+    while True:
+        while index < len(words) and ASSIGNMENT.fullmatch(words[index].text):
+            index += 1
+        # A redirection may precede the command name (`>log git commit`,
+        # `2>/dev/null git commit`); the tokenizer emits the operator as
+        # its own word, with a bare descriptor number before it.
+        if index + 1 < len(words) and words[index].text.isdigit() and words[index + 1].text in REDIRECTS:
+            index += 1
+        if index < len(words) and words[index].text in REDIRECTS:
+            index += 2
+            continue
+        if index >= len(words):
+            return "", []
+        name = program_name(words[index])
+        if name in SHELL_KEYWORDS:
+            index += 1
+        elif name in PREFIX_GRAMMARS:
+            index = skip_prefix_options(words, index + 1, PREFIX_GRAMMARS[name], name)
+        else:
+            return name, words[index + 1 :]
 
 
 SECURITY_GLOBAL_FLAGS = {"-h", "-i", "-l", "-q", "-v"}
@@ -425,9 +561,10 @@ def violates(rule: str, parsed: list[list[Word]]) -> bool:
                 return True
         elif rule == "destructive" and program == "tmux":
             if any(value in DESTRUCTIVE for value in values):
-                all_values = [word.text for word in words]
-                tmux_index = all_values.index("tmux")
-                prefix = all_values[:tmux_index]
+                # Everything before the program token: assignments and the
+                # env prefix. Positional, not a search for the literal
+                # "tmux", which /usr/bin/tmux would not match (#360).
+                prefix = [word.text for word in words[: len(words) - len(args) - 1]]
                 scoped = any(
                     value.startswith("TMUX_TMPDIR=") and value not in {"TMUX_TMPDIR=", "TMUX_TMPDIR=$substitution"}
                     for value in prefix
@@ -800,6 +937,8 @@ def main() -> int:
             return 10 if targets else 0
         parsed = commands(source)
         return 10 if violates(sys.argv[1], parsed) else 0
+    except UnplaceableProgram:
+        return 3
     except ParseError:
         return 2
 
