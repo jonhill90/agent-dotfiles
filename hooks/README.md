@@ -9,6 +9,22 @@ refusal. This directory also holds `lib/common.sh`, the shared plumbing the
 guards source, and `no-coauthor-trailer`, a separate git `commit-msg` hook —
 not a `PreToolUse` hook.
 
+**Fail-closed is per line, across every guard.** The guards share one
+parser (`lib/command_guard.py`) that reads every command in a Bash payload
+to find what program each would run. When it cannot — a program named by
+an expansion such as `"$PYTHON"` or `$(which git)`, a prefix option it does
+not model, grammar it cannot identify — it refuses the **whole payload**,
+and every guard that reads that payload refuses with it, including guards
+whose subject sits in a different clause of the same line
+(agent-dotfiles#360, and the #362 review that measured the radius). So
+`"$PYTHON" -c 'print(1)' && git commit -m x` on a feature branch is refused
+by `main-branch-guard`, `gh-body-guard` and `keychain-write-guard` alike.
+This is the rule, not an accident: a clause that cannot be placed cannot be
+shown harmless to any rule, and scoping the refusal to "the guard it
+concerns" would mean guessing what the clause is. The refusal names the
+token; the fix is to name the program literally, or to run that clause as
+its own Bash call.
+
 Wiring: `settings/claude/settings.json` declares each hook with a
 repo-relative `hooks/<script>.sh` command; `scripts/sync.py`'s
 `resolve_hook_commands()` rewrites that to this install's absolute path

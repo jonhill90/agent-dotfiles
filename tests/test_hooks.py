@@ -808,6 +808,46 @@ class ExecutableResolutionTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertIn("named by an expansion", result.stderr)
 
+    def test_one_unplaceable_clause_refuses_the_whole_line_on_every_guard(self) -> None:
+        # The #362 review's own payload: a variable-named setup step chained
+        # to a legitimate feature-branch commit. Refused by every guard,
+        # including the ones whose subject is not in the line, and the
+        # refusal names the token and says so -- this is the disclosed
+        # blast radius, pinned rather than narrowed (agent-dotfiles#362).
+        subprocess.run(["git", "-C", str(self.repo), "checkout", "-q", "-b", "feat/x"], check=True)
+        command = "PYTHON=$(command -v python3); \"$PYTHON\" -c 'print(1)' && git commit --allow-empty -m x"
+        for hook in (self.MAIN, self.GH_BODY, self.KEYCHAIN, self.TMUX):
+            with self.subTest(hook=hook):
+                result = run_hook(hook, command, cwd=str(self.repo))
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("'$PYTHON'", result.stderr)
+                self.assertIn("whole line on every guard", result.stderr)
+        # Split into its own call, the same commit is allowed again.
+        self.assertEqual(self.main_guard("git commit --allow-empty -m x"), 0)
+
+    def test_sudo_h_host_is_refused_in_every_spelling(self) -> None:
+        # sudo -h HOST (--host) takes its value attached OR as the next
+        # non-dash argument, per sudo's own parse_args; #362 read -h as
+        # plain, so the spaced form left the host as the program and the
+        # guard never saw git. Under sudoers a remote host runs nothing,
+        # so a value is refused rather than read past (#362 review).
+        for command in (
+            "sudo -h fakehost.example.com git commit -m x",
+            "sudo -hfakehost.example.com git commit -m x",
+            "sudo -l -h fakehost.example.com git commit -m x",
+            "sudo -nh fakehost.example.com git commit -m x",
+        ):
+            with self.subTest(command=command):
+                result = run_hook(self.MAIN, command, cwd=str(self.repo))
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("remote host", result.stderr)
+
+    def test_bare_sudo_h_is_help_and_runs_nothing(self) -> None:
+        # No value follows -h: it is --help. Nothing runs, nothing to refuse.
+        for command in ("sudo -h", "sudo --help", "sudo -h -- git status"):
+            with self.subTest(command=command):
+                self.assertEqual(self.main_guard(command), 0)
+
     def test_unmodelled_prefix_grammar_is_refused(self) -> None:
         # env -S re-splits its string into a command line; sudo has no -Z.
         # Neither is guessed at.

@@ -62,18 +62,25 @@ hook_block() {
 # A parser error blocks: a security hook must never treat grammar it cannot
 # identify as harmless prose.  The helper returns 10 only for a real match,
 # 3 when a program is named by an expansion the text cannot resolve
-# (agent-dotfiles#360), and 2 for any other grammar it cannot identify.
+# (agent-dotfiles#360), and 2 for any other grammar it cannot identify; on
+# 2 and 3 it prints the reason, quoted back here so the refusal names the
+# token. Either refusal is for the WHOLE payload, on EVERY guard that reads
+# it: one clause the parser cannot place refuses the line for the guards
+# whose subject is elsewhere in it too (agent-dotfiles#362 review). That
+# is the fail-closed rule, not a side effect -- a clause that cannot be
+# placed cannot be shown harmless to any rule.
 hook_command_violates() {
   local rule="$1"
   local parser_rule="$2"
   local helper="${SCRIPT_DIR}/lib/command_guard.py"
-  python3 "$helper" "$parser_rule" <<<"$HOOK_COMMAND" >/dev/null 2>&1
+  local reason
+  reason="$(python3 "$helper" "$parser_rule" <<<"$HOOK_COMMAND" 2>/dev/null)"
   local status=$?
   case "$status" in
     0) return 1 ;;
     10) return 0 ;;
-    3) hook_block "$rule" "a program in this Bash payload is named by an expansion (\$(which ...), \"\$VAR\", \$HOME/bin/...), so the text cannot say what would run -- refusing rather than guessing (agent-dotfiles#360). Name the program literally." ;;
-    *) hook_block "$rule" "could not identify executable commands in this Bash payload well enough to apply the guard -- refusing rather than guessing." ;;
+    3) hook_block "$rule" "a program in this Bash payload is named by an expansion -- ${reason:-see command_guard.py} -- so the text cannot say what would run. This refuses the whole line on every guard, not only the clause with the expansion (agent-dotfiles#360, #362). Name the program literally, or run that clause as its own Bash call." ;;
+    *) hook_block "$rule" "could not identify executable commands in this Bash payload well enough to apply the guard -- ${reason:-grammar this guard does not model} -- refusing rather than guessing. This refuses the whole line on every guard." ;;
   esac
 }
 

@@ -316,6 +316,21 @@ def commands(source: str) -> list[list[Word]]:
 #    basename that happens to be the guarded binary (`git-real`, a symlink,
 #    `python3.12` for python3) is not resolved: named limit, not claimed.
 #
+#    The refusal's blast radius, stated plainly (agent-dotfiles#362 review):
+#    violates() reads every command in the payload through this function,
+#    for whichever rule is asking, and the refusal propagates out of that
+#    loop. So ONE unplaceable clause anywhere in a compound line refuses
+#    the WHOLE line, on EVERY guard -- `"$PYTHON" -c 'print(1)' && git
+#    commit -m x` on a feature branch is refused by main-branch-guard,
+#    gh-body-guard, keychain-write-guard and the rest alike, none of which
+#    has a subject in that line. That is deliberate, not an accident of
+#    control flow: a clause whose program cannot be placed cannot be shown
+#    harmless to any rule (it could be `git`, `cd`, `eval`, `bash -c`), and
+#    scoping the refusal to "the rule whose subject it is" would require
+#    guessing the subject, which is the guessing #360 exists to stop. The
+#    message names the offending token so the fix -- name the program
+#    literally, or split the line -- is one edit away.
+#
 # 2. A prefix program is unwrapped only through its OWN option grammar,
 #    read from its man page or `help` on this machine. A naive "skip the
 #    first token if it is sudo" is its own bypass: `sudo -u nobody git
@@ -341,14 +356,27 @@ class PrefixGrammar:
     long_plain: frozenset        # --name (an attached =value is tolerated)
     long_refused: frozenset = frozenset()  # modelled as "cannot place"
     assignments_allowed: bool = False       # VAR=value before the command
+    # getopt letters with an OPTIONAL value (attached, or the next token
+    # when it does not start with -) after which the program runs nothing;
+    # a value present is refused rather than read past.
+    short_refused_with_value: frozenset = frozenset()
 
 
 # sudo(8) 1.9.17 on this machine: getopt string a:BbC:c:D:Eeg:Hh::iKkLlNnPp:
-# R:r:SsT:t:U:u:Vv. -h takes a host only when attached (-hhost); the spaced
-# form is --help, so it is read as plain (an over-read that can only refuse).
+# R:r:SsT:t:U:u:Vv. -h is two options: bare -h is --help, and -h HOST is
+# --host, where sudo's own parse_args takes the value attached OR as the
+# next argument when that argument does not start with - (measured here:
+# `sudo -n -h echo hi` fails with "a remote host may only be specified when
+# listing privileges", so `echo` was read as the host). The first draft
+# (#362) read -h as plain, so `sudo -h host git commit` left `host` as the
+# program and git was never seen. Under the sudoers plugin a remote host
+# runs nothing (the same message, any command), and with -l nothing runs
+# either, so a -h value is refused outright: correct for sudo, and it can
+# only over-refuse.
 SUDO = PrefixGrammar(
     short_with_value=frozenset("aCcDgpRrTtUu"),
-    short_plain=frozenset("ABbEeHhiKkLlNnPSsVv"),
+    short_plain=frozenset("ABbEeHiKkLlNnPSsVv"),
+    short_refused_with_value=frozenset("h"),
     long_with_value=frozenset({
         "auth-type", "close-from", "login-class", "chdir", "group", "host", "prompt",
         "chroot", "role", "command-timeout", "type", "other-user", "user",
@@ -408,6 +436,16 @@ def skip_prefix_options(words: list[Word], index: int, grammar: PrefixGrammar, n
                     if position >= len(token):
                         index += 1  # the value is the next token
                     break  # an attached value swallowed the rest of the group
+                if letter in grammar.short_refused_with_value:
+                    attached = token[position:]
+                    spaced = index < len(words) and not words[index].text.startswith("-")
+                    if attached or spaced:
+                        value = attached or words[index].text
+                        raise ParseError(
+                            f"{name} -{letter} {value!r} names a remote host, on which "
+                            f"{name} runs nothing here; refusing rather than reading past it"
+                        )
+                    break  # bare: --help, nothing follows that runs
                 if letter not in grammar.short_plain:
                     raise ParseError(f"unknown {name} option -{letter}")
             continue
@@ -937,9 +975,11 @@ def main() -> int:
             return 10 if targets else 0
         parsed = commands(source)
         return 10 if violates(sys.argv[1], parsed) else 0
-    except UnplaceableProgram:
+    except UnplaceableProgram as exc:
+        print(exc)  # the hook quotes this so the refusal names its token
         return 3
-    except ParseError:
+    except ParseError as exc:
+        print(exc)
         return 2
 
 
