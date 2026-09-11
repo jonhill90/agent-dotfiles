@@ -16,7 +16,15 @@
 #      body because the script had no such flag).
 #
 # The safe, required form: -f body="$(cat file)" -- shell-expand the file's
-# content into a literal string before gh ever sees it.
+# content into a literal string before gh ever sees it. `-F body=@file` is
+# the typed form gh does read from a file, and is not blocked.
+#
+# What is matched, and what is not (agent-dotfiles#356, #358): the rule
+# reads the parsed command -- lib/command_guard.py's `gh-body` -- so a flag
+# that is only NAMED, inside a quoted -f body="..." string, a heredoc, or a
+# shell comment, is an argument or nothing, never a use. Each -f/--raw-field
+# spelling of body=@ blocks, including -fbody=@x and --raw-field=body=@x, and
+# so does --body-file in either its spaced or its --body-file=x form.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
@@ -28,7 +36,7 @@ hook_require_parsed "$RULE"
 # Only in scope for gh api calls.
 if hook_command_violates "$RULE" gh-body; then
   hook_block "$RULE" \
-    "'gh api' has no --body-file flag -- it belongs to 'gh issue comment'/'gh pr create', not 'gh api'. Use -f body=\"\$(cat file)\" instead."
+    "'gh api' has no --body-file flag (it belongs to 'gh issue comment'/'gh pr create'), and '-f body=@file' sends the literal text \"@file\" as the body -- -f never reads a file. Use -f body=\"\$(cat file)\" instead; -F body=@file, the typed field gh does read from a file, is also allowed."
 fi
 
 exit 0

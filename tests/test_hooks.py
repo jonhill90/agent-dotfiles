@@ -90,6 +90,16 @@ class TmuxDestructiveVerbGuardTests(unittest.TestCase):
         result = run_hook(self.SCRIPT, "ls -la")
         self.assertEqual(result.returncode, 0)
 
+    def test_shell_comment_is_neither_a_use_nor_a_hiding_place(self) -> None:
+        # lib/command_guard.py skips a word beginning with # to the end of
+        # its line for every guard (agent-dotfiles#358). Both directions on
+        # a second guard: a verb named in a comment is not a use, and a
+        # comment after a real use does not hide it.
+        allowed = run_hook(self.SCRIPT, "tmux list-windows -a # never tmux kill-server here")
+        self.assertEqual(allowed.returncode, 0)
+        blocked = run_hook(self.SCRIPT, "tmux kill-server # scoped by the caller")
+        self.assertEqual(blocked.returncode, 2)
+
     def test_assignment_before_destructive_tmux_is_blocked(self) -> None:
         result = run_hook(self.SCRIPT, 'X="a" tmux kill-server')
         self.assertEqual(result.returncode, 2)
@@ -448,6 +458,91 @@ class GhBodyGuardTests(unittest.TestCase):
             'printf "%s" "echo evidence; gh api --body-file evidence.md"',
         )
         self.assertEqual(result.returncode, 0)
+
+    # agent-dotfiles#356 measured the deployed regex guard against this
+    # file's first command_guard.py version and found the rewrite traded one
+    # real fix for two new defects; #358 is the use-versus-mention shape.
+    # Each test below was run against origin/main before the fix (the PR
+    # carries both runs) and holds in both directions: what the guard
+    # exists to block still blocks.
+
+    def test_body_file_equals_form_on_gh_api_is_blocked(self) -> None:
+        # #356 defect 1: --body-file=x is one token, and an exact-token test
+        # for "--body-file" let it through -- the deployed regex caught it.
+        result = run_hook(
+            self.SCRIPT, "gh api repos/o/r/issues/1/comments --body-file=file.md"
+        )
+        self.assertEqual(result.returncode, 2)
+
+    def test_every_raw_field_spelling_of_at_file_is_blocked(self) -> None:
+        # The -f body=@file footgun in the other spellings gh accepts for
+        # the same flag. The quoted form is the one the deployed regex
+        # missed (#356); the long and attached forms both versions missed.
+        for command in (
+            "gh api repos/o/r/issues/1/comments --raw-field body=@file.md",
+            "gh api repos/o/r/issues/1/comments --raw-field=body=@file.md",
+            "gh api repos/o/r/issues/1/comments -fbody=@file.md",
+            'gh api repos/o/r/issues/1/comments -f "body=@file.md"',
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(run_hook(self.SCRIPT, command).returncode, 2)
+
+    def test_typed_field_at_file_is_allowed(self) -> None:
+        # #356 defect 2: -F/--field is the typed form gh DOES read from a
+        # file -- the guard's own header names it as the one that works.
+        # Flagging any body=@ token regardless of its flag blocked it.
+        for command in (
+            "gh api repos/o/r/issues/1/comments -F body=@file.md",
+            "gh api repos/o/r/issues/1/comments --field body=@file.md",
+            "gh api repos/o/r/issues/1/comments --field=body=@file.md",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(run_hook(self.SCRIPT, command).returncode, 0)
+
+    def test_typed_field_does_not_launder_a_raw_at_file_beside_it(self) -> None:
+        # Mutation check on the -F fix: consuming -F's value must not hide a
+        # real -f body=@file elsewhere in the same call, nor a bare body=@
+        # token no flag owns (gh api could only ever reject that one).
+        for command in (
+            "gh api repos/o/r/issues/1/comments -F title=@t.md -f body=@file.md",
+            "gh api repos/o/r/issues/1/comments -X POST body=@file.md",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(run_hook(self.SCRIPT, command).returncode, 2)
+
+    def test_flag_named_inside_a_quoted_body_is_allowed(self) -> None:
+        # #358's shape: editing a comment whose body advises readers to
+        # expand a file into -f body=. Every trigger is named, none used.
+        result = run_hook(
+            self.SCRIPT,
+            'gh api -X PATCH repos/o/r/issues/comments/1 -f body="Expand the'
+            " file into -f body= with cat; never --body-file, and never"
+            ' -f body=@file, which sends the literal text."',
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_flag_named_in_a_trailing_comment_is_allowed(self) -> None:
+        # #358, the shape origin/main still got wrong: a shell comment never
+        # executes, but the tokenizer read its words as arguments of the
+        # command before it, so a flag NAMED there was a flag USED.
+        result = run_hook(
+            self.SCRIPT,
+            'gh api repos/o/r/issues/1/comments -f body="$(cat file.md)"'
+            " # gh api has no --body-file flag, so the file is expanded",
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_a_comment_does_not_hide_a_real_use(self) -> None:
+        # Mutation check on the comment fix, each way it could over-reach:
+        # a real use earlier on the same line is still seen, and a # that
+        # is not at a word start (mid-word, quoted) is not a comment.
+        for command in (
+            "gh api repos/o/r/issues/1/comments --body-file file.md # documented",
+            "gh api repos/o/r/issues/1/comments -f body=@file#1.md",
+            'gh api repos/o/r/issues/1/comments "#" -f body=@file.md',
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(run_hook(self.SCRIPT, command).returncode, 2)
 
 
 class LaneSelfCloseGuardTests(unittest.TestCase):
