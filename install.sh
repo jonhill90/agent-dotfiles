@@ -60,15 +60,18 @@ else
 fi
 export APM_COPILOT_COWORK_SKILLS_DIR="${APM_COPILOT_COWORK_SKILLS_DIR:-$HOME/Library/CloudStorage/OneDrive-Personal/Cowork/skills}"
 
-step "3.5" "memory vault skeleton"
-if [ -n "${AGENT_MEMORY_VAULT:-}" ] && [ ! -f "$AGENT_MEMORY_VAULT/agent/index.md" ]; then
-  mkdir -p "$AGENT_MEMORY_VAULT/agent/facts"
-  printf -- '---\nokf_version: "0.1"\n---\n\n# Facts\n' > "$AGENT_MEMORY_VAULT/agent/index.md"
-  printf '# Agent Memory Log\n\nAppend-only. `## YYYY-MM-DD` headings, newest first.\n' > "$AGENT_MEMORY_VAULT/agent/log.md"
-  echo "  vault skeleton created at $AGENT_MEMORY_VAULT/agent/"
-else
-  echo "  vault present or AGENT_MEMORY_VAULT unset — skipped"
-fi
+# Step "3.5" ("memory vault skeleton") used to live here: if
+# $AGENT_MEMORY_VAULT/agent/index.md was missing, it created
+# agent/index.md, agent/facts/ and agent/log.md. That layout was retired
+# 2026-09-07 (the vault now uses a bundle-root index.md, 01 - Notes under
+# lettered subdirs, 02 - MOCs, 99 - Meta) -- but this check never stopped
+# firing, so every install on a vault where the retired directory does not
+# exist (every real vault, since the retirement) silently recreated it.
+# Removed rather than pointed at the new layout: this script has no
+# business deciding what a correct vault skeleton looks like under the
+# current OKF-bundle contract, and inventing one here risks getting that
+# design wrong in a script nobody reviews as carefully as a doc.
+# (agent-dotfiles#350, agent-estate#1126, agent-estate#1395)
 
 step 4 "sync apply"
 python3 "$REPO_DIR/scripts/sync.py" apply
