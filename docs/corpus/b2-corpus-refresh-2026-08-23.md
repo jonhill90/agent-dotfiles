@@ -1,5 +1,17 @@
 # build-2 — corpus refresh, 21.5 hours stale (2026-08-23)
 
+> **Correction (2026-09-11, agent-estate#1397/#1397-followup):** the ledger
+> path and tooling repo named just below are the path and tooling recorded
+> by this pass, and have since drifted.
+> `~/.local/state/agent-dotfiles-supervisor/ledger.sqlite3`
+> is now a stale, largely-abandoned side-store (agent-estate#942) — re-measured
+> read-only today: 51 `live_parameters` there vs. 1,359 in the live corpus,
+> `~/corpus/ledger.sqlite3` (mapped in `docs/corpus/index.md`, which already
+> points there). `jonhill90/agent-supervisor` was renamed `agent-estate`; its
+> scripts moved `scripts/supervisor/` → `reference/scripts/supervisor/`. The
+> rest of this file — the counts, the pass's own findings and actions — is an
+> unedited historical record of the 2026-08-23 run and is left as written.
+
 Repo for tooling/schema: `jonhill90/agent-supervisor`
 (`scripts/supervisor/{mine_prompts.py,itemize_prompts.py,cli.py,core.py}`).
 Ledger: `~/.local/state/agent-dotfiles-supervisor/ledger.sqlite3` (not
