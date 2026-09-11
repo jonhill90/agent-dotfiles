@@ -11,6 +11,7 @@ fail-closed behaviour (an unparseable hook payload must never resolve to
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -252,6 +253,162 @@ class MainBranchGuardTests(unittest.TestCase):
             cwd=str(self.repo),
         )
         self.assertEqual(result.returncode, 0)
+
+
+class MainBranchGuardTargetTests(unittest.TestCase):
+    """agent-dotfiles#353: the branch is resolved from where the write
+    LANDS, not from where the session sits. Every test above keeps the
+    payload cwd equal to the repository being committed to, which is
+    exactly the shape that hid this. Here the session and the target are
+    different directories: a checkout on main and a worktree of it on a
+    feature branch -- the shape every lane in the estate works in, since
+    protect-shared-checkout pushes each lane into a worktree."""
+
+    SCRIPT = "main-branch-guard.sh"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        root = Path(self._tmp.name)
+        self.main_checkout = root / "checkout"
+        self.worktree = root / "wt-feature"
+        self.root = root
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.main_checkout)], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.main_checkout), "-c", "user.email=t@t", "-c", "user.name=t",
+             "commit", "-q", "--allow-empty", "-m", "init"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(self.main_checkout), "worktree", "add", "-q", "-b", "lane/353-test", str(self.worktree)],
+            check=True,
+        )
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    # Case B -- the event the guard exists to prevent: a write landing on
+    # main, permitted because the session sits in a worktree.
+    def test_case_b_commit_targeting_main_from_a_worktree_session_is_blocked(self) -> None:
+        for command in (
+            f"git -C {self.main_checkout} commit -m x",
+            f"cd {self.main_checkout} && git commit -m x",
+            f"cd {self.main_checkout}; git commit -m x",
+        ):
+            with self.subTest(command=command):
+                result = run_hook(self.SCRIPT, command, cwd=str(self.worktree))
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("main", result.stderr)
+
+    # Case A -- the false block: a write landing on a feature worktree,
+    # refused because the session sits on main. Must be allowed, and must
+    # not be "fixed" by loosening Case B.
+    def test_case_a_commit_targeting_a_feature_worktree_from_a_main_session_is_allowed(self) -> None:
+        for command in (
+            f"git -C {self.worktree} commit -m x",
+            f"cd {self.worktree} && git commit -m x",
+        ):
+            with self.subTest(command=command):
+                result = run_hook(self.SCRIPT, command, cwd=str(self.main_checkout))
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_every_target_in_a_compound_command_is_checked(self) -> None:
+        command = f"git -C {self.worktree} commit -m a && git -C {self.main_checkout} commit -m b"
+        result = run_hook(self.SCRIPT, command, cwd=str(self.worktree))
+        self.assertEqual(result.returncode, 2, result.stderr)
+
+    def test_relative_paths_resolve_against_the_session_cwd(self) -> None:
+        allowed = run_hook(self.SCRIPT, "cd wt-feature && git commit -m x", cwd=str(self.root))
+        self.assertEqual(allowed.returncode, 0, allowed.stderr)
+        blocked = run_hook(self.SCRIPT, "cd checkout && git commit -m x", cwd=str(self.root))
+        self.assertEqual(blocked.returncode, 2, blocked.stderr)
+
+    def test_cd_inside_a_subshell_does_not_move_the_target(self) -> None:
+        # The subshell's cd is scoped to the subshell; the commit lands in
+        # the session's cwd, which is main.
+        command = f"(cd {self.worktree} && true) && git commit -m x"
+        result = run_hook(self.SCRIPT, command, cwd=str(self.main_checkout))
+        self.assertEqual(result.returncode, 2, result.stderr)
+
+    def test_cd_in_a_pipeline_does_not_move_the_target(self) -> None:
+        command = f"cd {self.worktree} | cat; git commit -m x"
+        result = run_hook(self.SCRIPT, command, cwd=str(self.main_checkout))
+        self.assertEqual(result.returncode, 2, result.stderr)
+
+    def test_unresolvable_target_fails_closed(self) -> None:
+        for command in (
+            "cd $DIR && git commit -m x",
+            "cd \"$(pwd)/elsewhere\" && git commit -m x",
+            f"cd {self.worktree} || git commit -m x",
+            "git -C $DIR commit -m x",
+            f"pushd {self.worktree} && git commit -m x",
+        ):
+            with self.subTest(command=command):
+                result = run_hook(self.SCRIPT, command, cwd=str(self.worktree))
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("resolve", result.stderr)
+
+    # Review on agent-dotfiles#354: `cd -` was NAMED as refused and was not --
+    # `-` was stripped as a flag, so it resolved like bare `cd` (to $HOME). Its
+    # real target is $OLDPWD, unknowable from the text. HOME is pointed at
+    # the feature worktree so an accidental $HOME resolution would be allowed;
+    # only a genuine refusal exits 2.
+    def test_cd_dash_is_unresolvable_even_when_home_is_a_feature_branch(self) -> None:
+        env = dict(os.environ)
+        env["HOME"] = str(self.worktree)
+        payload = {"tool_name": "Bash", "tool_input": {"command": "cd - && git commit -m x"}, "cwd": str(self.worktree)}
+        result = subprocess.run(["bash", str(HOOKS_DIR / self.SCRIPT)], input=json.dumps(payload), capture_output=True, text=True, env=env)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("resolve", result.stderr)
+
+    # `cd -- -` names a directory literally called "-"; it must be treated as
+    # a path (here, a missing one, so refused for that reason), never as
+    # bare `cd`.
+    def test_cd_double_dash_dash_is_a_literal_path(self) -> None:
+        env = dict(os.environ)
+        env["HOME"] = str(self.worktree)
+        payload = {"tool_name": "Bash", "tool_input": {"command": "cd -- - && git commit -m x"}, "cwd": str(self.worktree)}
+        result = subprocess.run(["bash", str(HOOKS_DIR / self.SCRIPT)], input=json.dumps(payload), capture_output=True, text=True, env=env)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("does not exist", result.stderr)
+
+    # Review on agent-dotfiles#354, audit of the other named limits:
+    # --git-dir/--work-tree was refused only because the resolver returned no
+    # target at all and the hook's fallback fired. Paired with a resolvable
+    # commit in the same command, the fallback does not fire and the
+    # --git-dir commit was silently dropped -- a false allow.
+    def test_git_dir_commit_is_refused_by_name_even_beside_a_resolvable_commit(self) -> None:
+        command = (
+            f"git --git-dir={self.main_checkout}/.git --work-tree={self.main_checkout} commit -m x"
+            f" && git -C {self.worktree} commit -m y"
+        )
+        result = run_hook(self.SCRIPT, command, cwd=str(self.worktree))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("git-dir", result.stderr)
+        alone = run_hook(self.SCRIPT, f"git --work-tree {self.main_checkout} commit -m x", cwd=str(self.worktree))
+        self.assertEqual(alone.returncode, 2, alone.stderr)
+        self.assertIn("work-tree", alone.stderr)
+
+    def test_cd_to_a_missing_directory_fails_closed(self) -> None:
+        # `cd missing; git commit` would fail the cd and commit in the
+        # session cwd; refusing is the only safe answer.
+        result = run_hook(self.SCRIPT, "cd does-not-exist; git commit -m x", cwd=str(self.worktree))
+        self.assertEqual(result.returncode, 2, result.stderr)
+
+    def test_dry_run_targeting_main_is_allowed(self) -> None:
+        result = run_hook(self.SCRIPT, f"git -C {self.main_checkout} commit --dry-run -m x", cwd=str(self.worktree))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    # Third defect: an UNQUOTED heredoc body quoting a commit is a mention,
+    # not a use -- the quoted-delimiter case above already passes.
+    def test_unquoted_heredoc_quoting_a_commit_is_a_mention(self) -> None:
+        command = "gh issue create --title t --body-file - <<EOF\nReproduction:\ngit commit -m example\nBLOCKED by main-branch-guard\nEOF\n"
+        result = run_hook(self.SCRIPT, command, cwd=str(self.main_checkout))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_unquoted_heredoc_substitution_running_a_commit_is_still_caught(self) -> None:
+        command = "cat <<EOF\nresult: $(git commit -m x)\nEOF\n"
+        result = run_hook(self.SCRIPT, command, cwd=str(self.main_checkout))
+        self.assertEqual(result.returncode, 2, result.stderr)
 
 
 class GhBodyGuardTests(unittest.TestCase):
